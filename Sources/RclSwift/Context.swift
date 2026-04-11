@@ -69,23 +69,33 @@ public final class ROS2Context: @unchecked Sendable {
             entityManager: entityManager,
             gidManager: gidManager
         )
-        lock.lock()
-        nodes.append(node)
-        lock.unlock()
+        appendNode(node)
         return node
     }
 
     /// Shutdown the context and all nodes
     public func shutdown() async {
-        lock.lock()
-        let currentNodes = nodes
-        nodes.removeAll()
-        lock.unlock()
-
+        let currentNodes = takeAllNodes()
         for node in currentNodes {
             await node.destroy()
         }
         try? session.close()
+    }
+
+    // MARK: - Private (synchronous lock helpers)
+
+    private func appendNode(_ node: ROS2Node) {
+        lock.lock()
+        nodes.append(node)
+        lock.unlock()
+    }
+
+    private func takeAllNodes() -> [ROS2Node] {
+        lock.lock()
+        let result = nodes
+        nodes.removeAll()
+        lock.unlock()
+        return result
     }
 
     /// The session ID for debugging

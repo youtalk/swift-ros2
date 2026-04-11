@@ -68,9 +68,7 @@ public final class ROS2Node: @unchecked Sendable {
         )
 
         let publisher = ROS2Publisher<M>(transportPublisher: transportPub)
-        lock.lock()
-        publishers.append(publisher)
-        lock.unlock()
+        appendPublisher(publisher)
         return publisher
     }
 
@@ -106,10 +104,7 @@ public final class ROS2Node: @unchecked Sendable {
         )
 
         subscription.setTransportSubscriber(transportSub)
-
-        lock.lock()
-        subscriptions.append(subscription)
-        lock.unlock()
+        appendSubscription(subscription)
         return subscription
     }
 
@@ -117,13 +112,7 @@ public final class ROS2Node: @unchecked Sendable {
 
     /// Destroy this node and release all resources
     public func destroy() async {
-        lock.lock()
-        let pubs = publishers
-        let subs = subscriptions
-        publishers.removeAll()
-        subscriptions.removeAll()
-        lock.unlock()
-
+        let (pubs, subs) = takeAllEntities()
         for pub in pubs {
             if let p = pub as? PublisherCloseable {
                 try? p.closePublisher()
@@ -134,6 +123,30 @@ public final class ROS2Node: @unchecked Sendable {
                 try? s.closeSubscription()
             }
         }
+    }
+
+    // MARK: - Private (synchronous lock helpers)
+
+    private func appendPublisher(_ publisher: AnyObject) {
+        lock.lock()
+        publishers.append(publisher)
+        lock.unlock()
+    }
+
+    private func appendSubscription(_ subscription: AnyObject) {
+        lock.lock()
+        subscriptions.append(subscription)
+        lock.unlock()
+    }
+
+    private func takeAllEntities() -> ([AnyObject], [AnyObject]) {
+        lock.lock()
+        let pubs = publishers
+        let subs = subscriptions
+        publishers.removeAll()
+        subscriptions.removeAll()
+        lock.unlock()
+        return (pubs, subs)
     }
 
     // MARK: - Helpers

@@ -253,4 +253,135 @@ final class MessageRoundTripTests: XCTestCase {
     func testStringMsgTypeInfo() {
         XCTAssertEqual(StringMsg.typeInfo.typeName, "std_msgs/msg/String")
     }
+
+    // MARK: - New Message Types
+
+    func testImageRoundTrip() throws {
+        let pixelData = Data(repeating: 0xAB, count: 640 * 480 * 3)
+        let original = Image(
+            header: Header(sec: 700, nanosec: 0, frameId: "camera_link"),
+            height: 480, width: 640, encoding: "rgb8",
+            isBigendian: 0, step: 640 * 3, data: pixelData
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try Image(from: decoder)
+
+        XCTAssertEqual(decoded.height, 480)
+        XCTAssertEqual(decoded.width, 640)
+        XCTAssertEqual(decoded.encoding, "rgb8")
+        XCTAssertEqual(decoded.data.count, pixelData.count)
+    }
+
+    func testPointCloud2RoundTrip() throws {
+        var pointData = Data()
+        for i: Float in [1.0, 2.0, 3.0, 4.0, 5.0, 6.0] {
+            var bits = i.bitPattern.littleEndian
+            withUnsafeBytes(of: &bits) { pointData.append(contentsOf: $0) }
+        }
+
+        let original = PointCloud2(
+            header: Header(sec: 800, nanosec: 0, frameId: "lidar_link"),
+            height: 1, width: 2,
+            fields: PointField.xyzFields,
+            isBigendian: false, pointStep: 12, rowStep: 24,
+            data: pointData, isDense: true
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try PointCloud2(from: decoder)
+
+        XCTAssertEqual(decoded.width, 2)
+        XCTAssertEqual(decoded.fields.count, 3)
+        XCTAssertEqual(decoded.fields[0].name, "x")
+        XCTAssertEqual(decoded.pointStep, 12)
+        XCTAssertEqual(decoded.data, pointData)
+        XCTAssertTrue(decoded.isDense)
+    }
+
+    func testBatteryStateRoundTrip() throws {
+        let original = BatteryState(
+            header: Header(sec: 900, nanosec: 0, frameId: "battery"),
+            voltage: 3.7, percentage: 0.85,
+            powerSupplyStatus: .discharging,
+            powerSupplyTechnology: .lion,
+            location: "main", serialNumber: "ABC123"
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try BatteryState(from: decoder)
+
+        XCTAssertEqual(decoded.voltage, 3.7, accuracy: 0.001)
+        XCTAssertEqual(decoded.percentage, 0.85, accuracy: 0.001)
+        XCTAssertEqual(decoded.powerSupplyStatus, 2) // discharging
+        XCTAssertEqual(decoded.location, "main")
+        XCTAssertEqual(decoded.serialNumber, "ABC123")
+    }
+
+    func testJoyRoundTrip() throws {
+        let original = Joy(
+            header: Header(sec: 1000, nanosec: 0, frameId: "joy"),
+            axes: [0.5, -0.3, 1.0, -1.0],
+            buttons: [0, 1, 0, 1, 1]
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try Joy(from: decoder)
+
+        XCTAssertEqual(decoded.axes.count, 4)
+        XCTAssertEqual(decoded.axes[0], 0.5, accuracy: 0.001)
+        XCTAssertEqual(decoded.buttons, [0, 1, 0, 1, 1])
+    }
+
+    func testRangeRoundTrip() throws {
+        let original = Range(
+            header: Header(sec: 1100, nanosec: 0, frameId: "proximity"),
+            radiationType: .infrared,
+            fieldOfView: 0.5, minRange: 0.0, maxRange: 5.0, range: 1.23
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try Range(from: decoder)
+
+        XCTAssertEqual(decoded.radiationType, 1) // infrared
+        XCTAssertEqual(decoded.range, 1.23, accuracy: 0.001)
+    }
+
+    func testAudioDataRoundTrip() throws {
+        let audioBytes = Data(repeating: 0x42, count: 4096)
+        let original = AudioData(data: audioBytes)
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try AudioData(from: decoder)
+
+        XCTAssertEqual(decoded.data, audioBytes)
+    }
+
+    func testMagneticFieldRoundTrip() throws {
+        let original = MagneticField(
+            header: Header(sec: 1200, nanosec: 0, frameId: "magnetometer_link"),
+            magneticField: Vector3(x: 0.00003, y: -0.00001, z: 0.00005),
+            magneticFieldCovariance: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try MagneticField(from: decoder)
+
+        XCTAssertEqual(decoded.magneticField, original.magneticField)
+        XCTAssertEqual(decoded.magneticFieldCovariance, original.magneticFieldCovariance)
+    }
 }

@@ -1,0 +1,36 @@
+// FluidPressure.swift
+// sensor_msgs/msg/FluidPressure
+
+import Foundation
+import RclSwiftCDR
+
+/// sensor_msgs/msg/FluidPressure
+public struct FluidPressure: ROS2Message {
+    public static let typeInfo = ROS2MessageTypeInfo(
+        typeName: "sensor_msgs/msg/FluidPressure",
+        typeHash: "RIHS01_22dfb2b145a0bd5a31a1ac3882a1b32148b51d9b2f3bab250290d66f3595bc32"
+    )
+
+    public var header: Header
+    public var fluidPressure: Double
+    public var variance: Double
+
+    public init(header: Header = Header(), fluidPressure: Double = 0.0, variance: Double = 0.0) {
+        self.header = header
+        self.fluidPressure = fluidPressure
+        self.variance = variance
+    }
+
+    public func encode(to encoder: CDREncoder) throws {
+        encoder.writeEncapsulationHeader()
+        try header.encode(to: encoder)
+        encoder.writeFloat64(fluidPressure)
+        encoder.writeFloat64(variance)
+    }
+
+    public init(from decoder: CDRDecoder) throws {
+        self.header = try Header(from: decoder)
+        self.fluidPressure = try decoder.readFloat64()
+        self.variance = try decoder.readFloat64()
+    }
+}

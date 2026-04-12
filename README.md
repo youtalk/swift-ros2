@@ -1,8 +1,8 @@
-# rclswift
+# swift-ros2
 
 Native Swift client library for ROS 2.
 
-**rclswift** provides a Swift-native API for ROS 2 communication — publish, subscribe, services, and actions — over both **Zenoh** and **DDS** transports, without requiring the full ROS 2 stack.
+**swift-ros2** provides a Swift-native API for ROS 2 communication — publish, subscribe, services, and actions — over both **Zenoh** and **DDS** transports, without requiring the full ROS 2 stack.
 
 ## Features
 
@@ -25,12 +25,12 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/rclswift.git", from: "0.1.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.1.0"),
 ],
 targets: [
     .target(
         name: "YourTarget",
-        dependencies: ["RclSwift"]
+        dependencies: ["SwiftROS2"]
     ),
 ]
 ```
@@ -38,7 +38,7 @@ targets: [
 ## Quick Start
 
 ```swift
-import RclSwift
+import SwiftROS2
 
 // Create context with Zenoh transport
 let ctx = try await ROS2Context(
@@ -67,11 +67,11 @@ for await message in sub.messages {
 ## Architecture
 
 ```
-import RclSwift  (re-exports all modules)
-    ├── RclSwiftCDR        — XCDR v1 encoder + decoder (pure Swift)
-    ├── RclSwiftWire       — Wire format codecs (Zenoh + DDS, Humble → Rolling)
-    ├── RclSwiftMessages   — Message protocols + 20 built-in types
-    └── RclSwiftTransport  — Transport abstraction (session, publisher, subscriber)
+import SwiftROS2  (re-exports all modules)
+    ├── SwiftROS2CDR        — XCDR v1 encoder + decoder (pure Swift)
+    ├── SwiftROS2Wire       — Wire format codecs (Zenoh + DDS, Humble → Rolling)
+    ├── SwiftROS2Messages   — Message protocols + 20 built-in types
+    └── SwiftROS2Transport  — Transport abstraction (session, publisher, subscriber)
 ```
 
 ### Core API
@@ -107,8 +107,8 @@ import RclSwift  (re-exports all modules)
 ## Defining Custom Messages
 
 ```swift
-import RclSwiftCDR
-import RclSwiftMessages
+import SwiftROS2CDR
+import SwiftROS2Messages
 
 struct MyCustomMsg: ROS2Message {
     static let typeInfo = ROS2MessageTypeInfo(
@@ -136,7 +136,7 @@ struct MyCustomMsg: ROS2Message {
 
 - [x] Phase 1: Publisher + Subscriber core with CDR encode/decode
 - [ ] Phase 2: Service client/server (ROS 2 request/reply)
-- [ ] Phase 3: Action client/server + `rclswift-gen` code generator
+- [ ] Phase 3: Action client/server + `swift-ros2-gen` code generator
 - [ ] Phase 4: Documentation, example apps, CI/CD, Linux support
 
 ## License

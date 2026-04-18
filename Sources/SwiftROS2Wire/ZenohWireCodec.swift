@@ -30,7 +30,9 @@ public struct ZenohWireCodec: WireCodec {
         let cleanNamespace = TypeNameConverter.stripLeadingSlash(namespace)
         let ddsTypeName = TypeNameConverter.toDDSTypeName(typeName)
         let hashComponent = distro.formatTypeHash(typeHash)
-        let topicPath = "\(cleanNamespace)/\(topic)"
+        // Global topics (e.g. /tf_static) are published with an empty namespace;
+        // avoid emitting `domain//topic` which Zenoh rejects as invalid.
+        let topicPath = cleanNamespace.isEmpty ? topic : "\(cleanNamespace)/\(topic)"
 
         if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
             return "\(domainId)/\(topicPath)/\(ddsTypeName)"

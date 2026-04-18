@@ -70,6 +70,20 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(key, "0/ios/imu/sensor_msgs::msg::dds_::Imu_/TypeHashNotSupported")
     }
 
+    func testJazzyKeyExpressionEmptyNamespace() {
+        // Global topics like /tf_static are published with an empty namespace.
+        // The key must NOT contain a double slash between the domain id and topic.
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeKeyExpr(
+            domainId: 0,
+            namespace: "",
+            topic: "tf_static",
+            typeName: "tf2_msgs/msg/TFMessage",
+            typeHash: "RIHS01_abc123"
+        )
+        XCTAssertEqual(key, "0/tf_static/tf2_msgs::msg::dds_::TFMessage_/RIHS01_abc123")
+    }
+
     func testJazzyKeyExpressionWithoutTypeHash() {
         let codec = ZenohWireCodec(distro: .jazzy)
         let key = codec.makeKeyExpr(

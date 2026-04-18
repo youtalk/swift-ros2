@@ -11,7 +11,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
-#include <dispatch/dispatch.h>
+#ifdef __APPLE__
+  #include <dispatch/dispatch.h>
+#endif
 
 // Only compile CycloneDDS implementation when available
 #ifdef DDS_AVAILABLE
@@ -322,6 +324,7 @@ void dds_bridge_destroy_session(bridge_dds_session_t* session) {
         if (g_skip_participant_delete) {
             session->participant = 0;
         } else {
+#ifdef __APPLE__
             __block dds_return_t delete_result = -1;
             dds_entity_t participant_to_delete = session->participant;
 
@@ -342,7 +345,12 @@ void dds_bridge_destroy_session(bridge_dds_session_t* session) {
                        (int)participant_to_delete);
                 g_skip_participant_delete = true;
             }
-
+#else
+            /* Non-Apple (Linux): no GCD dispatch timeout — just call
+             * dds_delete directly. CycloneDDS on Linux does not exhibit
+             * the iOS sleep/wake hang that motivated the Apple path. */
+            (void)dds_delete(session->participant);
+#endif
             session->participant = 0;
         }
     }

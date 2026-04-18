@@ -8,7 +8,7 @@ import SwiftROS2CDR
 public struct Illuminance: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "sensor_msgs/msg/Illuminance",
-        typeHash: "RIHS01_d2f45928d0e7b1d6c5fa543e23c66e1cc7d104402c428c1a27a6e49e4d8e0a49"
+        typeHash: "RIHS01_b954b25f452fcf81a91c9c2a7e3b3fd85c4c873d452aecb3cfd8fd1da732a22d"
     )
 
     public var header: Header

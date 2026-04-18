@@ -8,7 +8,7 @@ import SwiftROS2CDR
 public struct MagneticField: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "sensor_msgs/msg/MagneticField",
-        typeHash: "RIHS01_cde4732e416541ed0489ba6e7aa368c3af6a1b83dcb839e3af88a3a5e5cd4b40"
+        typeHash: "RIHS01_e80f32f56a20486c9923008fc1a1db07bbb273cbbf6a5b3bfa00835ee00e4dff"
     )
 
     public var header: Header

@@ -22,6 +22,7 @@ public struct Range: ROS2Message {
     public var minRange: Float
     public var maxRange: Float
     public var range: Float
+    public var variance: Float
 
     public init(
         header: Header = Header(),
@@ -29,7 +30,8 @@ public struct Range: ROS2Message {
         fieldOfView: Float = 0.0,
         minRange: Float = 0.0,
         maxRange: Float = 0.0,
-        range: Float = 0.0
+        range: Float = 0.0,
+        variance: Float = 0.0
     ) {
         self.header = header
         self.radiationType = radiationType.rawValue
@@ -37,6 +39,7 @@ public struct Range: ROS2Message {
         self.minRange = minRange
         self.maxRange = maxRange
         self.range = range
+        self.variance = variance
     }
 
     public func encode(to encoder: CDREncoder) throws {
@@ -47,6 +50,10 @@ public struct Range: ROS2Message {
         encoder.writeFloat32(minRange)
         encoder.writeFloat32(maxRange)
         encoder.writeFloat32(range)
+        // `variance` was added to sensor_msgs/Range after Humble — skip on legacy wire.
+        if !encoder.isLegacyDistro {
+            encoder.writeFloat32(variance)
+        }
     }
 
     public init(from decoder: CDRDecoder) throws {
@@ -56,5 +63,10 @@ public struct Range: ROS2Message {
         self.minRange = try decoder.readFloat32()
         self.maxRange = try decoder.readFloat32()
         self.range = try decoder.readFloat32()
+        if decoder.isLegacyDistro {
+            self.variance = 0
+        } else {
+            self.variance = try decoder.readFloat32()
+        }
     }
 }

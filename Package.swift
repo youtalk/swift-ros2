@@ -7,14 +7,14 @@ let package = Package(
     platforms: [
         .iOS(.v16),
         .macOS(.v13),
-        .visionOS(.v1)
+        .visionOS(.v1),
     ],
     products: [
         .library(name: "SwiftROS2", targets: ["SwiftROS2"]),
         .library(name: "SwiftROS2CDR", targets: ["SwiftROS2CDR"]),
         .library(name: "SwiftROS2Messages", targets: ["SwiftROS2Messages"]),
         .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
-        .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"])
+        .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
     ],
     targets: [
         // CDR serialization (pure Swift, no dependencies)
@@ -49,7 +49,7 @@ let package = Package(
             dependencies: [
                 "SwiftROS2Messages",
                 "SwiftROS2Transport",
-                "SwiftROS2Wire"
+                "SwiftROS2Wire",
             ],
             path: "Sources/SwiftROS2"
         ),
@@ -69,6 +69,6 @@ let package = Package(
             name: "SwiftROS2Tests",
             dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2CDR"],
             path: "Tests/SwiftROS2Tests"
-        )
+        ),
     ]
 )

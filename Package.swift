@@ -139,5 +139,10 @@ let package = Package(
             dependencies: ["SwiftROS2DDS"],
             path: "Tests/SwiftROS2DDSTests"
         ),
+        .testTarget(
+            name: "SwiftROS2IntegrationTests",
+            dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport"],
+            path: "Tests/SwiftROS2IntegrationTests"
+        ),
     ]
 )

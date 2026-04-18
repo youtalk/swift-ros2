@@ -10,7 +10,20 @@
 import CZenohBridge
 import Foundation
 import SwiftROS2Transport
-import os.log
+
+#if canImport(os.log)
+    import os.log
+#else
+    /// Minimal shim so the os.log call sites compile on Linux. Logs are
+    /// discarded — debug output on Linux is currently the C-layer fprintf.
+    public struct Logger {
+        public init(subsystem: String, category: String) {}
+        public func info(_ message: @autoclosure () -> String) {}
+        public func error(_ message: @autoclosure () -> String) {}
+        public func debug(_ message: @autoclosure () -> String) {}
+        public func warning(_ message: @autoclosure () -> String) {}
+    }
+#endif
 
 // MARK: - Declared Key Expression
 

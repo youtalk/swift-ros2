@@ -14,11 +14,12 @@ public final class CDREncoder {
 
     /// When true, serialize the pre-Jazzy schema (omits fields added after Humble,
     /// e.g. `sensor_msgs/Range.variance`). Defaults to false = Jazzy-compatible.
-    public var isLegacyDistro: Bool = false
+    /// Fixed at construction so a partially-written buffer cannot change variants mid-encode.
+    public let isLegacySchema: Bool
 
-    public init(estimatedSize: Int = 256, isLegacyDistro: Bool = false) {
+    public init(estimatedSize: Int = 256, isLegacySchema: Bool = false) {
         buffer = Data(capacity: estimatedSize)
-        self.isLegacyDistro = isLegacyDistro
+        self.isLegacySchema = isLegacySchema
     }
 
     public func reset() {

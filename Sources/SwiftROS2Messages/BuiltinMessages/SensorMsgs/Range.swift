@@ -51,7 +51,7 @@ public struct Range: ROS2Message {
         encoder.writeFloat32(maxRange)
         encoder.writeFloat32(range)
         // `variance` was added to sensor_msgs/Range after Humble — skip on legacy wire.
-        if !encoder.isLegacyDistro {
+        if !encoder.isLegacySchema {
             encoder.writeFloat32(variance)
         }
     }
@@ -63,7 +63,7 @@ public struct Range: ROS2Message {
         self.minRange = try decoder.readFloat32()
         self.maxRange = try decoder.readFloat32()
         self.range = try decoder.readFloat32()
-        if decoder.isLegacyDistro {
+        if decoder.isLegacySchema {
             self.variance = 0
         } else {
             self.variance = try decoder.readFloat32()

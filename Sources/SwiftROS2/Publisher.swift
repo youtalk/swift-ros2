@@ -14,18 +14,18 @@ import SwiftROS2Transport
 /// ```
 public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked Sendable, PublisherCloseable {
     private let transportPublisher: any TransportPublisher
-    private let isLegacyDistro: Bool
+    private let isLegacySchema: Bool
     private var sequenceNumber: Int64 = 0
     private let lock = NSLock()
 
-    init(transportPublisher: any TransportPublisher, isLegacyDistro: Bool = false) {
+    init(transportPublisher: any TransportPublisher, isLegacySchema: Bool = false) {
         self.transportPublisher = transportPublisher
-        self.isLegacyDistro = isLegacyDistro
+        self.isLegacySchema = isLegacySchema
     }
 
     /// Publish a message
     public func publish(_ message: M) throws {
-        let encoder = CDREncoder(isLegacyDistro: isLegacyDistro)
+        let encoder = CDREncoder(isLegacySchema: isLegacySchema)
         try message.encode(to: encoder)
         let data = encoder.getData()
 

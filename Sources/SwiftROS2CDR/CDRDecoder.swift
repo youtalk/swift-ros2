@@ -36,11 +36,12 @@ public final class CDRDecoder {
 
     /// When true, deserialize the pre-Jazzy schema (omits fields added after Humble,
     /// e.g. `sensor_msgs/Range.variance`). Defaults to false = Jazzy-compatible.
-    public var isLegacyDistro: Bool = false
+    /// Fixed at construction so decoding a partially-consumed buffer cannot change variants.
+    public let isLegacySchema: Bool
 
     /// Create a decoder from CDR data (validates encapsulation header)
-    public init(data: Data, isLegacyDistro: Bool = false) throws {
-        self.isLegacyDistro = isLegacyDistro
+    public init(data: Data, isLegacySchema: Bool = false) throws {
+        self.isLegacySchema = isLegacySchema
         guard data.count >= 4 else {
             throw CDRDecodingError.invalidEncapsulationHeader
         }

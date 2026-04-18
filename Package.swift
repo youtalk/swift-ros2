@@ -124,5 +124,10 @@ let package = Package(
             dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2CDR"],
             path: "Tests/SwiftROS2Tests"
         ),
+        .testTarget(
+            name: "SwiftROS2ZenohTests",
+            dependencies: ["SwiftROS2Zenoh"],
+            path: "Tests/SwiftROS2ZenohTests"
+        ),
     ]
 )

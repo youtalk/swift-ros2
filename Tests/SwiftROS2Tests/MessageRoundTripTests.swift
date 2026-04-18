@@ -415,4 +415,70 @@ final class MessageRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded.magneticField, original.magneticField)
         XCTAssertEqual(decoded.magneticFieldCovariance, original.magneticFieldCovariance)
     }
+
+    func testNavSatFixRoundTrip() throws {
+        let original = NavSatFix(
+            header: Header(sec: 1700000000, nanosec: 123456789, frameId: "gps_link"),
+            status: NavSatStatus(status: NavSatStatus.statusFix, service: NavSatStatus.serviceGPS),
+            latitude: 37.7749,
+            longitude: -122.4194,
+            altitude: 30.5,
+            positionCovariance: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            positionCovarianceType: .diagonalKnown
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try NavSatFix(from: decoder)
+
+        XCTAssertEqual(decoded.header.frameId, "gps_link")
+        XCTAssertEqual(decoded.status.status, NavSatStatus.statusFix)
+        XCTAssertEqual(decoded.status.service, NavSatStatus.serviceGPS)
+        XCTAssertEqual(decoded.latitude, 37.7749, accuracy: 1e-9)
+        XCTAssertEqual(decoded.longitude, -122.4194, accuracy: 1e-9)
+        XCTAssertEqual(decoded.altitude, 30.5, accuracy: 1e-9)
+        XCTAssertEqual(decoded.positionCovariance, original.positionCovariance)
+        XCTAssertEqual(decoded.positionCovarianceType, NavSatFix.CovarianceType.diagonalKnown.rawValue)
+    }
+
+    /// Locks the byte-level CDR layout of sensor_msgs/NavSatFix to the IDL offsets so
+    /// stray manual padding cannot drift the fields again. Round-trip tests alone miss
+    /// this class of bug because a buggy encoder pairs with a symmetrically-buggy
+    /// decoder — a receiver that auto-aligns per CDR spec would read garbage in the
+    /// latitude slot (see GPS lat/alt swap report in downstream projects).
+    ///
+    /// With frame_id = "gps_link" (8 chars + null), the relative dataPosition after
+    /// encoding the Header is 21. NavSatStatus then writes int8 (→22) and auto-aligned
+    /// uint16 (→24), which leaves the first float64 (latitude) 8-aligned at
+    /// dataPosition 24. Absolute offsets include the 4-byte encapsulation header.
+    func testNavSatFixCDRLayoutMatchesROS2IDL() throws {
+        let latitude = 37.7749
+        let longitude = -122.4194
+        let altitude = 30.5
+
+        let message = NavSatFix(
+            header: Header(sec: 0, nanosec: 0, frameId: "gps_link"),
+            status: NavSatStatus(status: NavSatStatus.statusFix, service: NavSatStatus.serviceGPS),
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude
+        )
+
+        let encoder = CDREncoder()
+        try message.encode(to: encoder)
+        let bytes = encoder.getData()
+
+        func readF64(_ offset: Int) -> Double {
+            let raw = bytes.subdata(in: offset..<(offset + 8))
+            let bits = raw.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
+            return Double(bitPattern: UInt64(littleEndian: bits))
+        }
+
+        // encap(4) + Header → dataPos 21, int8 status → 22, uint16 service (auto-aligned) → 24.
+        // latitude / longitude / altitude land at absolute 28 / 36 / 44.
+        XCTAssertEqual(readF64(28), latitude, accuracy: 1e-12, "latitude must be at IDL offset 28")
+        XCTAssertEqual(readF64(36), longitude, accuracy: 1e-12, "longitude must be at IDL offset 36")
+        XCTAssertEqual(readF64(44), altitude, accuracy: 1e-12, "altitude must be at IDL offset 44")
+    }
 }

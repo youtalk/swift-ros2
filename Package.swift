@@ -2,6 +2,52 @@
 
 import PackageDescription
 
+// Apple platforms: pre-built xcframework binaryTargets hosted on
+// GitHub Releases. Linux: compile the C sources directly via SPM (+ a
+// system-installed libddsc via pkg-config). See Scripts/build-xcframework.sh
+// for the macOS build helper that produces the Apple artifacts.
+let xcframeworkBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/v0.2.0-rc.1"
+
+let cZenohPico: Target = {
+    #if os(Linux)
+        return .target(
+            name: "CZenohPico",
+            path: "vendor/zenoh-pico",
+            exclude: ["CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci"],
+            sources: ["src"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("src"),
+                .define("Z_FEATURE_LINK_TCP", to: "1"),
+                .define("Z_FEATURE_LIVELINESS", to: "1"),
+                .define("ZENOH_LINUX", to: "1"),
+            ]
+        )
+    #else
+        return .binaryTarget(
+            name: "CZenohPico",
+            url: "\(xcframeworkBaseURL)/CZenohPico.xcframework.zip",
+            checksum: "631adffee3823f81d99791ffc0173d04936c0f33d8dd6309c5acd47154de6040"
+        )
+    #endif
+}()
+
+let cCycloneDDS: Target = {
+    #if os(Linux)
+        return .systemLibrary(
+            name: "CCycloneDDS",
+            path: "Sources/CCycloneDDS",
+            pkgConfig: "CycloneDDS"
+        )
+    #else
+        return .binaryTarget(
+            name: "CCycloneDDS",
+            url: "\(xcframeworkBaseURL)/CCycloneDDS.xcframework.zip",
+            checksum: "6db94bcb1c9303069490324cd057a19ff900e33466ecb18145cffc09785c14c5"
+        )
+    #endif
+}()
+
 let package = Package(
     name: "swift-ros2",
     platforms: [
@@ -46,20 +92,11 @@ let package = Package(
             path: "Sources/SwiftROS2Transport"
         ),
 
-        // System libraries wrapping the native C FFI (local .a bootstrap;
-        // Phase 2 switches these to xcframework binaryTargets hosted on
-        // GitHub Releases). PKG_CONFIG_PATH must include Vendor/pkgconfig
-        // during bootstrap builds.
-        .systemLibrary(
-            name: "CZenohPico",
-            path: "Sources/CZenohPico",
-            pkgConfig: "ZenohPico"
-        ),
-        .systemLibrary(
-            name: "CCycloneDDS",
-            path: "Sources/CCycloneDDS",
-            pkgConfig: "CycloneDDS"
-        ),
+        // Native C FFI: zenoh-pico + CycloneDDS. Apple platforms receive
+        // pre-built xcframeworks; Linux compiles from source (zenoh-pico)
+        // and links via pkg-config (CycloneDDS).
+        cZenohPico,
+        cCycloneDDS,
 
         // C bridges (Conduit-authored FFI shims that simplify the zenoh-pico
         // and CycloneDDS APIs for Swift callers).

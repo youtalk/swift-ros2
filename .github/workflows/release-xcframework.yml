@@ -1,0 +1,78 @@
+name: Release xcframeworks
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach artifacts to"
+        required: true
+
+concurrency:
+  group: release-xcframework-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.framework }}.xcframework
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        framework:
+          - zenoh-pico
+          - cyclonedds
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.2"
+      - name: Install CMake
+        run: |
+          brew update
+          brew install cmake
+      - name: Build xcframework
+        run: Scripts/build-xcframework.sh ${{ matrix.framework }} artifacts
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.framework }}-xcframework
+          path: |
+            artifacts/*.zip
+            artifacts/*.checksum
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Attach to release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Flatten artifacts
+        run: |
+          mkdir -p upload
+          find artifacts -type f \( -name "*.zip" -o -name "*.checksum" \) -exec cp {} upload/ \;
+          ls -la upload
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "${{ github.repository }}" || \
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "$TAG" --generate-notes --verify-tag
+          gh release upload "$TAG" --repo "${{ github.repository }}" --clobber \
+            upload/CZenohPico.xcframework.zip \
+            upload/CZenohPico.xcframework.zip.checksum \
+            upload/CCycloneDDS.xcframework.zip \
+            upload/CCycloneDDS.xcframework.zip.checksum

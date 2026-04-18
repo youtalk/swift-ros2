@@ -81,7 +81,10 @@ let package = Package(
             dependencies: ["CCycloneDDS"],
             path: "Sources/CDDSBridge",
             sources: ["dds_bridge.c", "raw_cdr_sertype.c", "raw_cdr_regression_bridge.c"],
-            publicHeadersPath: "include"
+            publicHeadersPath: "include",
+            cSettings: [
+                .define("DDS_AVAILABLE", to: "1"),
+            ]
         ),
 
         // Swift-facing Zenoh / DDS modules. Expand in T1.7 and T1.8 with
@@ -128,6 +131,11 @@ let package = Package(
             name: "SwiftROS2ZenohTests",
             dependencies: ["SwiftROS2Zenoh"],
             path: "Tests/SwiftROS2ZenohTests"
+        ),
+        .testTarget(
+            name: "SwiftROS2DDSTests",
+            dependencies: ["SwiftROS2DDS"],
+            path: "Tests/SwiftROS2DDSTests"
         ),
     ]
 )

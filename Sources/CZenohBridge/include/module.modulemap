@@ -1,5 +1,4 @@
 module CZenohBridge {
     header "zenoh_bridge.h"
-    link "zenohpico"
     export *
 }

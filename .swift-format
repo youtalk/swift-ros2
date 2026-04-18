@@ -45,6 +45,7 @@
         "OnlyOneTrailingClosureArgument": true,
         "OrderedImports": true,
         "ReturnVoidInsteadOfEmptyTuple": true,
+        "TrailingComma": false,
         "UseEarlyExits": false,
         "UseLetInEveryBoundCaseVariable": true,
         "UseShorthandTypeNames": true,

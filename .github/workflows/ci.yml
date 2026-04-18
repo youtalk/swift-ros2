@@ -36,7 +36,7 @@ jobs:
         run: swiftlint lint --strict
 
   build-test:
-    name: Build & Test (Swift ${{ matrix.swift }})
+    name: Build & Test
     needs: [swift-format, swiftlint]
     runs-on: ubuntu-latest
     strategy:

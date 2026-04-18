@@ -7,10 +7,17 @@ import SwiftROS2Transport
 
 // MARK: - Writer handle
 
+/// Per-box lock serializes destroy vs. publish for the same writer so callers
+/// can use writers from multiple threads without racing destroy/write on a
+/// freed pointer. Different writers hold different locks, so parallel writes
+/// across writers stay lock-free.
 private final class DDSWriterHandleBox: DDSWriterHandle {
     private var writer: OpaquePointer?
+    private let lock = NSLock()
 
     var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
         guard let w = writer else { return false }
         return dds_bridge_writer_is_active(w)
     }
@@ -20,22 +27,35 @@ private final class DDSWriterHandleBox: DDSWriterHandle {
     }
 
     func close() {
+        lock.lock()
+        defer { lock.unlock() }
         if let w = writer {
             dds_bridge_destroy_writer(w)
             writer = nil
         }
     }
 
-    var raw: OpaquePointer? { writer }
+    /// Invokes `body` with the live writer pointer while holding the per-box
+    /// lock so concurrent `close()` cannot free it mid-call. Returns nil if
+    /// the writer has already been closed.
+    func withWriter<T>(_ body: (OpaquePointer) -> T) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let w = writer else { return nil }
+        return body(w)
+    }
 }
 
 // MARK: - DefaultDDSClient
 
-/// Thread-safety: internal `NSLock` serializes `createSession` / `destroySession` /
-/// `isConnected` / `getSessionId` / `createRawWriter`. `writeRawCDR` and
-/// `destroyWriter` are intentionally lock-free — CycloneDDS writer operations are
-/// thread-safe, and taking the lock on the publish hot path would serialize all
-/// writers. Callers must ensure writers outlive the session.
+/// Thread-safety: the client-level `NSLock` serializes `createSession` /
+/// `destroySession` / `isConnected` / `getSessionId` / `createRawWriter`.
+/// `writeRawCDR` and `destroyWriter` do not take the client-level lock so
+/// parallel writes across different writers stay unserialized, but each
+/// writer carries its own per-`DDSWriterHandleBox` lock that serializes
+/// `writeRawCDR` against `destroyWriter` for the *same* writer (preventing
+/// use-after-free on the underlying CycloneDDS writer pointer). Callers must
+/// still ensure writers outlive the session.
 public final class DefaultDDSClient: DDSClientProtocol {
     private var session: OpaquePointer?
     private let lock = NSLock()
@@ -173,16 +193,21 @@ public final class DefaultDDSClient: DDSClientProtocol {
         data: Data,
         timestamp: UInt64
     ) throws {
-        guard let box = writer as? DDSWriterHandleBox, let raw = box.raw else {
-            throw DDSError.writeFailed("foreign or closed DDS writer handle")
+        guard let box = writer as? DDSWriterHandleBox else {
+            throw DDSError.writeFailed("foreign DDS writer handle")
         }
-        let result: Int32 = data.withUnsafeBytes { buf -> Int32 in
+        let result: Int32? = data.withUnsafeBytes { buf -> Int32? in
             guard let ptr = buf.bindMemory(to: UInt8.self).baseAddress else { return -1 }
-            return dds_bridge_write_raw_cdr(raw, ptr, data.count, timestamp)
+            return box.withWriter { raw in
+                dds_bridge_write_raw_cdr(raw, ptr, data.count, timestamp)
+            }
         }
-        if result != 0 {
+        guard let code = result else {
+            throw DDSError.writeFailed("DDS writer handle has been closed")
+        }
+        if code != 0 {
             let msg = String(cString: dds_bridge_get_last_error())
-            throw DDSError.writeFailed("dds_bridge_write_raw_cdr=\(result): \(msg)")
+            throw DDSError.writeFailed("dds_bridge_write_raw_cdr=\(code): \(msg)")
         }
     }
 

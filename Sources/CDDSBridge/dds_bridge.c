@@ -123,76 +123,124 @@ static int32_t g_domain_id = -1;
 #endif
 
 #ifdef DDS_AVAILABLE
+#define DOMAIN_CONFIG_XML_SIZE 8192
+
+// Append formatted text to the XML buffer, checking for overflow/truncation.
+// On overflow or encoding error, frees the buffer, sets *xml_out to NULL, and
+// returns false so the caller can abort.
+static bool xml_append(char** xml_out, size_t* offset, const char* fmt, ...)
+    __attribute__((format(printf, 3, 4)));
+
+static bool xml_append(char** xml_out, size_t* offset, const char* fmt, ...) {
+    if (!xml_out || !*xml_out || !offset) {
+        return false;
+    }
+    if (*offset >= DOMAIN_CONFIG_XML_SIZE) {
+        free(*xml_out);
+        *xml_out = NULL;
+        return false;
+    }
+    size_t remaining = DOMAIN_CONFIG_XML_SIZE - *offset;
+
+    va_list ap;
+    va_start(ap, fmt);
+    int needed = vsnprintf(*xml_out + *offset, remaining, fmt, ap);
+    va_end(ap);
+
+    if (needed < 0 || (size_t)needed >= remaining) {
+        // Encoding error or truncation - treat as fatal.
+        free(*xml_out);
+        *xml_out = NULL;
+        return false;
+    }
+    *offset += (size_t)needed;
+    return true;
+}
+
 /// Build XML configuration string for CycloneDDS domain
 /// Returns a malloc'd string that must be freed by the caller
 static char* build_domain_config_xml(int32_t domain_id, const bridge_discovery_config_t* config) {
-    // Buffer for XML configuration
-    char* xml = malloc(8192);
+    char* xml = malloc(DOMAIN_CONFIG_XML_SIZE);
     if (!xml) {
         return NULL;
     }
 
-    // Start building XML
-    int offset = 0;
-    offset += snprintf(xml + offset, 8192 - offset,
+    size_t offset = 0;
+    if (!xml_append(&xml, &offset,
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<CycloneDDS xmlns=\"https://cdds.io/config\">\n"
         "  <Domain id=\"%d\">\n",
-        domain_id);
+        domain_id)) {
+        return NULL;
+    }
 
     // Add discovery configuration
     if (config && (config->unicast_peers && config->peer_count > 0)) {
-        offset += snprintf(xml + offset, 8192 - offset,
+        if (!xml_append(&xml, &offset,
             "    <Discovery>\n"
-            "      <Peers>\n");
+            "      <Peers>\n")) {
+            return NULL;
+        }
 
         // Add each peer
         for (int i = 0; i < config->peer_count; i++) {
-            offset += snprintf(xml + offset, 8192 - offset,
+            if (!xml_append(&xml, &offset,
                 "        <Peer address=\"%s\"/>\n",
-                config->unicast_peers[i]);
+                config->unicast_peers[i])) {
+                return NULL;
+            }
         }
 
-        offset += snprintf(xml + offset, 8192 - offset,
-            "      </Peers>\n");
+        if (!xml_append(&xml, &offset, "      </Peers>\n")) {
+            return NULL;
+        }
 
         // Disable multicast SPDP if in unicast-only mode
         if (config->mode == BRIDGE_DISCOVERY_UNICAST) {
-            offset += snprintf(xml + offset, 8192 - offset,
-                "      <EnableTopicDiscoveryEndpoints>true</EnableTopicDiscoveryEndpoints>\n");
+            if (!xml_append(&xml, &offset,
+                "      <EnableTopicDiscoveryEndpoints>true</EnableTopicDiscoveryEndpoints>\n")) {
+                return NULL;
+            }
         }
 
         // Faster SPDP discovery for mobile devices (default is 30s)
-        offset += snprintf(xml + offset, 8192 - offset,
-            "      <SPDPInterval>1s</SPDPInterval>\n");
+        if (!xml_append(&xml, &offset, "      <SPDPInterval>1s</SPDPInterval>\n")) {
+            return NULL;
+        }
 
-        offset += snprintf(xml + offset, 8192 - offset,
-            "    </Discovery>\n");
+        if (!xml_append(&xml, &offset, "    </Discovery>\n")) {
+            return NULL;
+        }
     }
 
     // General configuration: network interface + large message support
-    offset += snprintf(xml + offset, 8192 - offset,
-        "    <General>\n");
+    if (!xml_append(&xml, &offset, "    <General>\n")) {
+        return NULL;
+    }
 
     // Network interface binding
     if (config && config->network_interface && strlen(config->network_interface) > 0) {
-        offset += snprintf(xml + offset, 8192 - offset,
+        if (!xml_append(&xml, &offset,
             "      <Interfaces>\n"
             "        <NetworkInterface name=\"%s\"/>\n"
             "      </Interfaces>\n",
-            config->network_interface);
+            config->network_interface)) {
+            return NULL;
+        }
     }
 
     // Keep default MaxMessageSize (14720B) and FragmentSize (1344B).
     // Large payloads like camera images are automatically fragmented at
     // the DDS level by CycloneDDS's RTPS fragmentation (DATA_FRAG).
-    offset += snprintf(xml + offset, 8192 - offset,
-        "    </General>\n");
+    if (!xml_append(&xml, &offset, "    </General>\n")) {
+        return NULL;
+    }
 
-    // Close XML
-    snprintf(xml + offset, 8192 - offset,
+    if (!xml_append(&xml, &offset,
         "  </Domain>\n"
-        "</CycloneDDS>\n");
+        "</CycloneDDS>\n")) {
+        return NULL;
+    }
 
     return xml;
 }
@@ -553,43 +601,22 @@ int32_t dds_bridge_write_cdr(
     size_t cdr_len,
     uint64_t timestamp_ns
 ) {
-    if (!writer || !cdr_data || cdr_len == 0) {
-        set_error("Invalid parameters for dds_bridge_write_cdr");
-        return -1;
-    }
-
-    if (!writer->is_active) {
-        set_error("Writer is not active");
-        return -2;
-    }
-
-#ifdef DDS_AVAILABLE
-    // Verify CDR data has encapsulation header
-    if (cdr_len < 4) {
-        set_error("CDR data too short (missing encapsulation header)");
-        return -3;
-    }
-
-    // Write pre-serialized CDR data
-    // Note: CycloneDDS requires using dds_write_ts for timestamped data
-    // The timestamp is set via the source timestamp
-    dds_time_t timestamp = (dds_time_t)timestamp_ns;
-
-    // Set source timestamp
-    // Note: This may require a custom serdata implementation for full control
-    dds_return_t ret = dds_write_ts(writer->writer, cdr_data, timestamp);
-
-    if (ret < 0) {
-        set_error("Failed to write CDR data: %s", dds_strretcode(ret));
-        return -4;
-    }
-
-    return 0;
-#else
-    // Stub implementation - just validate parameters
+    // This API is documented as publishing pre-serialized CDR bytes, but
+    // dds_write_ts expects a pointer to an in-memory sample matching the
+    // writer's topic descriptor, not serialized wire-format data. Using it
+    // here would publish incorrect data on the wire. Until this function is
+    // reworked to use CycloneDDS's proper serialized/CDR write path (similar
+    // to dds_bridge_write_raw_cdr), fail explicitly instead of attempting an
+    // invalid write. New code should use dds_bridge_create_raw_writer +
+    // dds_bridge_write_raw_cdr.
+    (void)writer;
+    (void)cdr_data;
+    (void)cdr_len;
     (void)timestamp_ns;
-    return 0;
-#endif
+    set_error(
+        "dds_bridge_write_cdr is not supported: use dds_bridge_create_raw_writer "
+        "+ dds_bridge_write_raw_cdr for pre-serialized CDR publishing");
+    return -4;
 }
 
 // =============================================================================
@@ -776,13 +803,14 @@ int32_t dds_bridge_write_raw_cdr(
         return -5;
     }
 
-    // Write using dds_writecdr (this takes ownership of serdata reference)
+    // Write using dds_writecdr. On success CycloneDDS consumes the serdata
+    // reference; on failure ownership stays with us, so we must unref to avoid
+    // leaking one serdata per failed publish.
     dds_return_t ret = dds_writecdr(writer->writer, serdata);
 
     if (ret < 0) {
         set_error("Failed to write raw CDR data: %s", dds_strretcode(ret));
-        // Note: dds_writecdr may not consume the reference on error
-        // but in practice we shouldn't double-unref
+        ddsi_serdata_unref(serdata);
         return -6;
     }
 

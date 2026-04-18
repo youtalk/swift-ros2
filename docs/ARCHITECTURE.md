@@ -19,5 +19,10 @@ inject mocks for unit testing.
      ├── SwiftROS2Zenoh    ─── CZenohBridge ─── CZenohPico
      └── SwiftROS2DDS      ─── CDDSBridge   ─── CCycloneDDS
 
-`CZenohPico` and `CCycloneDDS` are binaryTargets on Apple platforms and
-system-library / source targets on Linux.
+In the current Phase 1 build, `CZenohPico` and `CCycloneDDS` are exposed as
+`systemLibrary` targets. On Apple platforms, linkage is provided via `pkg-config`
+plus locally staged static `.a` libraries (populated by
+`Scripts/bootstrap-maccatalyst.sh`). On Linux, they resolve against the
+system-installed zenoh-pico / CycloneDDS (or source builds produced by
+`Scripts/build-linux-deps.sh`). A platform-specific `binaryTarget` setup can be
+documented separately if adopted in Phase 2.

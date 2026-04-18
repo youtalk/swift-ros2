@@ -65,6 +65,15 @@ public class ZenohSubscriber {
             throw ZenohError.internalError("Subscriber already closed")
         }
 
+        // Release Swift-side resources regardless of the C-side outcome so a
+        // failed undeclare does not leak the retained context or leave the
+        // handle pointing at freed state for a subsequent close() attempt.
+        defer {
+            handle = nil
+            contextBox?.release()
+            contextBox = nil
+        }
+
         guard let sess = session, let sessionHandle = sess.sessionHandle else {
             throw ZenohError.internalError("Session is no longer valid")
         }
@@ -75,12 +84,6 @@ public class ZenohSubscriber {
         if result < 0 {
             throw ZenohError.unsubscribeFailed("Error code: \(result)")
         }
-
-        handle = nil
-
-        // Release the retained context to prevent memory leak
-        contextBox?.release()
-        contextBox = nil
     }
 
     deinit {
@@ -193,12 +196,19 @@ public class DefaultZenohClient: ZenohClientProtocol {
             throw ZenohError.sessionCloseFailed("Session not open")
         }
 
-        // Copy resources under lock, then close outside lock to avoid deadlock
+        // Copy resources under lock, then close/release outside lock so that
+        // DeclaredKeyExpr / ZenohSubscriber / LivelinessToken deinits — which
+        // call back into zenoh_undeclare_* — do not run while we hold
+        // resourceLock. `keyExprsToRelease` keeps the declared-keyexpr refs
+        // alive across the unlock so their deinits fire when it goes out of
+        // scope at the end of this method.
         let tokensToClose: [LivelinessToken]
         let subscribersToClose: [ZenohSubscriber]
+        let keyExprsToRelease: [DeclaredKeyExpr]
         resourceLock.lock()
         tokensToClose = livelinessTokens
         subscribersToClose = subscribers
+        keyExprsToRelease = declaredKeyExprs
         livelinessTokens.removeAll()
         subscribers.removeAll()
         declaredKeyExprs.removeAll()
@@ -213,6 +223,9 @@ public class DefaultZenohClient: ZenohClientProtocol {
         for subscriber in subscribersToClose {
             try? subscriber.close()
         }
+
+        // keyExprsToRelease is intentionally kept alive until method exit.
+        _ = keyExprsToRelease
 
         // Close the session
         var mutableSess: OpaquePointer? = sess

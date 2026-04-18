@@ -87,8 +87,9 @@ let package = Package(
             ]
         ),
 
-        // Swift-facing Zenoh / DDS modules. Expand in T1.7 and T1.8 with
-        // DefaultZenohClient / DefaultDDSClient implementations.
+        // Swift-facing Zenoh / DDS modules. Host DefaultZenohClient /
+        // DefaultDDSClient, which conform to the ZenohClientProtocol /
+        // DDSClientProtocol defined in SwiftROS2Transport.
         .target(
             name: "SwiftROS2Zenoh",
             dependencies: ["CZenohBridge", "SwiftROS2Transport", "SwiftROS2Wire"],

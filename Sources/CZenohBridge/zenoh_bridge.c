@@ -39,7 +39,7 @@ struct zenoh_liveliness_token_t {
 // ============================================================================
 
 zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_session) {
-    os_log_t log = os_log_create("jp.youtalk.conduit", "zenoh");
+    os_log_t log = os_log_create("com.youtalk.swift-ros2", "zenoh");
 
     if (!locator || !out_session) {
         os_log_error(log, "[zenoh_bridge] ERROR: Invalid parameters");
@@ -143,7 +143,7 @@ zenoh_result_t zenoh_get_session_id(zenoh_session_t* session, char* out_buffer, 
 }
 
 bool zenoh_is_session_healthy(zenoh_session_t* session) {
-    os_log_t log = os_log_create("jp.youtalk.conduit", "zenoh");
+    os_log_t log = os_log_create("com.youtalk.swift-ros2", "zenoh");
 
     if (!session) {
         os_log_error(log, "[zenoh_bridge] is_session_healthy: session is NULL");
@@ -185,7 +185,7 @@ bool zenoh_is_session_healthy(zenoh_session_t* session) {
 zenoh_result_t zenoh_declare_keyexpr(zenoh_session_t* session,
                                       const char* keyexpr_str,
                                       zenoh_keyexpr_t** out_keyexpr) {
-    os_log_t log = os_log_create("jp.youtalk.conduit", "zenoh");
+    os_log_t log = os_log_create("com.youtalk.swift-ros2", "zenoh");
 
     if (!session || !keyexpr_str || !out_keyexpr) {
         os_log_error(log, "[zenoh_bridge] declare_keyexpr: Invalid parameters");
@@ -464,7 +464,7 @@ zenoh_result_t zenoh_undeclare_subscriber(zenoh_session_t* session,
 zenoh_result_t zenoh_declare_liveliness_token(zenoh_session_t* session,
                                               const char* key_expr,
                                               zenoh_liveliness_token_t** out_token) {
-    os_log_t log = os_log_create("jp.youtalk.conduit", "zenoh");
+    os_log_t log = os_log_create("com.youtalk.swift-ros2", "zenoh");
 
     if (!session || !key_expr || !out_token) {
         os_log_error(log, "[zenoh_bridge] declare_liveliness_token: Invalid parameters");

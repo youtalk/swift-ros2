@@ -91,7 +91,7 @@ public final class ROS2Node: @unchecked Sendable {
             typeName: typeInfo.typeName,
             typeHash: typeInfo.typeHash,
             qos: transportQoS,
-            handler: { [weak subscription] data, timestamp in
+            handler: { [weak subscription] data, _ in
                 guard let subscription = subscription else { return }
                 do {
                     let decoder = try CDRDecoder(data: data)

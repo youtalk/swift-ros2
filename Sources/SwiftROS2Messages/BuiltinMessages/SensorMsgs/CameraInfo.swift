@@ -15,10 +15,10 @@ public struct CameraInfo: ROS2Message {
     public var height: UInt32
     public var width: UInt32
     public var distortionModel: String
-    public var d: [Double]           // distortion parameters (variable length)
-    public var k: [Double]           // intrinsic camera matrix (3x3 = 9)
-    public var r: [Double]           // rectification matrix (3x3 = 9)
-    public var p: [Double]           // projection matrix (3x4 = 12)
+    public var d: [Double]  // distortion parameters (variable length)
+    public var k: [Double]  // intrinsic camera matrix (3x3 = 9)
+    public var r: [Double]  // rectification matrix (3x3 = 9)
+    public var p: [Double]  // projection matrix (3x4 = 12)
     public var binningX: UInt32
     public var binningY: UInt32
     public var roi: RegionOfInterest
@@ -55,10 +55,10 @@ public struct CameraInfo: ROS2Message {
         encoder.writeUInt32(height)
         encoder.writeUInt32(width)
         encoder.writeString(distortionModel)
-        encoder.writeFloat64Sequence(d)       // variable-length sequence
-        encoder.writeFloat64Array(k)          // fixed 9
-        encoder.writeFloat64Array(r)          // fixed 9
-        encoder.writeFloat64Array(p)          // fixed 12
+        encoder.writeFloat64Sequence(d)  // variable-length sequence
+        encoder.writeFloat64Array(k)  // fixed 9
+        encoder.writeFloat64Array(r)  // fixed 9
+        encoder.writeFloat64Array(p)  // fixed 12
         encoder.writeUInt32(binningX)
         encoder.writeUInt32(binningY)
         try roi.encode(to: encoder)

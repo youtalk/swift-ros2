@@ -99,7 +99,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
             if Date().timeIntervalSince(startTime) > timeout {
                 throw TransportError.connectionTimeout(timeout)
             }
-            try await Task.sleep(nanoseconds: 50_000_000) // 50ms polling
+            try await Task.sleep(nanoseconds: 50_000_000)  // 50ms polling
         }
 
         if let error = result.getError() {

@@ -8,7 +8,7 @@ import SwiftROS2CDR
 public struct TwistStamped: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "geometry_msgs/msg/TwistStamped",
-        typeHash: "RIHS01_beb0b072ca1cc0e19510aef3ff4f30b8e1cce2ceabb02cc2107b3a0e3b9b5206"
+        typeHash: "RIHS01_5f0fcd4f81d5d06ad9b4c4c63e3ea51b82d6ae4d0558f1d475229b1121db6f64"
     )
 
     public var header: Header
@@ -35,7 +35,7 @@ public struct TwistStamped: ROS2Message {
 public struct PoseStamped: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "geometry_msgs/msg/PoseStamped",
-        typeHash: "RIHS01_fb0a7ecfbf5a3161cb0142ec21e00be06af41cdffb4423e2d6fd0e88aee64d0b"
+        typeHash: "RIHS01_10f3786d7d40fd2b54367835614bff85d4ad3b5dab62bf8bca0cc232d73b4cd8"
     )
 
     public var header: Header
@@ -62,7 +62,7 @@ public struct PoseStamped: ROS2Message {
 public struct TransformStamped: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "geometry_msgs/msg/TransformStamped",
-        typeHash: "RIHS01_bc4298e76077a7ba74f3ab8d1c3d07ae3d6f834cc7ea7ee5d2a53ebdb0f0b7e7"
+        typeHash: "RIHS01_0a241f87d04668d94099cbb5ba11691d5ad32c2f29682e4eb5653424bd275206"
     )
 
     public var header: Header

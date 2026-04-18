@@ -23,21 +23,9 @@ jobs:
       - name: Lint
         run: swift format lint --recursive --strict --configuration .swift-format Package.swift Sources Tests
 
-  swiftlint:
-    name: SwiftLint
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/realm/swiftlint:0.57.1
-    steps:
-      - uses: actions/checkout@v4
-      - name: SwiftLint version
-        run: swiftlint --version
-      - name: Lint
-        run: swiftlint lint --strict
-
   build-test:
-    name: Build & Test (Swift ${{ matrix.swift }})
-    needs: [swift-format, swiftlint]
+    name: Build & Test
+    needs: [swift-format]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

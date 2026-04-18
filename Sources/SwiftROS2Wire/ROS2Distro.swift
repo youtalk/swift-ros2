@@ -29,6 +29,17 @@ public enum ROS2Distro: String, CaseIterable, Sendable {
         }
     }
 
+    /// Whether this distro uses the pre-Jazzy message schema variant
+    /// (e.g. `sensor_msgs/Range` without `variance`).
+    public var isLegacySchema: Bool {
+        switch self {
+        case .humble:
+            return true
+        case .jazzy, .kilted, .rolling:
+            return false
+        }
+    }
+
     /// Wire format group
     public enum WireGroup: String, CaseIterable, Sendable {
         case legacy = "Humble and earlier"

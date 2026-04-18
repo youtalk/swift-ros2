@@ -8,7 +8,7 @@ import SwiftROS2CDR
 public struct StringMsg: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "std_msgs/msg/String",
-        typeHash: "RIHS01_f9b447fc04e9cc582e799e86fb0a33e6f1de76834ec9de631e0e8c2eab8ba8f3"
+        typeHash: "RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18"
     )
 
     public var data: String
@@ -31,7 +31,7 @@ public struct StringMsg: ROS2Message {
 public struct BoolMsg: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "std_msgs/msg/Bool",
-        typeHash: "RIHS01_80aaada1b4c63b2cc6ec3dc5e61ec5dd84dc37fd41da8d3c73631d37e0a4dd73"
+        typeHash: "RIHS01_feb91e995ff9ebd09c0cb3d2aed18b11077585839fb5db80193b62d74528f6c9"
     )
 
     public var data: Bool
@@ -54,7 +54,7 @@ public struct BoolMsg: ROS2Message {
 public struct Int32Msg: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "std_msgs/msg/Int32",
-        typeHash: "RIHS01_58c48d1e21af9e1ca38ed3cec6ed43e6e47beb37ee0b7c3b12dc2ab27f7e44fc"
+        typeHash: "RIHS01_b6578ded3c58c626cfe8d1a6fb6e04f706f97e9f03d2727c9ff4e74b1cef0deb"
     )
 
     public var data: Int32
@@ -77,7 +77,7 @@ public struct Int32Msg: ROS2Message {
 public struct Float64Msg: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "std_msgs/msg/Float64",
-        typeHash: "RIHS01_57d0eff56e72ce4ea0fda44c75c42e04f4eb5dea39f2c8cd20db72e7eab76a5c"
+        typeHash: "RIHS01_705ba9c3d1a09df43737eb67095534de36fd426c0587779bda2bc51fe790182a"
     )
 
     public var data: Double
@@ -100,7 +100,7 @@ public struct Float64Msg: ROS2Message {
 public struct EmptyMsg: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "std_msgs/msg/Empty",
-        typeHash: "RIHS01_d6a64ffc91cefc5b56cc2b0488c4e3df1b58f83923a9c07f8e93e7c52a46c5b3"
+        typeHash: "RIHS01_20b625256f32d5dbc0d04fee44f43c41e51c70d3502f84b4a08e7a9c26a96312"
     )
 
     public init() {}

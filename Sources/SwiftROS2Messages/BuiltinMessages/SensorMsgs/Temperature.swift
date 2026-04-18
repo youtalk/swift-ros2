@@ -8,7 +8,7 @@ import SwiftROS2CDR
 public struct Temperature: ROS2Message {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "sensor_msgs/msg/Temperature",
-        typeHash: "RIHS01_84b54121c59a5e31f248acd989e552b94e16e0dbf4d10a8e2e93f150f5f3d89c"
+        typeHash: "RIHS01_72514a14126ab9f8a9abec974c78e5610a367b59db5da355ff1fb982d5bad4b8"
     )
 
     public var header: Header

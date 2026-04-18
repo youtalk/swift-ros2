@@ -59,15 +59,19 @@ public final class ROS2Node: @unchecked Sendable {
         let fullTopic = buildFullTopic(topic)
         let typeInfo = M.typeInfo
         let transportQoS = qos.toTransportQoS()
+        let effectiveTypeHash = context.distro.supportsTypeHash ? typeInfo.typeHash : nil
 
         let transportPub = try session.createPublisher(
             topic: fullTopic,
             typeName: typeInfo.typeName,
-            typeHash: typeInfo.typeHash,
+            typeHash: effectiveTypeHash,
             qos: transportQoS
         )
 
-        let publisher = ROS2Publisher<M>(transportPublisher: transportPub)
+        let publisher = ROS2Publisher<M>(
+            transportPublisher: transportPub,
+            isLegacySchema: context.distro.isLegacySchema
+        )
         appendPublisher(publisher)
         return publisher
     }
@@ -83,18 +87,19 @@ public final class ROS2Node: @unchecked Sendable {
         let fullTopic = buildFullTopic(topic)
         let typeInfo = M.typeInfo
         let transportQoS = qos.toTransportQoS()
+        let effectiveTypeHash = context.distro.supportsTypeHash ? typeInfo.typeHash : nil
 
         let subscription = ROS2Subscription<M>()
 
         let transportSub = try session.createSubscriber(
             topic: fullTopic,
             typeName: typeInfo.typeName,
-            typeHash: typeInfo.typeHash,
+            typeHash: effectiveTypeHash,
             qos: transportQoS,
-            handler: { [weak subscription] data, _ in
+            handler: { [weak subscription, isLegacy = context.distro.isLegacySchema] data, _ in
                 guard let subscription = subscription else { return }
                 do {
-                    let decoder = try CDRDecoder(data: data)
+                    let decoder = try CDRDecoder(data: data, isLegacySchema: isLegacy)
                     let message = try M(from: decoder)
                     subscription.receive(message)
                 } catch {

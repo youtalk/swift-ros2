@@ -1,0 +1,4 @@
+[submodule "vendor/zenoh-pico"]
+	path = vendor/zenoh-pico
+	url = https://github.com/youtalk/zenoh-pico.git
+	branch = swift-ros2-main

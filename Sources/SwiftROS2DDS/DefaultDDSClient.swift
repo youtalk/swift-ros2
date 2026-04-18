@@ -1,8 +1,8 @@
 // DefaultDDSClient.swift
 // Default implementation of DDSClientProtocol using the CDDSBridge C FFI.
 
-import Foundation
 import CDDSBridge
+import Foundation
 import SwiftROS2Transport
 
 // MARK: - Writer handle
@@ -64,13 +64,13 @@ public final class DefaultDDSClient: DDSClientProtocol {
         var cConfig = bridge_discovery_config_t()
         switch discoveryConfig.mode {
         case .multicast: cConfig.mode = BRIDGE_DISCOVERY_MULTICAST
-        case .unicast:   cConfig.mode = BRIDGE_DISCOVERY_UNICAST
-        case .hybrid:    cConfig.mode = BRIDGE_DISCOVERY_HYBRID
+        case .unicast: cConfig.mode = BRIDGE_DISCOVERY_UNICAST
+        case .hybrid: cConfig.mode = BRIDGE_DISCOVERY_HYBRID
         }
 
         // Build peer C-string array
         var peerCStrings: [UnsafeMutablePointer<CChar>?] = discoveryConfig.unicastPeers.map { strdup($0) }
-        peerCStrings.append(nil) // NULL-terminator for C array
+        peerCStrings.append(nil)  // NULL-terminator for C array
 
         let peersPtr = UnsafeMutablePointer<UnsafePointer<CChar>?>.allocate(capacity: peerCStrings.count)
         defer {
@@ -144,7 +144,8 @@ public final class DefaultDDSClient: DDSClientProtocol {
 
         var cQos = bridge_qos_config_t()
         cQos.reliability = qos.reliability == .reliable ? BRIDGE_RELIABILITY_RELIABLE : BRIDGE_RELIABILITY_BEST_EFFORT
-        cQos.durability = qos.durability == .transientLocal ? BRIDGE_DURABILITY_TRANSIENT_LOCAL : BRIDGE_DURABILITY_VOLATILE
+        cQos.durability =
+            qos.durability == .transientLocal ? BRIDGE_DURABILITY_TRANSIENT_LOCAL : BRIDGE_DURABILITY_VOLATILE
         cQos.history_kind = qos.historyKind == .keepAll ? BRIDGE_HISTORY_KEEP_ALL : BRIDGE_HISTORY_KEEP_LAST
         cQos.history_depth = qos.historyDepth
 

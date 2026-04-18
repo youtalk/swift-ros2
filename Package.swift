@@ -83,7 +83,7 @@ let package = Package(
             sources: ["dds_bridge.c", "raw_cdr_sertype.c", "raw_cdr_regression_bridge.c"],
             publicHeadersPath: "include",
             cSettings: [
-                .define("DDS_AVAILABLE", to: "1"),
+                .define("DDS_AVAILABLE", to: "1")
             ]
         ),
 

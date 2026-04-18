@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import SwiftROS2DDS
 
 final class DefaultDDSClientSmokeTests: XCTestCase {
@@ -14,8 +15,9 @@ final class DefaultDDSClientSmokeTests: XCTestCase {
     func testWriteWithForeignHandleThrows() throws {
         let client = DefaultDDSClient()
         let foreign = ForeignWriterHandle()
-        XCTAssertThrowsError(try client.writeRawCDR(
-            writer: foreign, data: Data([0x00, 0x01, 0x00, 0x00]), timestamp: 0)
+        XCTAssertThrowsError(
+            try client.writeRawCDR(
+                writer: foreign, data: Data([0x00, 0x01, 0x00, 0x00]), timestamp: 0)
         ) { error in
             guard let e = error as? DDSError else {
                 XCTFail("Expected DDSError, got \(type(of: error))")

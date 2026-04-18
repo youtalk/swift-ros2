@@ -1,6 +1,7 @@
-import XCTest
-@testable import SwiftROS2Zenoh
 import SwiftROS2Transport
+import XCTest
+
+@testable import SwiftROS2Zenoh
 
 // A foreign key-expression handle that is NOT a DeclaredKeyExpr from DefaultZenohClient.
 // Used to exercise the foreign-handle rejection guard in put(keyExpr:payload:attachment:).

@@ -1,6 +1,6 @@
-import XCTest
 import SwiftROS2
 import SwiftROS2Transport
+import XCTest
 
 final class ContextFactoryTests: XCTestCase {
     /// Verifies that ROS2Context can build a default Zenoh session without

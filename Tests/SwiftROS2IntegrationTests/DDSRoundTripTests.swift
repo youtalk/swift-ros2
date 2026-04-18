@@ -1,7 +1,7 @@
-import XCTest
 import SwiftROS2
 import SwiftROS2Messages
 import SwiftROS2Transport
+import XCTest
 
 /// Round-trip integration test over CycloneDDS. Requires:
 /// - `LINUX_IP` env var (the host running a matching-domain ros2 topic echo)
@@ -32,10 +32,11 @@ final class DDSRoundTripTests: XCTestCase {
         try await Task.sleep(nanoseconds: 3_000_000_000)
 
         for i in 0..<10 {
-            try pub.publish(Imu(
-                header: Header.now(frameId: "imu_link"),
-                linearAcceleration: Vector3(x: 0.0, y: 0.0, z: 9.81 + Double(i) * 0.01)
-            ))
+            try pub.publish(
+                Imu(
+                    header: Header.now(frameId: "imu_link"),
+                    linearAcceleration: Vector3(x: 0.0, y: 0.0, z: 9.81 + Double(i) * 0.01)
+                ))
             try await Task.sleep(nanoseconds: 100_000_000)
         }
 

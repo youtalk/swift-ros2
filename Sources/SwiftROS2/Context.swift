@@ -2,10 +2,10 @@
 // ROS 2 Context: entry point for the swift-ros2 library
 
 import Foundation
+import SwiftROS2DDS
 import SwiftROS2Transport
 import SwiftROS2Wire
 import SwiftROS2Zenoh
-import SwiftROS2DDS
 
 /// ROS 2 context — the entry point for creating nodes
 ///

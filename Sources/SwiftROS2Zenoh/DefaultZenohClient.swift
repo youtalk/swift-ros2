@@ -7,10 +7,10 @@
 // SwiftROS2Transport can drive the session without a C dependency.
 //
 
-import Foundation
-import os.log
 import CZenohBridge
+import Foundation
 import SwiftROS2Transport
+import os.log
 
 // MARK: - Declared Key Expression
 
@@ -176,9 +176,9 @@ public class DefaultZenohClient: ZenohClientProtocol {
             log.error("Session creation failed with code \(result)")
             throw ZenohError.sessionCreationFailed(
                 "Connection failed (error code: \(result)). Please verify:\n"
-                + "• Router address and port\n"
-                + "• Network connectivity\n"
-                + "• Local Network permission is enabled in Settings"
+                    + "• Router address and port\n"
+                    + "• Network connectivity\n"
+                    + "• Local Network permission is enabled in Settings"
             )
         }
 

@@ -10,7 +10,22 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <os/log.h>
+
+#ifdef __APPLE__
+  #include <os/log.h>
+#else
+  /* Non-Apple platforms: stub out Apple's unified logging to stderr. */
+  typedef int os_log_t;
+  #define os_log_create(subsystem, category) 0
+  #define os_log_info(log, fmt, ...)  \
+      fprintf(stderr, "[info]  " fmt "\n", ##__VA_ARGS__)
+  #define os_log_error(log, fmt, ...) \
+      fprintf(stderr, "[error] " fmt "\n", ##__VA_ARGS__)
+  #define os_log_debug(log, fmt, ...) \
+      fprintf(stderr, "[debug] " fmt "\n", ##__VA_ARGS__)
+  #define os_log(log, fmt, ...)       \
+      fprintf(stderr, fmt "\n", ##__VA_ARGS__)
+#endif
 
 // ============================================================================
 // Internal structures
@@ -46,7 +61,7 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
         return -1;
     }
 
-    os_log_info(log, "[zenoh_bridge] Opening session with locator: %{public}s", locator);
+    os_log_info(log, "[zenoh_bridge] Opening session with locator: %s", locator);
 
     // Allocate session wrapper
     zenoh_session_t* session = (zenoh_session_t*)malloc(sizeof(zenoh_session_t));
@@ -78,14 +93,14 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
     options.__dummy = 0;
 
     os_log_info(log, "[zenoh_bridge] Calling z_open...");
-    os_log_info(log, "[zenoh_bridge] Using locator: %{public}s", locator);
+    os_log_info(log, "[zenoh_bridge] Using locator: %s", locator);
 
     ret = z_open(&session->session, z_move(config), &options);
     os_log_info(log, "[zenoh_bridge] z_open returned: %d", ret);
     if (ret < 0) {
         os_log_error(log, "[zenoh_bridge] ERROR: z_open failed with code %d", ret);
         os_log_error(log, "[zenoh_bridge] Possible causes: network unreachable, router not running, or firewall blocking");
-        os_log_error(log, "[zenoh_bridge] errno: %d (%{public}s)", errno, strerror(errno));
+        os_log_error(log, "[zenoh_bridge] errno: %d (%s)", errno, strerror(errno));
         free(session);
         return -1;
     }
@@ -192,7 +207,7 @@ zenoh_result_t zenoh_declare_keyexpr(zenoh_session_t* session,
         return -1;
     }
 
-    os_log_info(log, "[zenoh_bridge] Declaring keyexpr: %{public}s", keyexpr_str);
+    os_log_info(log, "[zenoh_bridge] Declaring keyexpr: %s", keyexpr_str);
 
     zenoh_keyexpr_t* kexpr = (zenoh_keyexpr_t*)malloc(sizeof(zenoh_keyexpr_t));
     if (!kexpr) {
@@ -471,7 +486,7 @@ zenoh_result_t zenoh_declare_liveliness_token(zenoh_session_t* session,
         return -1;
     }
 
-    os_log_info(log, "[zenoh_bridge] Declaring liveliness token: %{public}s", key_expr);
+    os_log_info(log, "[zenoh_bridge] Declaring liveliness token: %s", key_expr);
 
     // Allocate token wrapper
     zenoh_liveliness_token_t* token = (zenoh_liveliness_token_t*)malloc(sizeof(zenoh_liveliness_token_t));

@@ -7,6 +7,7 @@ let package = Package(
     platforms: [
         .iOS(.v16),
         .macOS(.v13),
+        .macCatalyst(.v16),
         .visionOS(.v1),
     ],
     products: [
@@ -15,6 +16,8 @@ let package = Package(
         .library(name: "SwiftROS2Messages", targets: ["SwiftROS2Messages"]),
         .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
         .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
+        .library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]),
+        .library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]),
     ],
     targets: [
         // CDR serialization (pure Swift, no dependencies)
@@ -41,6 +44,57 @@ let package = Package(
             name: "SwiftROS2Transport",
             dependencies: ["SwiftROS2CDR", "SwiftROS2Wire"],
             path: "Sources/SwiftROS2Transport"
+        ),
+
+        // System libraries wrapping the native C FFI (local .a bootstrap;
+        // Phase 2 switches these to xcframework binaryTargets hosted on
+        // GitHub Releases). PKG_CONFIG_PATH must include Vendor/pkgconfig
+        // during bootstrap builds.
+        .systemLibrary(
+            name: "CZenohPico",
+            path: "Sources/CZenohPico",
+            pkgConfig: "ZenohPico"
+        ),
+        .systemLibrary(
+            name: "CCycloneDDS",
+            path: "Sources/CCycloneDDS",
+            pkgConfig: "CycloneDDS"
+        ),
+
+        // C bridges (Conduit-authored FFI shims that simplify the zenoh-pico
+        // and CycloneDDS APIs for Swift callers).
+        .target(
+            name: "CZenohBridge",
+            dependencies: ["CZenohPico"],
+            path: "Sources/CZenohBridge",
+            sources: ["zenoh_bridge.c"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst])),
+                .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
+                .define("Z_FEATURE_LINK_TCP", to: "1"),
+                .define("Z_FEATURE_LIVELINESS", to: "1"),
+            ]
+        ),
+        .target(
+            name: "CDDSBridge",
+            dependencies: ["CCycloneDDS"],
+            path: "Sources/CDDSBridge",
+            sources: ["dds_bridge.c", "raw_cdr_sertype.c", "raw_cdr_regression_bridge.c"],
+            publicHeadersPath: "include"
+        ),
+
+        // Swift-facing Zenoh / DDS modules. Expand in T1.7 and T1.8 with
+        // DefaultZenohClient / DefaultDDSClient implementations.
+        .target(
+            name: "SwiftROS2Zenoh",
+            dependencies: ["CZenohBridge", "SwiftROS2Transport", "SwiftROS2Wire"],
+            path: "Sources/SwiftROS2Zenoh"
+        ),
+        .target(
+            name: "SwiftROS2DDS",
+            dependencies: ["CDDSBridge", "SwiftROS2Transport", "SwiftROS2Wire"],
+            path: "Sources/SwiftROS2DDS"
         ),
 
         // Public API: Context, Node, Publisher, Subscription

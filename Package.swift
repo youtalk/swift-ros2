@@ -107,6 +107,8 @@ let package = Package(
                 "SwiftROS2Messages",
                 "SwiftROS2Transport",
                 "SwiftROS2Wire",
+                "SwiftROS2Zenoh",
+                "SwiftROS2DDS",
             ],
             path: "Sources/SwiftROS2"
         ),

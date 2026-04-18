@@ -131,6 +131,11 @@ public class LivelinessToken {
 
 /// Main Zenoh client for iOS, conforming to ZenohClientProtocol.
 /// Manages a Zenoh session and provides methods for publishing and subscribing.
+///
+/// Thread-safety: `DefaultZenohClient` is NOT safe for concurrent calls to `open` / `close` /
+/// `put` / `subscribe` across multiple threads. Callers must serialize these calls themselves
+/// (e.g., via `ZenohTransportSession` or an actor). The internal `resourceLock` only protects
+/// the tracked-resource arrays, not the `session` pointer itself.
 public class DefaultZenohClient: ZenohClientProtocol {
     private let log = Logger(subsystem: "com.youtalk.swift-ros2", category: "Zenoh")
 

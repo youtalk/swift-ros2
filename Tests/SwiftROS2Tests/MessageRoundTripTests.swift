@@ -1,10 +1,10 @@
 // MessageRoundTripTests.swift
 // Tests for message CDR encode/decode round-trips
 
-import XCTest
+import SwiftROS2
 import SwiftROS2CDR
 import SwiftROS2Messages
- import SwiftROS2
+import XCTest
 
 final class MessageRoundTripTests: XCTestCase {
 
@@ -319,7 +319,7 @@ final class MessageRoundTripTests: XCTestCase {
 
         XCTAssertEqual(decoded.voltage, 3.7, accuracy: 0.001)
         XCTAssertEqual(decoded.percentage, 0.85, accuracy: 0.001)
-        XCTAssertEqual(decoded.powerSupplyStatus, 2) // discharging
+        XCTAssertEqual(decoded.powerSupplyStatus, 2)  // discharging
         XCTAssertEqual(decoded.location, "main")
         XCTAssertEqual(decoded.serialNumber, "ABC123")
     }
@@ -353,7 +353,7 @@ final class MessageRoundTripTests: XCTestCase {
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try Range(from: decoder)
 
-        XCTAssertEqual(decoded.radiationType, 1) // infrared
+        XCTAssertEqual(decoded.radiationType, 1)  // infrared
         XCTAssertEqual(decoded.range, 1.23, accuracy: 0.001)
     }
 

@@ -61,7 +61,8 @@ public struct ZenohWireCodec: WireCodec {
         let hashComponent = distro.formatTypeHash(typeHash)
         let qosKeyExpr = qos.toKeyExpr()
 
-        return "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/MP/%/%/\(nodeName)/\(mangledTopic)/\(ddsTypeName)/\(hashComponent)/\(qosKeyExpr)"
+        return
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/MP/%/%/\(nodeName)/\(mangledTopic)/\(ddsTypeName)/\(hashComponent)/\(qosKeyExpr)"
     }
 
     // MARK: - Attachment

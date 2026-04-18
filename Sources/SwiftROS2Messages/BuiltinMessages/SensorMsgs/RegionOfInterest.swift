@@ -12,7 +12,9 @@ public struct RegionOfInterest: CDRCodable, Sendable, Equatable {
     public var width: UInt32
     public var doRectify: Bool
 
-    public init(xOffset: UInt32 = 0, yOffset: UInt32 = 0, height: UInt32 = 0, width: UInt32 = 0, doRectify: Bool = false) {
+    public init(
+        xOffset: UInt32 = 0, yOffset: UInt32 = 0, height: UInt32 = 0, width: UInt32 = 0, doRectify: Bool = false
+    ) {
         self.xOffset = xOffset
         self.yOffset = yOffset
         self.height = height

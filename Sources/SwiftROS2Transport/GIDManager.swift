@@ -40,11 +40,11 @@ public final class GIDManager: @unchecked Sendable {
     private func generateRandomGid() -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: Self.gidSize)
         #if canImport(Security)
-        // Use SecRandomCopyBytes on Apple platforms
-        let status = SecRandomCopyBytes(kSecRandomDefault, Self.gidSize, &bytes)
-        if status == errSecSuccess {
-            return bytes
-        }
+            // Use SecRandomCopyBytes on Apple platforms
+            let status = SecRandomCopyBytes(kSecRandomDefault, Self.gidSize, &bytes)
+            if status == errSecSuccess {
+                return bytes
+            }
         #endif
         // Fallback: UUID bytes
         let uuid = UUID()

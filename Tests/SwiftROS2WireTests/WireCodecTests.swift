@@ -2,6 +2,7 @@
 // Tests for wire format codecs
 
 import XCTest
+
 @testable import SwiftROS2Wire
 
 final class WireCodecTests: XCTestCase {

@@ -38,7 +38,9 @@ public struct ROS2ActionTypeInfo: Sendable {
     public let resultTypeHash: String?
     public let feedbackTypeHash: String?
 
-    public init(actionName: String, goalTypeHash: String? = nil, resultTypeHash: String? = nil, feedbackTypeHash: String? = nil) {
+    public init(
+        actionName: String, goalTypeHash: String? = nil, resultTypeHash: String? = nil, feedbackTypeHash: String? = nil
+    ) {
         self.actionName = actionName
         self.goalTypeHash = goalTypeHash
         self.resultTypeHash = resultTypeHash

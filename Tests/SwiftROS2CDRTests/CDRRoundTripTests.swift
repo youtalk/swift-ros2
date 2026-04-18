@@ -2,6 +2,7 @@
 // Tests for CDR encoder/decoder round-trip correctness
 
 import XCTest
+
 @testable import SwiftROS2CDR
 
 final class CDRRoundTripTests: XCTestCase {

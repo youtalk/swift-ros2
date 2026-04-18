@@ -42,9 +42,9 @@ public final class CDRDecoder {
 
         // Validate XCDR v1 little-endian header: [0x00, 0x01, 0x00, 0x00]
         guard data[data.startIndex] == 0x00,
-              data[data.startIndex + 1] == 0x01,
-              data[data.startIndex + 2] == 0x00,
-              data[data.startIndex + 3] == 0x00
+            data[data.startIndex + 1] == 0x01,
+            data[data.startIndex + 2] == 0x00,
+            data[data.startIndex + 3] == 0x00
         else {
             throw CDRDecodingError.invalidEncapsulationHeader
         }
@@ -139,7 +139,7 @@ public final class CDRDecoder {
         try ensureAvailable(byteCount)
 
         // length includes null terminator
-        let stringBytes = data[data.startIndex + offset ..< data.startIndex + offset + byteCount - 1]
+        let stringBytes = data[data.startIndex + offset..<data.startIndex + offset + byteCount - 1]
         offset += byteCount
 
         guard let string = String(data: stringBytes, encoding: .utf8) else {
@@ -193,7 +193,7 @@ public final class CDRDecoder {
     public func readUInt8Sequence() throws -> Data {
         let count = Int(try readUInt32())
         try ensureAvailable(count)
-        let result = data[data.startIndex + offset ..< data.startIndex + offset + count]
+        let result = data[data.startIndex + offset..<data.startIndex + offset + count]
         offset += count
         return Data(result)
     }
@@ -202,7 +202,7 @@ public final class CDRDecoder {
 
     public func readRawBytes(count: Int) throws -> Data {
         try ensureAvailable(count)
-        let result = data[data.startIndex + offset ..< data.startIndex + offset + count]
+        let result = data[data.startIndex + offset..<data.startIndex + offset + count]
         offset += count
         return Data(result)
     }

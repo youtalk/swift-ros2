@@ -32,7 +32,7 @@ public struct NavSatStatus: CDRCodable, Sendable {
 
     public init(from decoder: CDRDecoder) throws {
         self.status = try decoder.readInt8()
-        _ = try decoder.readRawBytes(count: 1) // padding
+        _ = try decoder.readRawBytes(count: 1)  // padding
         self.service = try decoder.readUInt16()
     }
 }
@@ -92,7 +92,7 @@ public struct NavSatFix: ROS2Message {
     public init(from decoder: CDRDecoder) throws {
         self.header = try Header(from: decoder)
         self.status = try NavSatStatus(from: decoder)
-        _ = try decoder.readRawBytes(count: 4) // padding
+        _ = try decoder.readRawBytes(count: 4)  // padding
         self.latitude = try decoder.readFloat64()
         self.longitude = try decoder.readFloat64()
         self.altitude = try decoder.readFloat64()

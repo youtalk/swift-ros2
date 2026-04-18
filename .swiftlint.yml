@@ -1,0 +1,61 @@
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - .swiftpm
+
+line_length:
+  warning: 150
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+identifier_name:
+  min_length:
+    warning: 1
+    error: 1
+  max_length:
+    warning: 60
+    error: 80
+  excluded:
+    - id
+
+type_name:
+  min_length: 3
+  max_length:
+    warning: 60
+    error: 80
+
+function_body_length:
+  warning: 120
+  error: 200
+
+type_body_length:
+  warning: 400
+  error: 600
+
+file_length:
+  warning: 800
+  error: 1200
+  ignore_comment_only_lines: true
+
+cyclomatic_complexity:
+  warning: 20
+  error: 30
+
+function_parameter_count:
+  warning: 12
+  error: 16
+
+large_tuple:
+  warning: 4
+  error: 5
+
+disabled_rules:
+  - todo
+  - trailing_whitespace
+  - force_cast
+  - force_try
+  - nesting

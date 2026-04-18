@@ -67,7 +67,10 @@ public final class ROS2Node: @unchecked Sendable {
             qos: transportQoS
         )
 
-        let publisher = ROS2Publisher<M>(transportPublisher: transportPub)
+        let publisher = ROS2Publisher<M>(
+            transportPublisher: transportPub,
+            isLegacyDistro: context.distro.isLegacySchema
+        )
         appendPublisher(publisher)
         return publisher
     }
@@ -91,10 +94,10 @@ public final class ROS2Node: @unchecked Sendable {
             typeName: typeInfo.typeName,
             typeHash: typeInfo.typeHash,
             qos: transportQoS,
-            handler: { [weak subscription] data, _ in
+            handler: { [weak subscription, isLegacy = context.distro.isLegacySchema] data, _ in
                 guard let subscription = subscription else { return }
                 do {
-                    let decoder = try CDRDecoder(data: data)
+                    let decoder = try CDRDecoder(data: data, isLegacyDistro: isLegacy)
                     let message = try M(from: decoder)
                     subscription.receive(message)
                 } catch {

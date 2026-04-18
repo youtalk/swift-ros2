@@ -12,8 +12,13 @@ public final class CDREncoder {
 
     private static let encapsulationHeaderSize = 4
 
-    public init(estimatedSize: Int = 256) {
+    /// When true, serialize the pre-Jazzy schema (omits fields added after Humble,
+    /// e.g. `sensor_msgs/Range.variance`). Defaults to false = Jazzy-compatible.
+    public var isLegacyDistro: Bool = false
+
+    public init(estimatedSize: Int = 256, isLegacyDistro: Bool = false) {
         buffer = Data(capacity: estimatedSize)
+        self.isLegacyDistro = isLegacyDistro
     }
 
     public func reset() {

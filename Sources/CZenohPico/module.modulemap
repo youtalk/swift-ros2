@@ -1,0 +1,5 @@
+module CZenohPico [system] {
+    header "shim.h"
+    link "zenohpico"
+    export *
+}

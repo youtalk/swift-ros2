@@ -5,3 +5,11 @@ xcuserdata/
 DerivedData/
 .DS_Store
 .claude/
+
+# Bootstrap-only artifacts (Phase 1 macCatalyst-arm64 .a files + headers).
+# Phase 2 replaces these with xcframework binaryTargets hosted on GitHub
+# Releases. Run Scripts/bootstrap-maccatalyst.sh to populate locally.
+/Vendor/
+/vendor/include/
+/vendor/maccatalyst-arm64/
+/vendor/pkgconfig/

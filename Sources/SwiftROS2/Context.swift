@@ -2,8 +2,10 @@
 // ROS 2 Context: entry point for the swift-ros2 library
 
 import Foundation
+import SwiftROS2DDS
 import SwiftROS2Transport
 import SwiftROS2Wire
+import SwiftROS2Zenoh
 
 /// ROS 2 context — the entry point for creating nodes
 ///
@@ -47,9 +49,7 @@ public final class ROS2Context: @unchecked Sendable {
         if let session = session {
             self.session = session
         } else {
-            throw TransportError.unsupportedFeature(
-                "Transport session must be provided. Built-in Zenoh/DDS sessions require their respective modules."
-            )
+            self.session = try Self.makeDefaultSession(for: transport)
         }
 
         if !self.session.isConnected {
@@ -106,5 +106,18 @@ public final class ROS2Context: @unchecked Sendable {
     /// Whether the session is connected
     public var isConnected: Bool {
         session.isConnected
+    }
+}
+
+// MARK: - Default Session Factory
+
+extension ROS2Context {
+    static func makeDefaultSession(for config: TransportConfig) throws -> any TransportSession {
+        switch config.type {
+        case .zenoh:
+            return ZenohTransportSession(client: DefaultZenohClient())
+        case .dds:
+            return DDSTransportSession(client: DefaultDDSClient())
+        }
     }
 }

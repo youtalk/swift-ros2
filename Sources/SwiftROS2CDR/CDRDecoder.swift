@@ -9,6 +9,9 @@ public enum CDRDecodingError: Error, LocalizedError {
     case unexpectedEndOfData(expected: Int, remaining: Int)
     case invalidStringEncoding
     case invalidArraySize(expected: Int, available: Int)
+    case sequenceTooLarge(elements: UInt32, max: Int)
+    case byteSequenceTooLarge(bytes: UInt32, max: Int)
+    case stringTooLarge(length: UInt32, max: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -20,6 +23,12 @@ public enum CDRDecodingError: Error, LocalizedError {
             return "Invalid UTF-8 string encoding in CDR data"
         case .invalidArraySize(let expected, let available):
             return "Invalid array size: expected \(expected) elements but data has room for \(available)"
+        case .sequenceTooLarge(let elements, let max):
+            return "CDR sequence declares \(elements) elements which exceeds maximum \(max)"
+        case .byteSequenceTooLarge(let bytes, let max):
+            return "CDR byte sequence declares \(bytes) bytes which exceeds maximum \(max)"
+        case .stringTooLarge(let length, let max):
+            return "CDR string declares length \(length) which exceeds maximum \(max)"
         }
     }
 }
@@ -33,6 +42,20 @@ public final class CDRDecoder {
     private var offset: Int
 
     private static let encapsulationHeaderSize = 4
+
+    /// Maximum number of elements allowed in a typed sequence (Float64/Float32/Int32/...).
+    /// Wire-declared counts drive `reserveCapacity`; this cap prevents OOM DoS from a
+    /// malicious length prefix. 64M elements = up to 512 MB for Float64, well above any
+    /// realistic sensor payload.
+    public static let maxSequenceElements: Int = 64 * 1024 * 1024
+
+    /// Maximum byte length allowed for a `uint8[]` sequence (e.g. CompressedImage.data,
+    /// PointCloud2.data). 256 MB accommodates large sensor buffers while bounding DoS.
+    public static let maxByteSequenceLength: Int = 256 * 1024 * 1024
+
+    /// Maximum length (including trailing null) allowed for a CDR string. 64 KB is
+    /// generous for any ROS 2 identifier, topic, frame_id, or status message.
+    public static let maxStringLength: Int = 64 * 1024
 
     /// When true, deserialize the pre-Jazzy schema (omits fields added after Humble,
     /// e.g. `sensor_msgs/Range.variance`). Defaults to false = Jazzy-compatible.
@@ -141,6 +164,9 @@ public final class CDRDecoder {
         guard length > 0 else {
             return ""
         }
+        guard length <= Self.maxStringLength else {
+            throw CDRDecodingError.stringTooLarge(length: length, max: Self.maxStringLength)
+        }
         let byteCount = Int(length)
         try ensureAvailable(byteCount)
 
@@ -177,17 +203,17 @@ public final class CDRDecoder {
     // MARK: - Sequences (variable-length, WITH uint32 length prefix)
 
     public func readFloat64Sequence() throws -> [Double] {
-        let count = Int(try readUInt32())
+        let count = try readBoundedSequenceCount()
         return try readFloat64Array(count: count)
     }
 
     public func readFloat32Sequence() throws -> [Float] {
-        let count = Int(try readUInt32())
+        let count = try readBoundedSequenceCount()
         return try readFloat32Array(count: count)
     }
 
     public func readInt32Sequence() throws -> [Int32] {
-        let count = Int(try readUInt32())
+        let count = try readBoundedSequenceCount()
         var result = [Int32]()
         result.reserveCapacity(count)
         for _ in 0..<count {
@@ -197,11 +223,25 @@ public final class CDRDecoder {
     }
 
     public func readUInt8Sequence() throws -> Data {
-        let count = Int(try readUInt32())
+        let rawCount = try readUInt32()
+        guard rawCount <= Self.maxByteSequenceLength else {
+            throw CDRDecodingError.byteSequenceTooLarge(bytes: rawCount, max: Self.maxByteSequenceLength)
+        }
+        let count = Int(rawCount)
         try ensureAvailable(count)
         let result = data[data.startIndex + offset..<data.startIndex + offset + count]
         offset += count
         return Data(result)
+    }
+
+    /// Read a uint32 sequence length and reject values beyond `maxSequenceElements`.
+    /// Shared by all typed (non-byte) sequences so the cap applies uniformly.
+    private func readBoundedSequenceCount() throws -> Int {
+        let rawCount = try readUInt32()
+        guard rawCount <= Self.maxSequenceElements else {
+            throw CDRDecodingError.sequenceTooLarge(elements: rawCount, max: Self.maxSequenceElements)
+        }
+        return Int(rawCount)
     }
 
     // MARK: - Raw Bytes

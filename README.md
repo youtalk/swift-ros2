@@ -22,9 +22,9 @@ Shipping as **0.2.0** — pre-built xcframeworks on every Apple platform, source
 | macOS         | 13.0                      | `binaryTarget` xcframework                    |
 | Mac Catalyst  | 16.0                      | `binaryTarget` xcframework                    |
 | visionOS      | 1.0                       | `binaryTarget` xcframework                    |
-| Linux         | Ubuntu 24.04 (x86_64/arm64) | zenoh-pico source build + CycloneDDS via `pkg-config` |
+| Linux         | Ubuntu 22.04 / 24.04 (x86_64, aarch64) | zenoh-pico source build + CycloneDDS via `pkg-config` |
 
-Swift 5.9+ everywhere. CI runs on `macos-15` and `ubuntu-24.04` with Swift 6.0.2 + ROS 2 Jazzy.
+Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2) plus a Swift 6.0.2 Linux matrix: Humble on Ubuntu 22.04, Jazzy on Ubuntu 24.04, and Rolling on Ubuntu 24.04 — each exercised on both x86_64 and aarch64.
 
 ## Installation
 

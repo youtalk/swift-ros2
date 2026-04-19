@@ -41,23 +41,49 @@ jobs:
         run: swift test --parallel
 
   build-linux:
-    name: Build & Test (Ubuntu ${{ matrix.ubuntu_version }} + ROS 2 ${{ matrix.ros_distro }})
+    name: Build & Test (Ubuntu ${{ matrix.ubuntu_version }} ${{ matrix.arch }} + ROS 2 ${{ matrix.ros_distro }})
     needs: [swift-format]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - ros_distro: jazzy
-            ubuntu_version: "24.04"
-            runner: ubuntu-24.04
-            swift_platform_path: ubuntu2404
-            swift_tarball_suffix: ubuntu24.04
           - ros_distro: humble
             ubuntu_version: "22.04"
+            arch: x86_64
             runner: ubuntu-22.04
             swift_platform_path: ubuntu2204
             swift_tarball_suffix: ubuntu22.04
+          - ros_distro: humble
+            ubuntu_version: "22.04"
+            arch: aarch64
+            runner: ubuntu-22.04-arm
+            swift_platform_path: ubuntu2204-aarch64
+            swift_tarball_suffix: ubuntu22.04-aarch64
+          - ros_distro: jazzy
+            ubuntu_version: "24.04"
+            arch: x86_64
+            runner: ubuntu-24.04
+            swift_platform_path: ubuntu2404
+            swift_tarball_suffix: ubuntu24.04
+          - ros_distro: jazzy
+            ubuntu_version: "24.04"
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            swift_platform_path: ubuntu2404-aarch64
+            swift_tarball_suffix: ubuntu24.04-aarch64
+          - ros_distro: rolling
+            ubuntu_version: "24.04"
+            arch: x86_64
+            runner: ubuntu-24.04
+            swift_platform_path: ubuntu2404
+            swift_tarball_suffix: ubuntu24.04
+          - ros_distro: rolling
+            ubuntu_version: "24.04"
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            swift_platform_path: ubuntu2404-aarch64
+            swift_tarball_suffix: ubuntu24.04-aarch64
     steps:
       - uses: actions/checkout@v4
         with:
@@ -87,15 +113,15 @@ jobs:
       - name: Verify Linux deps
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/build-linux-deps.sh
       - name: Build
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           swift build
       - name: Test
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
-          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           swift test --parallel

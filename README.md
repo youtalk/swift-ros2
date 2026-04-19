@@ -2,7 +2,7 @@
 
 Native Swift client library for ROS 2. Publishes and subscribes over **Zenoh** (via zenoh-pico) or **DDS** (via CycloneDDS) without a bridge, without pulling in the full ROS 2 stack.
 
-Shipping as **0.2.0** — pre-built xcframeworks on every Apple platform, source build on Linux.
+Shipping as **0.3.0** — pre-built xcframeworks on every Apple platform, source build on Linux.
 
 ## Features
 
@@ -33,7 +33,7 @@ Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2) plus a Swi
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.2.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.3.0"),
 ],
 targets: [
     .target(
@@ -45,7 +45,7 @@ targets: [
 ]
 ```
 
-That's it — `swift build` downloads the xcframeworks from the 0.2.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `ZenohClient` / `DDSClient` directly (e.g. for custom session configuration or testing).
+That's it — `swift build` downloads the xcframeworks from the 0.3.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `ZenohClient` / `DDSClient` directly (e.g. for custom session configuration or testing).
 
 ### Linux
 

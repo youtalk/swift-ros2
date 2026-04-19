@@ -13,7 +13,23 @@ let cZenohPico: Target = {
         return .target(
             name: "CZenohPico",
             path: "vendor/zenoh-pico",
-            exclude: ["CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci"],
+            exclude: [
+                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
+                // Non-Linux platform backends. SPM compiles everything under
+                // `sources: ["src"]` unless excluded. zenoh-pico's CMake build
+                // picks the right backend per platform; for SPM + Linux we hand-
+                // pick src/system/unix and drop the rest.
+                "src/system/arduino",
+                "src/system/emscripten",
+                "src/system/espidf",
+                "src/system/freertos_plus_tcp",
+                "src/system/mbed",
+                "src/system/rpi_pico",
+                "src/system/void",
+                "src/system/windows",
+                "src/system/zephyr",
+                "src/system/flipper",
+            ],
             sources: ["src"],
             publicHeadersPath: "include",
             cSettings: [

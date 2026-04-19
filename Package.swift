@@ -6,7 +6,7 @@ import PackageDescription
 // GitHub Releases. Linux: compile the C sources directly via SPM (+ a
 // system-installed libddsc via pkg-config). See Scripts/build-xcframework.sh
 // for the macOS build helper that produces the Apple artifacts.
-let xcframeworkBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/v0.2.0-rc.1"
+let xcframeworkBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/v0.2.0"
 
 let cZenohPico: Target = {
     #if os(Linux)
@@ -43,7 +43,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(xcframeworkBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "631adffee3823f81d99791ffc0173d04936c0f33d8dd6309c5acd47154de6040"
+            checksum: "1ce8a58e9b1f0de59ad7ffb423ba9be75bec4c79495bba13bb533f1e27a748f3"
         )
     #endif
 }()
@@ -59,7 +59,7 @@ let cCycloneDDS: Target = {
         return .binaryTarget(
             name: "CCycloneDDS",
             url: "\(xcframeworkBaseURL)/CCycloneDDS.xcframework.zip",
-            checksum: "6db94bcb1c9303069490324cd057a19ff900e33466ecb18145cffc09785c14c5"
+            checksum: "f87eb6eedaf90a182b51f68438a6461d52f033b28cab0f6478c686cfacd01dad"
         )
     #endif
 }()

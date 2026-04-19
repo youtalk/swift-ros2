@@ -45,7 +45,7 @@ targets: [
 ]
 ```
 
-That's it — `swift build` downloads the xcframeworks from the 0.2.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `DefaultZenohClient` / `DefaultDDSClient` directly (e.g. for custom session configuration or testing).
+That's it — `swift build` downloads the xcframeworks from the 0.2.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `ZenohClient` / `DDSClient` directly (e.g. for custom session configuration or testing).
 
 ### Linux
 
@@ -118,8 +118,8 @@ import SwiftROS2          // re-exports CDR / Messages / Transport / Wire
                               abstractions + TransportConfig
 
 // Transport-specific, opt-in:
-import SwiftROS2Zenoh      — DefaultZenohClient (zenoh-pico-backed)
-import SwiftROS2DDS        — DefaultDDSClient (CycloneDDS-backed)
+import SwiftROS2Zenoh      — ZenohClient (zenoh-pico-backed)
+import SwiftROS2DDS        — DDSClient (CycloneDDS-backed)
 ```
 
 ### Built-in message types

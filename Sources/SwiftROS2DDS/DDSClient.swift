@@ -1,5 +1,5 @@
-// DefaultDDSClient.swift
-// Default implementation of DDSClientProtocol using the CDDSBridge C FFI.
+// DDSClient.swift
+// Standard implementation of DDSClientProtocol using the CDDSBridge C FFI.
 
 import CDDSBridge
 import Foundation
@@ -46,7 +46,7 @@ private final class DDSWriterHandleBox: DDSWriterHandle {
     }
 }
 
-// MARK: - DefaultDDSClient
+// MARK: - DDSClient
 
 /// Thread-safety: the client-level `NSLock` serializes `createSession` /
 /// `destroySession` / `isConnected` / `getSessionId` / `createRawWriter`.
@@ -56,7 +56,7 @@ private final class DDSWriterHandleBox: DDSWriterHandle {
 /// `writeRawCDR` against `destroyWriter` for the *same* writer (preventing
 /// use-after-free on the underlying CycloneDDS writer pointer). Callers must
 /// still ensure writers outlive the session.
-public final class DefaultDDSClient: DDSClientProtocol {
+public final class DDSClient: DDSClientProtocol {
     private var session: OpaquePointer?
     private let lock = NSLock()
 

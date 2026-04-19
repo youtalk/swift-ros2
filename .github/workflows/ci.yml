@@ -41,9 +41,23 @@ jobs:
         run: swift test --parallel
 
   build-linux:
-    name: Build & Test (Ubuntu + ROS 2 Jazzy)
+    name: Build & Test (Ubuntu ${{ matrix.ubuntu_version }} + ROS 2 ${{ matrix.ros_distro }})
     needs: [swift-format]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: jazzy
+            ubuntu_version: "24.04"
+            runner: ubuntu-24.04
+            swift_platform_path: ubuntu2404
+            swift_tarball_suffix: ubuntu24.04
+          - ros_distro: humble
+            ubuntu_version: "22.04"
+            runner: ubuntu-22.04
+            swift_platform_path: ubuntu2204
+            swift_tarball_suffix: ubuntu22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,7 +66,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config curl gnupg lsb-release software-properties-common
-      - name: Install ROS 2 Jazzy CycloneDDS
+      - name: Install ROS 2 ${{ matrix.ros_distro }} CycloneDDS
         run: |
           sudo mkdir -p /usr/share/keyrings
           curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
@@ -60,10 +74,10 @@ jobs:
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
             | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
-          sudo apt-get install -y ros-jazzy-cyclonedds
+          sudo apt-get install -y ros-${{ matrix.ros_distro }}-cyclonedds
       - name: Install Swift 6.0.2
         run: |
-          curl -sSL "https://download.swift.org/swift-6.0.2-release/ubuntu2404/swift-6.0.2-RELEASE/swift-6.0.2-RELEASE-ubuntu24.04.tar.gz" \
+          curl -sSL "https://download.swift.org/swift-6.0.2-release/${{ matrix.swift_platform_path }}/swift-6.0.2-RELEASE/swift-6.0.2-RELEASE-${{ matrix.swift_tarball_suffix }}.tar.gz" \
             -o /tmp/swift.tar.gz
           sudo mkdir -p /opt/swift
           sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
@@ -72,16 +86,16 @@ jobs:
         run: swift --version
       - name: Verify Linux deps
         run: |
-          source /opt/ros/jazzy/setup.bash
-          export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/build-linux-deps.sh
       - name: Build
         run: |
-          source /opt/ros/jazzy/setup.bash
-          export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           swift build
       - name: Test
         run: |
-          source /opt/ros/jazzy/setup.bash
-          export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           swift test --parallel

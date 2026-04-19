@@ -106,7 +106,18 @@ final class CDRBoundsTests: XCTestCase {
         }
     }
 
-    func testStringAllowsEmpty() throws {
+    func testStringAllowsSpecConformantEmpty() throws {
+        // CDR empty string: length = 1 for the lone null terminator.
+        let body: [UInt8] = [0x01, 0x00, 0x00, 0x00, 0x00]
+        let decoder = try CDRDecoder(data: cdrBuffer(body))
+        let result = try decoder.readString()
+        XCTAssertEqual(result, "")
+    }
+
+    func testStringTreatsZeroLengthAsEmpty() throws {
+        // Non-standard: length = 0 with no terminator byte. The decoder
+        // intentionally tolerates this shape for backwards compatibility; this
+        // test pins that behavior so a future change cannot remove it silently.
         let body: [UInt8] = [0x00, 0x00, 0x00, 0x00]
         let decoder = try CDRDecoder(data: cdrBuffer(body))
         let result = try decoder.readString()
@@ -119,6 +130,19 @@ final class CDRBoundsTests: XCTestCase {
         let decoder = try CDRDecoder(data: cdrBuffer(body))
         let result = try decoder.readString()
         XCTAssertEqual(result, "hi")
+    }
+
+    func testStringRejectsMissingNullTerminator() throws {
+        // length = 3, bytes "ABC" (no trailing 0x00). Must fail rather than
+        // silently decode as "AB" and drop the last byte.
+        let body: [UInt8] = [0x03, 0x00, 0x00, 0x00, 0x41, 0x42, 0x43]
+        let decoder = try CDRDecoder(data: cdrBuffer(body))
+        XCTAssertThrowsError(try decoder.readString()) { error in
+            guard case CDRDecodingError.missingStringNullTerminator = error else {
+                XCTFail("Expected missingStringNullTerminator, got \(error)")
+                return
+            }
+        }
     }
 
     // MARK: - Float NaN/Inf preservation (ensure bounds changes did not over-validate)

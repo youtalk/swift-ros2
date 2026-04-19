@@ -12,6 +12,7 @@ public enum CDRDecodingError: Error, LocalizedError {
     case sequenceTooLarge(elements: UInt32, max: Int)
     case byteSequenceTooLarge(bytes: UInt32, max: Int)
     case stringTooLarge(length: UInt32, max: Int)
+    case missingStringNullTerminator
 
     public var errorDescription: String? {
         switch self {
@@ -29,6 +30,8 @@ public enum CDRDecodingError: Error, LocalizedError {
             return "CDR byte sequence declares \(bytes) bytes which exceeds maximum \(max)"
         case .stringTooLarge(let length, let max):
             return "CDR string declares length \(length) which exceeds maximum \(max)"
+        case .missingStringNullTerminator:
+            return "CDR string is missing its trailing null terminator"
         }
     }
 }
@@ -162,6 +165,10 @@ public final class CDRDecoder {
     public func readString() throws -> String {
         let length = try readUInt32()
         guard length > 0 else {
+            // Non-standard but tolerated: length == 0 is treated as an empty
+            // string. `CDREncoder.writeString` always emits length >= 1 with a
+            // trailing null, so this branch only accepts malformed inputs; it
+            // exists purely for backwards tolerance.
             return ""
         }
         guard length <= Self.maxStringLength else {
@@ -170,7 +177,14 @@ public final class CDRDecoder {
         let byteCount = Int(length)
         try ensureAvailable(byteCount)
 
-        // length includes null terminator
+        // `length` includes the trailing null terminator. Validate it is actually
+        // present before slicing so malformed inputs fail fast instead of silently
+        // dropping the final payload byte.
+        let terminator = data[data.startIndex + offset + byteCount - 1]
+        guard terminator == 0x00 else {
+            throw CDRDecodingError.missingStringNullTerminator
+        }
+
         let stringBytes = data[data.startIndex + offset..<data.startIndex + offset + byteCount - 1]
         offset += byteCount
 

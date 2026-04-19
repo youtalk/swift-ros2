@@ -145,7 +145,9 @@ public class LivelinessToken {
 
 // MARK: - Zenoh Client
 
-/// Main Zenoh client for iOS, conforming to ZenohClientProtocol.
+/// Default `ZenohClientProtocol` implementation backed by zenoh-pico via `CZenohBridge`.
+/// Runs on every platform the package supports (iOS, iPadOS, macOS, Mac Catalyst,
+/// visionOS, and Linux — the Linux build swaps in a no-op `Logger` shim for `os.log`).
 /// Manages a Zenoh session and provides methods for publishing and subscribing.
 ///
 /// Thread-safety: `ZenohClient` is NOT safe for concurrent calls to `open` / `close` /

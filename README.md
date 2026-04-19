@@ -169,7 +169,6 @@ PRs welcome. The wire format fixtures in `Tests/SwiftROS2WireTests/` and the gol
 ## Roadmap
 
 - [x] 0.2.0: Publisher + Subscriber core, pure-Swift CDR, Jazzy/Humble wire codecs, Apple xcframework + Linux source build, dual-transport (Zenoh + DDS) FFI
-- [x] 0.3.0: Drop `Default` prefix from `ZenohClient` / `DDSClient` — breaking API rename
 - [ ] Services (request/reply) and Actions (goal/feedback/result)
 - [ ] `swift-ros2-gen` code generator for `.msg` / `.srv` / `.action` files
 - [ ] Expanded message catalog (nav_msgs, visualization_msgs, …)

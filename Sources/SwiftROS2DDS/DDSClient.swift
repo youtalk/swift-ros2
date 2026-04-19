@@ -1,5 +1,5 @@
 // DDSClient.swift
-// Standard implementation of DDSClientProtocol using the CDDSBridge C FFI.
+// Default implementation of DDSClientProtocol using the CDDSBridge C FFI.
 
 import CDDSBridge
 import Foundation

@@ -141,7 +141,7 @@ let package = Package(
         ),
 
         // Swift-facing Zenoh / DDS modules. Host ZenohClient / DDSClient,
-        // the standard implementations of the ZenohClientProtocol /
+        // the default implementations of the ZenohClientProtocol /
         // DDSClientProtocol seams defined in SwiftROS2Transport.
         .target(
             name: "SwiftROS2Zenoh",

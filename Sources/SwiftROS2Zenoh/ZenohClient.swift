@@ -1,6 +1,6 @@
 //
 // ZenohClient.swift
-// Swift wrapper for zenoh-pico C-FFI bridge, the standard ZenohClientProtocol implementation
+// Swift wrapper for zenoh-pico C-FFI bridge, the default ZenohClientProtocol implementation
 //
 // Provides a Swift-friendly API for Zenoh operations with proper error handling,
 // resource management, and type safety. Conforms to ZenohClientProtocol so that

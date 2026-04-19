@@ -1,144 +1,178 @@
 # swift-ros2
 
-Native Swift client library for ROS 2.
+Native Swift client library for ROS 2. Publishes and subscribes over **Zenoh** (via zenoh-pico) or **DDS** (via CycloneDDS) without a bridge, without pulling in the full ROS 2 stack.
 
-**swift-ros2** provides a Swift-native API for ROS 2 communication — publish, subscribe, services, and actions — over both **Zenoh** and **DDS** transports, without requiring the full ROS 2 stack.
+Shipping as **0.2.0** — pre-built xcframeworks on every Apple platform, source build on Linux.
 
 ## Features
 
-- **Dual transport**: Zenoh (rmw_zenoh_cpp) + DDS (rmw_cyclonedds_cpp) from day one
-- **No RCL dependency**: communicates at the transport level — works on iOS, visionOS, and macOS where installing ROS 2 is impractical
-- **Swift-native API**: async/await, AsyncStream subscriptions, Sendable conformance, structured concurrency
-- **ROS 2 distro support**: Humble, Jazzy, Kilted, Rolling with runtime wire format detection
-- **20 built-in message types**: sensor_msgs, geometry_msgs, std_msgs, audio_common_msgs
-- **Bidirectional CDR**: pure Swift XCDR v1 encoder + decoder for publish and subscribe
-- **Production-proven**: extracted from [Conduit](https://apps.apple.com/app/conduit-ros2-sensor-publisher/id6738043971), a shipping iOS app that publishes 12 sensor types at up to 100 Hz
+- **Dual transport out of the box.** `SwiftROS2Zenoh` talks to `rmw_zenoh_cpp`; `SwiftROS2DDS` talks to `rmw_cyclonedds_cpp`. Swap between them with a single config change.
+- **No RCL dependency.** Everything happens at the wire level, so iOS, iPadOS, macOS, Mac Catalyst, visionOS, and Linux all share the same Swift API.
+- **Swift-native API.** `async`/`await`, `AsyncStream` subscriptions, `Sendable` conformance, structured concurrency.
+- **Pre-built Apple binaries.** `CZenohPico.xcframework` + `CCycloneDDS.xcframework` attached to every GitHub Release — `swift build` downloads them directly; no CMake, no local bootstrap.
+- **Multi-distro wire format.** Humble, Jazzy, Kilted, Rolling. Select `wireMode` explicitly on the `TransportConfig`; when unspecified, Zenoh defaults to Jazzy.
+- **20 built-in message types** across sensor_msgs, geometry_msgs, std_msgs, audio_common_msgs, and tf2_msgs. Pure-Swift XCDR v1 encoder + decoder covers both publish and subscribe.
+- **Production proven.** Extracted from [Conduit](https://apps.apple.com/app/conduit-ros2-sensor-publisher/id6738043971), which pushes 12 sensor streams at up to 100 Hz.
 
-## Requirements
+## Platforms
 
-- Swift 5.9+
-- iOS 16+ / macOS 13+ / visionOS 1+
+| Platform      | Minimum deployment target | Integration path                              |
+|---------------|---------------------------|-----------------------------------------------|
+| iOS / iPadOS  | 16.0                      | `binaryTarget` xcframework (from release)     |
+| macOS         | 13.0                      | `binaryTarget` xcframework                    |
+| Mac Catalyst  | 16.0                      | `binaryTarget` xcframework                    |
+| visionOS      | 1.0                       | `binaryTarget` xcframework                    |
+| Linux         | Ubuntu 24.04 (x86_64/arm64) | zenoh-pico source build + CycloneDDS via `pkg-config` |
+
+Swift 5.9+ everywhere. CI runs on `macos-15` and `ubuntu-24.04` with Swift 6.0.2 + ROS 2 Jazzy.
 
 ## Installation
 
-Add to your `Package.swift`:
+### Apple platforms (recommended)
 
 ```swift
+// Package.swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.1.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.2.0"),
 ],
 targets: [
     .target(
-        name: "YourTarget",
-        dependencies: ["SwiftROS2"]
+        name: "YourApp",
+        dependencies: [
+            .product(name: "SwiftROS2", package: "swift-ros2"),
+        ]
     ),
 ]
 ```
 
+That's it — `swift build` downloads the xcframeworks from the 0.2.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `DefaultZenohClient` / `DefaultDDSClient` directly (e.g. for custom session configuration or testing).
+
+### Linux
+
+```bash
+# Ubuntu 24.04
+sudo apt install ros-jazzy-cyclonedds   # provides libddsc via pkg-config
+git clone --recursive https://github.com/youtalk/swift-ros2.git
+cd swift-ros2
+bash Scripts/build-linux-deps.sh        # verifies pkg-config finds CycloneDDS
+
+# Make pkg-config find CycloneDDS in the current shell. build-linux-deps.sh
+# exports these variables only inside its own process, so they have to be
+# re-exported here before `swift build` invokes the C toolchain.
+source /opt/ros/jazzy/setup.bash
+export PKG_CONFIG_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
+
+swift build
+swift test                               # 69 pass, 2 LINUX_IP-gated skips
+```
+
 ## Quick Start
+
+### Publish an IMU message over Zenoh
 
 ```swift
 import SwiftROS2
 
-// Create context with Zenoh transport
-let ctx = try await ROS2Context(
-    transport: .zenoh(locator: "tcp/192.168.1.1:7447"),
-    session: myZenohSession
+let context = try await ROS2Context(
+    transport: .zenoh(locator: "tcp/192.168.1.100:7447"),
+    distro: .jazzy
 )
-
-// Create a node
-let node = try await ctx.createNode(name: "my_node", namespace: "/ios")
-
-// Publish an IMU message
+let node = try await context.createNode(name: "sensor_node", namespace: "/ios")
 let pub = try await node.createPublisher(Imu.self, topic: "imu")
+
 let msg = Imu(
     header: Header.now(frameId: "imu_link"),
-    linearAcceleration: Vector3(x: 0.0, y: 0.0, z: 9.81)
+    linearAcceleration: Vector3(x: 0, y: 0, z: 9.81)
 )
 try pub.publish(msg)
+```
 
-// Subscribe (AsyncStream)
+### Same thing over DDS
+
+```swift
+import SwiftROS2
+
+let context = try await ROS2Context(
+    transport: .ddsMulticast(domainId: 0)
+)
+// Identical Node / Publisher API from here on.
+```
+
+### Subscribe
+
+```swift
 let sub = try await node.createSubscription(Imu.self, topic: "imu")
-for await message in sub.messages {
-    print("Received: \(message.linearAcceleration)")
+for await msg in sub.messages {
+    print("accel: \(msg.linearAcceleration)")
 }
 ```
 
-## Architecture
+## Module Layout
 
 ```
-import SwiftROS2  (re-exports all modules)
+import SwiftROS2          // re-exports CDR / Messages / Transport / Wire
     ├── SwiftROS2CDR        — XCDR v1 encoder + decoder (pure Swift)
-    ├── SwiftROS2Wire       — Wire format codecs (Zenoh + DDS, Humble → Rolling)
-    ├── SwiftROS2Messages   — Message protocols + 20 built-in types
-    └── SwiftROS2Transport  — Transport abstraction (session, publisher, subscriber)
+    ├── SwiftROS2Wire       — Zenoh/DDS wire codecs, Humble → Rolling
+    ├── SwiftROS2Messages   — 20 built-in message types + ROS 2 protocols
+    └── SwiftROS2Transport  — TransportSession / Publisher / Subscriber
+                              abstractions + TransportConfig
+
+// Transport-specific, opt-in:
+import SwiftROS2Zenoh      — DefaultZenohClient (zenoh-pico-backed)
+import SwiftROS2DDS        — DefaultDDSClient (CycloneDDS-backed)
 ```
 
-### Core API
+### Built-in message types
 
-| Type | Description |
-|------|-------------|
-| `ROS2Context` | Entry point; owns a transport session |
-| `ROS2Node` | Creates publishers, subscribers, services, actions |
-| `ROS2Publisher<M>` | Publishes messages of type M |
-| `ROS2Subscription<M>` | Receives messages via `AsyncStream<M>` |
+**sensor_msgs:** Imu, Image, CompressedImage, PointCloud2, NavSatFix, MagneticField, FluidPressure, Illuminance, Temperature, BatteryState, Joy, Range
+**geometry_msgs:** Vector3, Quaternion, Point, Pose, Twist, Transform, PoseStamped, TwistStamped, TransformStamped
+**std_msgs:** Header, String, Bool, Int32, Float64, Empty
+**audio_common_msgs:** AudioData
+**tf2_msgs:** TFMessage
 
-### Message Protocols
-
-| Protocol | Description |
-|----------|-------------|
-| `CDREncodable` | Can be serialized to CDR |
-| `CDRDecodable` | Can be deserialized from CDR |
-| `ROS2MessageType` | Has `typeInfo` (type name + hash) |
-| `ROS2Message` | `ROS2MessageType & CDRCodable` (both directions) |
-| `ROS2Service` | Request/Response associated types |
-| `ROS2Action` | Goal/Result/Feedback associated types |
-
-### Built-in Message Types
-
-**sensor_msgs**: Imu, Image, CompressedImage, PointCloud2, NavSatFix, MagneticField, FluidPressure, Illuminance, Temperature, BatteryState, Joy, Range
-
-**geometry_msgs**: TwistStamped, PoseStamped, TransformStamped, Vector3, Quaternion, Pose, Twist, Transform, Point
-
-**std_msgs**: String, Bool, Int32, Float64, Empty
-
-**audio_common_msgs**: AudioData
-
-## Defining Custom Messages
+## Defining a custom message type
 
 ```swift
 import SwiftROS2CDR
 import SwiftROS2Messages
 
-struct MyCustomMsg: ROS2Message {
-    static let typeInfo = ROS2MessageTypeInfo(
-        typeName: "my_pkg/msg/MyCustom",
-        typeHash: "RIHS01_..."
+public struct MyMsg: ROS2Message {
+    public static let typeInfo = ROS2MessageTypeInfo(
+        typeName: "my_pkg/msg/MyMsg",
+        typeHash: "RIHS01_…"
     )
 
-    var header: Header
-    var value: Double
+    public var header: Header
+    public var value: Double
 
-    func encode(to encoder: CDREncoder) throws {
+    public func encode(to encoder: CDREncoder) throws {
         encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         encoder.writeFloat64(value)
     }
 
-    init(from decoder: CDRDecoder) throws {
+    public init(from decoder: CDRDecoder) throws {
         self.header = try Header(from: decoder)
         self.value = try decoder.readFloat64()
     }
 }
 ```
 
+## Versioning
+
+Tags follow the Apple ecosystem convention of bare semver (no `v` prefix): `0.2.0`, `0.2.1`, `1.0.0-rc.1`, etc. The release workflow at `.github/workflows/release-xcframework.yml` fires on any tag matching `[0-9]*.[0-9]*.[0-9]*` (optionally followed by a `-qualifier`).
+
+## Contributing
+
+PRs welcome. The wire format fixtures in `Tests/SwiftROS2WireTests/` and the golden CDR tests in `Tests/SwiftROS2CDRTests/` are the canonical guardrails — keep them green. `Tests/SwiftROS2IntegrationTests/` boots a real ROS 2 subscriber on a Linux host; set `LINUX_IP=<host>` locally to run those two tests.
+
 ## Roadmap
 
-- [x] Phase 1: Publisher + Subscriber core with CDR encode/decode
-- [ ] Phase 2: Service client/server (ROS 2 request/reply)
-- [ ] Phase 3: Action client/server + `swift-ros2-gen` code generator
-- [ ] Phase 4: Documentation, example apps, CI/CD, Linux support
+- [x] 0.2.0: Publisher + Subscriber core, pure-Swift CDR, Jazzy/Humble wire codecs, Apple xcframework + Linux source build, dual-transport (Zenoh + DDS) FFI
+- [ ] Services (request/reply) and Actions (goal/feedback/result)
+- [ ] `swift-ros2-gen` code generator for `.msg` / `.srv` / `.action` files
+- [ ] Expanded message catalog (nav_msgs, visualization_msgs, …)
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) for details.
+Apache License 2.0. See [LICENSE](LICENSE).

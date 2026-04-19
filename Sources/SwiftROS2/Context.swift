@@ -115,9 +115,9 @@ extension ROS2Context {
     static func makeDefaultSession(for config: TransportConfig) throws -> any TransportSession {
         switch config.type {
         case .zenoh:
-            return ZenohTransportSession(client: DefaultZenohClient())
+            return ZenohTransportSession(client: ZenohClient())
         case .dds:
-            return DDSTransportSession(client: DefaultDDSClient())
+            return DDSTransportSession(client: DDSClient())
         }
     }
 }

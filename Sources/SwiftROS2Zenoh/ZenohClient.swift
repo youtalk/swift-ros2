@@ -1,6 +1,6 @@
 //
-// DefaultZenohClient.swift
-// Swift wrapper for zenoh-pico C-FFI bridge
+// ZenohClient.swift
+// Swift wrapper for zenoh-pico C-FFI bridge, the default ZenohClientProtocol implementation
 //
 // Provides a Swift-friendly API for Zenoh operations with proper error handling,
 // resource management, and type safety. Conforms to ZenohClientProtocol so that
@@ -30,9 +30,9 @@ import SwiftROS2Transport
 /// Represents a declared key expression for efficient reuse
 public class DeclaredKeyExpr {
     private var handle: OpaquePointer?
-    private weak var session: DefaultZenohClient?
+    private weak var session: ZenohClient?
 
-    fileprivate init(handle: OpaquePointer, session: DefaultZenohClient) {
+    fileprivate init(handle: OpaquePointer, session: ZenohClient) {
         self.handle = handle
         self.session = session
     }
@@ -56,13 +56,13 @@ public class DeclaredKeyExpr {
 /// Represents an active subscription
 public class ZenohSubscriber {
     private var handle: OpaquePointer?
-    private weak var session: DefaultZenohClient?
+    private weak var session: ZenohClient?
     private var handler: (ZenohSample) -> Void
     private var contextBox: Unmanaged<SubscriberContext>?
 
     fileprivate init(
         handle: OpaquePointer,
-        session: DefaultZenohClient,
+        session: ZenohClient,
         handler: @escaping (ZenohSample) -> Void,
         contextBox: Unmanaged<SubscriberContext>
     ) {
@@ -110,9 +110,9 @@ public class ZenohSubscriber {
 /// Represents an active liveliness token for ROS 2 discovery
 public class LivelinessToken {
     private var handle: OpaquePointer?
-    private weak var session: DefaultZenohClient?
+    private weak var session: ZenohClient?
 
-    fileprivate init(handle: OpaquePointer, session: DefaultZenohClient) {
+    fileprivate init(handle: OpaquePointer, session: ZenohClient) {
         self.handle = handle
         self.session = session
     }
@@ -143,16 +143,18 @@ public class LivelinessToken {
     }
 }
 
-// MARK: - Default Zenoh Client
+// MARK: - Zenoh Client
 
-/// Main Zenoh client for iOS, conforming to ZenohClientProtocol.
+/// Default `ZenohClientProtocol` implementation backed by zenoh-pico via `CZenohBridge`.
+/// Runs on every platform the package supports (iOS, iPadOS, macOS, Mac Catalyst,
+/// visionOS, and Linux — the Linux build swaps in a no-op `Logger` shim for `os.log`).
 /// Manages a Zenoh session and provides methods for publishing and subscribing.
 ///
-/// Thread-safety: `DefaultZenohClient` is NOT safe for concurrent calls to `open` / `close` /
+/// Thread-safety: `ZenohClient` is NOT safe for concurrent calls to `open` / `close` /
 /// `put` / `subscribe` across multiple threads. Callers must serialize these calls themselves
 /// (e.g., via `ZenohTransportSession` or an actor). The internal `resourceLock` only protects
 /// the tracked-resource arrays, not the `session` pointer itself.
-public class DefaultZenohClient: ZenohClientProtocol {
+public class ZenohClient: ZenohClientProtocol {
     private let log = Logger(subsystem: "com.youtalk.swift-ros2", category: "Zenoh")
 
     private var session: OpaquePointer?

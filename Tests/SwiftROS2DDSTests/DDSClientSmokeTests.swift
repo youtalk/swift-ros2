@@ -2,18 +2,18 @@ import XCTest
 
 @testable import SwiftROS2DDS
 
-final class DefaultDDSClientSmokeTests: XCTestCase {
+final class DDSClientSmokeTests: XCTestCase {
     func testAvailabilityFlag() {
-        let client = DefaultDDSClient()
+        let client = DDSClient()
         XCTAssertTrue(client.isAvailable)
     }
 
     func testInitializationDoesNotCrash() {
-        _ = DefaultDDSClient()
+        _ = DDSClient()
     }
 
     func testWriteWithForeignHandleThrows() throws {
-        let client = DefaultDDSClient()
+        let client = DDSClient()
         let foreign = ForeignWriterHandle()
         XCTAssertThrowsError(
             try client.writeRawCDR(

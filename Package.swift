@@ -167,6 +167,20 @@ let package = Package(
             path: "Sources/SwiftROS2"
         ),
 
+        // Example executables — minimal std_msgs/String talker + listener
+        // demos in the shape of demo_nodes_cpp. Transport (zenoh or dds) is
+        // picked by the first CLI argument so one binary covers both.
+        .executableTarget(
+            name: "talker",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/Talker"
+        ),
+        .executableTarget(
+            name: "listener",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/Listener"
+        ),
+
         // Tests
         .testTarget(
             name: "SwiftROS2CDRTests",

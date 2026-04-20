@@ -107,6 +107,10 @@ for await msg in sub.messages {
 }
 ```
 
+### Runnable examples
+
+For end-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift run talker_zenoh`, `swift run listener_dds`, etc., with instructions for wiring them up to `ros2 topic echo` — see [`Sources/Examples/README.md`](Sources/Examples/README.md).
+
 ## Module Layout
 
 ```

@@ -12,13 +12,18 @@ Message type is `std_msgs/msg/String`, payload is `"Hello World: N"`. Default Qo
 ## Invocation
 
 ```bash
-swift run talker    zenoh [tcp/<host>:7447]   # default locator: tcp/127.0.0.1:7447
-swift run talker    dds   [domain_id]         # default domain_id: 0
-swift run listener  zenoh [tcp/<host>:7447]
+swift run talker    zenoh [tcp/<host>:7447] [domain_id]   # defaults: tcp/127.0.0.1:7447 and 0
+swift run talker    dds   [domain_id]                     # default domain_id: 0
+swift run listener  zenoh [tcp/<host>:7447] [domain_id]
 swift run listener  dds   [domain_id]
 ```
 
-The first argument selects the transport (`zenoh` or `dds`). The second is transport-specific: a Zenoh router locator or a ROS 2 domain ID. Both arguments default, so `swift run talker` alone targets a local Zenoh router at `tcp/127.0.0.1:7447`.
+The first argument selects the transport (`zenoh` or `dds`). Remaining arguments are transport-specific:
+
+- **zenoh:** `[locator] [domain_id]` — the router locator, plus the ROS 2 domain ID (domain is baked into the Zenoh key expression as `<domain>/<namespace>/<topic>/…`, so publisher and subscriber must agree).
+- **dds:** `[domain_id]` — the ROS 2 domain ID for CycloneDDS discovery.
+
+All arguments default, so `swift run talker` alone targets a local Zenoh router at `tcp/127.0.0.1:7447` with domain `0`.
 
 ## Prerequisites
 

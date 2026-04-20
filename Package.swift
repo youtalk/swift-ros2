@@ -167,8 +167,8 @@ let package = Package(
             path: "Sources/SwiftROS2"
         ),
 
-        // Example executables — minimal std_msgs/String talker demos in the
-        // shape of demo_nodes_cpp/talker.cpp, one per transport.
+        // Example executables — minimal std_msgs/String talker + listener
+        // demos in the shape of demo_nodes_cpp, one pair per transport.
         .executableTarget(
             name: "talker_zenoh",
             dependencies: ["SwiftROS2"],
@@ -178,6 +178,16 @@ let package = Package(
             name: "talker_dds",
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/TalkerDDS"
+        ),
+        .executableTarget(
+            name: "listener_zenoh",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/ListenerZenoh"
+        ),
+        .executableTarget(
+            name: "listener_dds",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/ListenerDDS"
         ),
 
         // Tests

@@ -168,26 +168,17 @@ let package = Package(
         ),
 
         // Example executables — minimal std_msgs/String talker + listener
-        // demos in the shape of demo_nodes_cpp, one pair per transport.
+        // demos in the shape of demo_nodes_cpp. Transport (zenoh or dds) is
+        // picked by the first CLI argument so one binary covers both.
         .executableTarget(
-            name: "talker_zenoh",
+            name: "talker",
             dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/TalkerZenoh"
+            path: "Sources/Examples/Talker"
         ),
         .executableTarget(
-            name: "talker_dds",
+            name: "listener",
             dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/TalkerDDS"
-        ),
-        .executableTarget(
-            name: "listener_zenoh",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/ListenerZenoh"
-        ),
-        .executableTarget(
-            name: "listener_dds",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/ListenerDDS"
+            path: "Sources/Examples/Listener"
         ),
 
         // Tests

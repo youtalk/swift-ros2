@@ -43,4 +43,64 @@ final class DDSRoundTripTests: XCTestCase {
         try await Task.sleep(nanoseconds: 500_000_000)
         await ctx.shutdown()
     }
+
+    /// Same-process publisher to subscriber over DDS multicast on the loopback
+    /// interface. No LINUX_IP required — runs anywhere CycloneDDS loopback
+    /// works, which is every Darwin / Linux machine. Uses domain 42 (distinct
+    /// from the remote-host test at domain 99 so the two cannot interfere if
+    /// both run).
+    func testLoopbackPubSubSameProcess() async throws {
+        let domain = 42
+        let ctx = try await ROS2Context(
+            transport: .ddsMulticast(domainId: domain),
+            distro: .jazzy,
+            domainId: domain
+        )
+        let node = try await ctx.createNode(name: "dds_loopback", namespace: "/loopback")
+
+        // Bind the subscriber first so SEDP can advertise the reader before
+        // the writer starts sending.
+        let sub = try await node.createSubscription(StringMsg.self, topic: "chatter")
+        let pub = try await node.createPublisher(StringMsg.self, topic: "chatter")
+
+        // DDS endpoint discovery (SPDP/SEDP) is slower than Zenoh; give both
+        // sides time to match before the first publish.
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+
+        let expectation = XCTestExpectation(description: "receive at least 3 chatter messages")
+        expectation.expectedFulfillmentCount = 3
+        expectation.assertForOverFulfill = false
+
+        let buf = LoopbackReceivedBuffer()
+        let consumer = Task {
+            for await msg in sub.messages {
+                await buf.append(msg.data)
+                expectation.fulfill()
+            }
+        }
+
+        for i in 0..<5 {
+            try pub.publish(StringMsg(data: "hello-\(i)"))
+            // 200 ms between publishes gives RTPS reliability acknowledgements
+            // time to fire on the loopback interface.
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+
+        await fulfillment(of: [expectation], timeout: 10.0)
+        consumer.cancel()
+
+        let items = await buf.items
+        XCTAssertGreaterThanOrEqual(
+            items.count, 3, "expected at least 3 messages; got \(items)")
+        for item in items {
+            XCTAssertTrue(item.starts(with: "hello-"), "unexpected payload: \(item)")
+        }
+
+        await ctx.shutdown()
+    }
+}
+
+private actor LoopbackReceivedBuffer {
+    private(set) var items: [String] = []
+    func append(_ s: String) { items.append(s) }
 }

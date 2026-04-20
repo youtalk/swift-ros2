@@ -123,7 +123,7 @@ let package = Package(
             sources: ["zenoh_bridge.c"],
             publicHeadersPath: "include",
             cSettings: [
-                .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst])),
+                .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
                 .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
                 .define("Z_FEATURE_LINK_TCP", to: "1"),
                 .define("Z_FEATURE_LIVELINESS", to: "1"),

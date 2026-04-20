@@ -3,7 +3,10 @@
 //
 // Usage:
 //   swift run listener zenoh [tcp/<host>:7447] [domain_id]
-//   swift run listener dds   [domain_id]
+//
+// Note: DDS subscribe is not implemented in swift-ros2 yet (the transport
+// layer throws "DDS subscriber not yet implemented"), so `dds` is rejected
+// up front here. Use zenoh for now.
 
 import Foundation
 import SwiftROS2
@@ -18,10 +21,10 @@ case "zenoh":
     let domainId = args.dropFirst(2).first.flatMap(Int.init) ?? 0
     transport = .zenoh(locator: locator, domainId: domainId)
 case "dds":
-    let domainId = args.dropFirst().first.flatMap(Int.init) ?? 0
-    transport = .ddsMulticast(domainId: domainId)
+    FileHandle.standardError.write(Data("DDS subscribe is not yet supported by swift-ros2; use zenoh.\n".utf8))
+    exit(2)
 default:
-    FileHandle.standardError.write(Data("Unknown transport '\(transportName)'. Use 'zenoh' or 'dds'.\n".utf8))
+    FileHandle.standardError.write(Data("Unknown transport '\(transportName)'. Use 'zenoh'.\n".utf8))
     exit(2)
 }
 

@@ -15,6 +15,12 @@ public protocol DDSWriterHandle: AnyObject {
     func close()
 }
 
+/// Handle to a DDS reader
+public protocol DDSReaderHandle: AnyObject {
+    var isActive: Bool { get }
+    func close()
+}
+
 // MARK: - DDS Configuration Types
 
 /// DDS discovery mode
@@ -79,6 +85,7 @@ public enum DDSError: Error, LocalizedError {
     case sessionCreationFailed(String)
     case sessionDestructionFailed(String)
     case writerCreationFailed(String)
+    case readerCreationFailed(String)
     case writeFailed(String)
     case notConnected
     case notAvailable
@@ -88,6 +95,7 @@ public enum DDSError: Error, LocalizedError {
         case .sessionCreationFailed(let msg): return "DDS session creation failed: \(msg)"
         case .sessionDestructionFailed(let msg): return "DDS session destruction failed: \(msg)"
         case .writerCreationFailed(let msg): return "DDS writer creation failed: \(msg)"
+        case .readerCreationFailed(let msg): return "DDS reader creation failed: \(msg)"
         case .writeFailed(let msg): return "DDS write failed: \(msg)"
         case .notConnected: return "DDS session not connected"
         case .notAvailable: return "DDS transport not available"
@@ -135,4 +143,26 @@ public protocol DDSClientProtocol: AnyObject {
 
     /// Destroy a writer
     func destroyWriter(_ writer: any DDSWriterHandle)
+
+    /// Create a raw CDR reader for a topic with a per-sample callback.
+    ///
+    /// - Parameters:
+    ///   - topicName: Full DDS topic name (e.g. "rt/chatter").
+    ///   - typeName: DDS type name in `::msg::dds_::Type_` form.
+    ///   - qos: Reader QoS.
+    ///   - userData: USER_DATA QoS string (e.g. "typehash=RIHS01_...;"), or `nil`.
+    ///   - handler: Called with the raw CDR payload (including 4-byte XCDR header)
+    ///     and the sample source timestamp (nanoseconds since Unix epoch; 0 if the
+    ///     publisher did not supply one). Invoked on a CycloneDDS-owned background
+    ///     thread — do not block or reentrantly destroy the reader from inside it.
+    func createRawReader(
+        topicName: String,
+        typeName: String,
+        qos: DDSBridgeQoSConfig,
+        userData: String?,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> any DDSReaderHandle
+
+    /// Destroy a reader. Blocks until any in-flight handler invocation completes.
+    func destroyReader(_ reader: any DDSReaderHandle)
 }

@@ -30,6 +30,9 @@ typedef struct bridge_dds_session_s bridge_dds_session_t;
 /// Opaque handle to a DDS data writer
 typedef struct bridge_dds_writer_s bridge_dds_writer_t;
 
+/// Opaque handle to a DDS data reader (raw CDR receive path)
+typedef struct bridge_dds_reader_s bridge_dds_reader_t;
+
 // =============================================================================
 // MARK: - Discovery Configuration
 // =============================================================================
@@ -236,6 +239,65 @@ int32_t dds_bridge_write_raw_cdr(
     size_t cdr_len,
     uint64_t timestamp_ns
 );
+
+// =============================================================================
+// MARK: - Raw CDR Subscribing (Custom Sertype)
+// =============================================================================
+
+/// Callback fired for each received sample.
+///
+/// @param cdr_data     CDR-serialized payload including 4-byte encapsulation header
+///                     (owned by bridge; valid only during the call).
+/// @param cdr_len      Length of cdr_data in bytes.
+/// @param timestamp_ns Source timestamp in nanoseconds since Unix epoch
+///                     (from dds_sample_info_t.source_timestamp; 0 if invalid).
+/// @param context      Opaque user pointer supplied to dds_bridge_create_raw_reader.
+typedef void (*dds_bridge_data_callback_t)(
+    const uint8_t* cdr_data,
+    size_t cdr_len,
+    uint64_t timestamp_ns,
+    void* context
+);
+
+/// Create a DDS data reader using the raw CDR sertype.
+///
+/// Parallel to dds_bridge_create_raw_writer. Reuses the participant from the session
+/// (the reader is created directly under the participant; CycloneDDS provides an
+/// implicit subscriber internally).
+///
+/// @param session Active DDS session
+/// @param topic_name Full topic name (e.g., "rt/chatter")
+/// @param type_name DDS type name in ::msg::dds_:: form (e.g., "std_msgs::msg::dds_::String_")
+/// @param qos QoS configuration (NULL for sensor data defaults)
+/// @param user_data USER_DATA QoS string for reader (e.g., "typehash=RIHS01_...;"), NULL to omit
+/// @param callback Callback invoked on each received valid sample (must be non-NULL)
+/// @param context Opaque user pointer passed to each callback invocation (may be NULL)
+/// @return Reader handle, or NULL on failure (check dds_bridge_get_last_error())
+bridge_dds_reader_t* dds_bridge_create_raw_reader(
+    bridge_dds_session_t* session,
+    const char* topic_name,
+    const char* type_name,
+    const bridge_qos_config_t* qos,
+    const char* user_data,
+    dds_bridge_data_callback_t callback,
+    void* context
+);
+
+/// Destroy a DDS data reader. Safe to pass NULL.
+///
+/// Calls dds_delete on the reader entity, which blocks until any in-flight listener
+/// callback returns (CycloneDDS contract). After this returns the callback will
+/// never fire again, so the caller can safely release resources associated with
+/// `context`.
+///
+/// @param reader Reader to destroy
+void dds_bridge_destroy_reader(bridge_dds_reader_t* reader);
+
+/// Check if a reader is active
+///
+/// @param reader Reader to check
+/// @return true if reader is active, false otherwise
+bool dds_bridge_reader_is_active(const bridge_dds_reader_t* reader);
 
 // =============================================================================
 // MARK: - Error Handling

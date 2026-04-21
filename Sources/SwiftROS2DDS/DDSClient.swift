@@ -46,16 +46,97 @@ private final class DDSWriterHandleBox: DDSWriterHandle {
     }
 }
 
+// MARK: - Reader handle
+
+/// Retained by `DDSReaderHandleBox.contextBox` while the reader is alive.
+/// The `@unchecked Sendable` is justified: the class holds an immutable
+/// `@Sendable` closure reference; the closure captures are the only
+/// state shared across threads, and Swift's concurrency model already
+/// requires those to be Sendable.
+private final class DDSReaderContext: @unchecked Sendable {
+    let handler: @Sendable (Data, UInt64) -> Void
+    init(handler: @escaping @Sendable (Data, UInt64) -> Void) {
+        self.handler = handler
+    }
+}
+
+/// C-callable bridge matching `dds_bridge_data_callback_t`.
+/// The `context` pointer is an `Unmanaged<DDSReaderContext>` opaque pointer
+/// created via `passRetained` in `createRawReader`; here we only borrow it
+/// (`takeUnretainedValue`) — retention is released in `DDSReaderHandleBox.close()`.
+private func ddsReaderCallbackBridge(
+    cdrData: UnsafePointer<UInt8>?,
+    cdrLen: Int,
+    timestampNs: UInt64,
+    context: UnsafeMutableRawPointer?
+) {
+    guard let context = context else { return }
+    let readerContext = Unmanaged<DDSReaderContext>.fromOpaque(context).takeUnretainedValue()
+
+    let payload: Data
+    if let cdrData = cdrData, cdrLen > 0 {
+        payload = Data(bytes: cdrData, count: cdrLen)
+    } else {
+        payload = Data()
+    }
+
+    readerContext.handler(payload, timestampNs)
+}
+
+/// Per-box lock serializes destroy vs. isActive checks for the same reader.
+/// Different readers hold different locks, so parallel reads stay lock-free.
+private final class DDSReaderHandleBox: DDSReaderHandle {
+    private var reader: OpaquePointer?
+    private var contextBox: Unmanaged<DDSReaderContext>?
+    private let lock = NSLock()
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let r = reader else { return false }
+        return dds_bridge_reader_is_active(r)
+    }
+
+    init(_ reader: OpaquePointer, contextBox: Unmanaged<DDSReaderContext>) {
+        self.reader = reader
+        self.contextBox = contextBox
+    }
+
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let r = reader {
+            // dds_bridge_destroy_reader blocks until any in-flight callback
+            // returns. Only after it returns is it safe to release the retained
+            // closure context, because no further callback invocations will
+            // dereference it.
+            dds_bridge_destroy_reader(r)
+            reader = nil
+        }
+        if let box = contextBox {
+            box.release()
+            contextBox = nil
+        }
+    }
+}
+
 // MARK: - DDSClient
 
 /// Thread-safety: the client-level `NSLock` serializes `createSession` /
-/// `destroySession` / `isConnected` / `getSessionId` / `createRawWriter`.
-/// `writeRawCDR` and `destroyWriter` do not take the client-level lock so
-/// parallel writes across different writers stay unserialized, but each
-/// writer carries its own per-`DDSWriterHandleBox` lock that serializes
-/// `writeRawCDR` against `destroyWriter` for the *same* writer (preventing
-/// use-after-free on the underlying CycloneDDS writer pointer). Callers must
-/// still ensure writers outlive the session.
+/// `destroySession` / `isConnected` / `getSessionId` / `createRawWriter` /
+/// `createRawReader`. `writeRawCDR` and `destroyWriter` do not take the
+/// client-level lock so parallel writes across different writers stay
+/// unserialized, but each writer carries its own per-`DDSWriterHandleBox`
+/// lock that serializes `writeRawCDR` against `destroyWriter` for the *same*
+/// writer (preventing use-after-free on the underlying CycloneDDS writer
+/// pointer). Callers must still ensure writers outlive the session.
+/// Readers follow the same per-box lock discipline: each reader carries its
+/// own `DDSReaderHandleBox` lock that serializes `close()` against
+/// `isActive`, and the retained `Unmanaged<DDSReaderContext>` holding the
+/// user handler is released only *after* `dds_bridge_destroy_reader`
+/// returns — CycloneDDS contracts that call to block until any in-flight
+/// listener callback has returned, so a racing callback thread can never
+/// dereference a freed closure context.
 public final class DDSClient: DDSClientProtocol {
     private var session: OpaquePointer?
     private let lock = NSLock()
@@ -213,6 +294,64 @@ public final class DDSClient: DDSClientProtocol {
 
     public func destroyWriter(_ writer: any DDSWriterHandle) {
         guard let box = writer as? DDSWriterHandleBox else { return }
+        box.close()
+    }
+
+    public func createRawReader(
+        topicName: String,
+        typeName: String,
+        qos: DDSBridgeQoSConfig,
+        userData: String?,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> any DDSReaderHandle {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let s = session else {
+            throw DDSError.notConnected
+        }
+
+        var cQos = bridge_qos_config_t()
+        cQos.reliability =
+            qos.reliability == .reliable ? BRIDGE_RELIABILITY_RELIABLE : BRIDGE_RELIABILITY_BEST_EFFORT
+        cQos.durability =
+            qos.durability == .transientLocal ? BRIDGE_DURABILITY_TRANSIENT_LOCAL : BRIDGE_DURABILITY_VOLATILE
+        cQos.history_kind =
+            qos.historyKind == .keepAll ? BRIDGE_HISTORY_KEEP_ALL : BRIDGE_HISTORY_KEEP_LAST
+        cQos.history_depth = qos.historyDepth
+
+        let contextBox = Unmanaged.passRetained(DDSReaderContext(handler: handler))
+        let contextPtr = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        let readerOrNil: OpaquePointer? = topicName.withCString { topicCStr in
+            typeName.withCString { typeCStr in
+                if let userData = userData {
+                    return userData.withCString { userDataCStr in
+                        dds_bridge_create_raw_reader(
+                            s, topicCStr, typeCStr, &cQos, userDataCStr,
+                            ddsReaderCallbackBridge, contextPtr
+                        )
+                    }
+                } else {
+                    return dds_bridge_create_raw_reader(
+                        s, topicCStr, typeCStr, &cQos, nil,
+                        ddsReaderCallbackBridge, contextPtr
+                    )
+                }
+            }
+        }
+
+        guard let reader = readerOrNil else {
+            contextBox.release()
+            let msg = String(cString: dds_bridge_get_last_error())
+            throw DDSError.readerCreationFailed(msg)
+        }
+
+        return DDSReaderHandleBox(reader, contextBox: contextBox)
+    }
+
+    public func destroyReader(_ reader: any DDSReaderHandle) {
+        guard let box = reader as? DDSReaderHandleBox else { return }
         box.close()
     }
 }

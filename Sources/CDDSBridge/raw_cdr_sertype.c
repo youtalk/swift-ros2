@@ -15,6 +15,7 @@
 #include <assert.h>
 #include <dds/ddsrt/heap.h>
 #include <dds/ddsrt/md5.h>
+#include <dds/ddsi/q_radmin.h>
 
 // =============================================================================
 // MARK: - Sertype Operations Implementation
@@ -148,12 +149,49 @@ static struct ddsi_serdata *raw_cdr_serdata_from_ser(
     const struct nn_rdata *fragchain,
     size_t size)
 {
-    (void)type;
-    (void)kind;
-    (void)fragchain;
-    (void)size;
-    // Not implemented for publish-only use case
-    return NULL;
+    // Must have at least the 4-byte XCDR encapsulation header.
+    if (size < 4) {
+        return NULL;
+    }
+
+    // Allocate serdata with flexible array + 3 bytes trailing padding.
+    // The +3 mirrors raw_cdr_serdata_new: CycloneDDS's align4u(cdr_size)
+    // may read up to 3 bytes past the end when slicing fragments via
+    // to_ser_ref on the transmit side. Keeping the layout identical
+    // between transmit- and receive-constructed serdatas avoids surprises
+    // if the received sample is ever re-published.
+    struct raw_cdr_serdata *rd = ddsrt_malloc(sizeof(struct raw_cdr_serdata) + size + 3);
+    if (!rd) {
+        return NULL;
+    }
+
+    ddsi_serdata_init(&rd->c, type, kind);
+    // For keyless types, all serdatas share the sertype's basehash.
+    rd->c.hash = type->serdata_basehash;
+    rd->cdr_size = size;
+
+    // Walk the fragment chain, copying each fragment's new region into
+    // rd->cdr_data. Mirrors the canonical walk in CycloneDDS's
+    // serdata_default_from_ser_common but starts at off=0 so the 4-byte
+    // encapsulation header is preserved verbatim in rd->cdr_data.
+    size_t off = 0;
+    while (fragchain) {
+        assert(fragchain->min <= off);
+        assert(fragchain->maxp1 <= size);
+        if (fragchain->maxp1 > off) {
+            const unsigned char *payload =
+                NN_RMSG_PAYLOADOFF(fragchain->rmsg, NN_RDATA_PAYLOAD_OFF(fragchain));
+            memcpy(rd->cdr_data + off, payload + off - fragchain->min, fragchain->maxp1 - off);
+            off = fragchain->maxp1;
+        }
+        fragchain = fragchain->nextfrag;
+    }
+
+    // Zero the trailing 3 bytes of padding so an align4u overread returns
+    // well-defined zero bytes (matches raw_cdr_serdata_new).
+    memset(rd->cdr_data + size, 0, 3);
+
+    return &rd->c;
 }
 
 /// Create serdata from keyhash (for tkmap lookups)

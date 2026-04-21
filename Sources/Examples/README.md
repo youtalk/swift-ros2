@@ -5,18 +5,17 @@ Two minimal executables that mirror [`demo_nodes_cpp`](https://github.com/ros2/d
 | Target     | Zenoh | DDS | What it does                                      |
 |------------|:-----:|:---:|---------------------------------------------------|
 | `talker`   | ✅    | ✅  | Publishes `std_msgs/String` on `/chatter` at 1 Hz |
-| `listener` | ✅    | ❌  | Subscribes to `/chatter` and prints each message  |
+| `listener` | ✅    | ✅  | Subscribes to `/chatter` and prints each message  |
 
 Message type is `std_msgs/msg/String`, payload is `"Hello World: N"`. Default QoS is `.sensorData` (best-effort, keep-last-10).
-
-> DDS subscribe is not yet implemented in swift-ros2, so `swift run listener dds …` exits with an error. For a `ROS 2 → Swift` round trip, use Zenoh.
 
 ## Invocation
 
 ```bash
 swift run talker    zenoh [tcp/<host>:7447] [domain_id]   # defaults: tcp/127.0.0.1:7447 and 0
 swift run talker    dds   [domain_id]                     # default domain_id: 0
-swift run listener  zenoh [tcp/<host>:7447] [domain_id]   # dds subcommand is rejected (see note above)
+swift run listener  zenoh [tcp/<host>:7447] [domain_id]
+swift run listener  dds   [domain_id]
 ```
 
 The first argument selects the transport (`zenoh` or `dds`). Remaining arguments are transport-specific:
@@ -119,9 +118,36 @@ export ROS_DOMAIN_ID=0
 ros2 topic echo /chatter std_msgs/msg/String
 ```
 
-### 2. ROS 2 talker → Swift listener — not supported over DDS
+### 2. ROS 2 talker → Swift listener
 
-The Swift `listener` binary is Zenoh-only today (see the note at the top of this file). For this direction, use the Zenoh path (section 3 in the Zenoh tutorial above).
+Terminal A (ROS 2 publisher):
+
+```bash
+source /opt/ros/jazzy/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS_DOMAIN_ID=0
+ros2 run demo_nodes_cpp talker
+```
+
+Terminal B (Swift subscriber):
+
+```bash
+swift run listener dds 0
+# Listening on /chatter...
+# I heard: 'Hello World: 1'
+```
+
+### 3. Swift ↔ Swift
+
+Two Swift processes on the same LAN + `ROS_DOMAIN_ID`, no router, no ROS 2 install:
+
+```bash
+# Terminal A
+swift run talker   dds 0
+
+# Terminal B
+swift run listener dds 0
+```
 
 ### Wi-Fi (no multicast)
 

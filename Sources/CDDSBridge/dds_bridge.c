@@ -111,6 +111,27 @@ struct bridge_dds_writer_s {
 };
 
 // =============================================================================
+// MARK: - Reader Structure
+// =============================================================================
+
+struct bridge_dds_reader_s {
+#ifdef DDS_AVAILABLE
+    dds_entity_t reader;
+    dds_entity_t topic;
+    dds_listener_t* listener;
+    struct ddsi_sertype* raw_sertype;
+#else
+    int dummy_reader;
+    int dummy_topic;
+#endif
+    bridge_dds_session_t* session;
+    dds_bridge_data_callback_t user_callback;
+    void* user_context;
+    char topic_name[256];
+    bool is_active;
+};
+
+// =============================================================================
 // MARK: - Session Management Implementation
 // =============================================================================
 
@@ -820,4 +841,248 @@ int32_t dds_bridge_write_raw_cdr(
     (void)timestamp_ns;
     return 0;
 #endif
+}
+
+// =============================================================================
+// MARK: - Raw CDR Subscribing Implementation
+// =============================================================================
+
+#ifdef DDS_AVAILABLE
+/// Listener callback invoked by CycloneDDS when new data is available on the reader.
+/// Drains the reader with dds_takecdr in batches of 16, matching rmw_cyclonedds_cpp's
+/// default batch size to keep stack usage bounded.
+static void bridge_on_data_available(dds_entity_t reader_entity, void* arg) {
+    bridge_dds_reader_t* reader = (bridge_dds_reader_t*)arg;
+    if (!reader || !reader->is_active || !reader->user_callback) {
+        return;
+    }
+
+    enum { BATCH = 16 };
+    struct ddsi_serdata* sdbuf[BATCH];
+    dds_sample_info_t info[BATCH];
+
+    for (;;) {
+        // Zero the serdata pointers so we don't accidentally unref stale garbage.
+        for (int i = 0; i < BATCH; i++) {
+            sdbuf[i] = NULL;
+        }
+
+        dds_return_t n = dds_takecdr(reader_entity, sdbuf, BATCH, info, DDS_ANY_STATE);
+        if (n <= 0) {
+            break;
+        }
+
+        for (dds_return_t i = 0; i < n; i++) {
+            struct ddsi_serdata* sd = sdbuf[i];
+            if (!sd) {
+                continue;
+            }
+            if (info[i].valid_data) {
+                // sd is our raw_cdr_serdata (we own the type); safe to downcast.
+                const struct raw_cdr_serdata* rd = (const struct raw_cdr_serdata*)sd;
+                uint64_t ts_ns = (info[i].source_timestamp == DDS_TIME_INVALID)
+                    ? 0
+                    : (uint64_t)info[i].source_timestamp;
+                reader->user_callback(rd->cdr_data, rd->cdr_size, ts_ns, reader->user_context);
+            }
+            ddsi_serdata_unref(sd);
+        }
+
+        if ((uint32_t)n < (uint32_t)BATCH) {
+            // Likely drained - avoid an extra syscall next iteration.
+            break;
+        }
+    }
+}
+#endif
+
+bridge_dds_reader_t* dds_bridge_create_raw_reader(
+    bridge_dds_session_t* session,
+    const char* topic_name,
+    const char* type_name,
+    const bridge_qos_config_t* qos,
+    const char* user_data,
+    dds_bridge_data_callback_t callback,
+    void* context
+) {
+    if (!session || !topic_name || !type_name || !callback) {
+        set_error("Invalid parameters for dds_bridge_create_raw_reader");
+        return NULL;
+    }
+
+    if (!session->is_connected) {
+        set_error("Session is not connected");
+        return NULL;
+    }
+
+    // Allocate reader structure
+    bridge_dds_reader_t* reader = calloc(1, sizeof(bridge_dds_reader_t));
+    if (!reader) {
+        set_error("Failed to allocate reader structure");
+        return NULL;
+    }
+
+    reader->session = session;
+    reader->user_callback = callback;
+    reader->user_context = context;
+    strncpy(reader->topic_name, topic_name, sizeof(reader->topic_name) - 1);
+    reader->is_active = false;
+
+#ifdef DDS_AVAILABLE
+    // Use default QoS if not specified
+    const bridge_qos_config_t* effective_qos = qos ? qos : &BRIDGE_QOS_SENSOR_DATA;
+
+    // Create raw CDR sertype (same pattern as create_raw_writer)
+    reader->raw_sertype = raw_cdr_sertype_new(type_name);
+    if (!reader->raw_sertype) {
+        set_error("Failed to create raw CDR sertype for '%s'", type_name);
+        free(reader);
+        return NULL;
+    }
+
+    // Create topic using raw CDR sertype.
+    // Note: dds_create_topic_sertype takes ownership of sertype reference,
+    // and may replace the sertype pointer with an existing compatible one.
+    struct ddsi_sertype* sertype_for_topic = ddsi_sertype_ref(reader->raw_sertype);
+    reader->topic = dds_create_topic_sertype(
+        session->participant,
+        topic_name,
+        &sertype_for_topic,
+        NULL,  // qos
+        NULL,  // listener
+        NULL   // sedp_plist
+    );
+
+    if (reader->topic < 0) {
+        set_error("Failed to create raw CDR topic '%s': %s",
+                  topic_name, dds_strretcode(reader->topic));
+        ddsi_sertype_unref(reader->raw_sertype);
+        free(reader);
+        return NULL;
+    }
+
+    // If dds_create_topic_sertype returned a different sertype (because a matching
+    // one was already registered), use that one going forward.
+    if (sertype_for_topic != reader->raw_sertype) {
+        ddsi_sertype_unref(reader->raw_sertype);
+        reader->raw_sertype = ddsi_sertype_ref(sertype_for_topic);
+    }
+
+    // Create reader QoS
+    dds_qos_t* reader_qos = dds_create_qos();
+    if (!reader_qos) {
+        set_error("Failed to create reader QoS");
+        dds_delete(reader->topic);
+        ddsi_sertype_unref(reader->raw_sertype);
+        free(reader);
+        return NULL;
+    }
+
+    // Set reliability
+    if (effective_qos->reliability == BRIDGE_RELIABILITY_RELIABLE) {
+        dds_qset_reliability(reader_qos, DDS_RELIABILITY_RELIABLE, DDS_MSECS(100));
+    } else {
+        dds_qset_reliability(reader_qos, DDS_RELIABILITY_BEST_EFFORT, 0);
+    }
+
+    // Set durability
+    if (effective_qos->durability == BRIDGE_DURABILITY_TRANSIENT_LOCAL) {
+        dds_qset_durability(reader_qos, DDS_DURABILITY_TRANSIENT_LOCAL);
+    } else {
+        dds_qset_durability(reader_qos, DDS_DURABILITY_VOLATILE);
+    }
+
+    // Set history
+    if (effective_qos->history_kind == BRIDGE_HISTORY_KEEP_ALL) {
+        dds_qset_history(reader_qos, DDS_HISTORY_KEEP_ALL, 0);
+    } else {
+        dds_qset_history(reader_qos, DDS_HISTORY_KEEP_LAST, effective_qos->history_depth);
+    }
+
+    // Set USER_DATA QoS (type hash for rmw_cyclonedds_cpp discovery)
+    if (user_data && strlen(user_data) > 0) {
+        dds_qset_userdata(reader_qos, user_data, strlen(user_data));
+    }
+
+    // Create listener with the bridge reader as the arg pointer, then install
+    // the data_available callback. Use the plain _arg-less dds_lset_data_available
+    // to remain compatible with older CycloneDDS (Ubuntu Humble's 0.9) which
+    // predates dds_lset_data_available_arg.
+    reader->listener = dds_create_listener(reader);
+    if (!reader->listener) {
+        set_error("Failed to create reader listener");
+        dds_delete_qos(reader_qos);
+        dds_delete(reader->topic);
+        ddsi_sertype_unref(reader->raw_sertype);
+        free(reader);
+        return NULL;
+    }
+    dds_lset_data_available(reader->listener, bridge_on_data_available);
+
+    // Create reader directly under the participant (CycloneDDS auto-creates an
+    // implicit subscriber). This mirrors rmw_cyclonedds_cpp.
+    reader->reader = dds_create_reader(
+        session->participant, reader->topic, reader_qos, reader->listener);
+    dds_delete_qos(reader_qos);
+
+    if (reader->reader < 0) {
+        set_error("Failed to create raw CDR reader for topic '%s': %s",
+                  topic_name, dds_strretcode(reader->reader));
+        dds_delete_listener(reader->listener);
+        dds_delete(reader->topic);
+        ddsi_sertype_unref(reader->raw_sertype);
+        free(reader);
+        return NULL;
+    }
+
+    reader->is_active = true;
+#else
+    // Stub implementation
+    (void)qos;
+    (void)user_data;
+    reader->dummy_reader = 1;
+    reader->dummy_topic = 1;
+    reader->is_active = true;
+#endif
+
+    return reader;
+}
+
+void dds_bridge_destroy_reader(bridge_dds_reader_t* reader) {
+    if (!reader) {
+        return;
+    }
+
+    reader->is_active = false;
+
+#ifdef DDS_AVAILABLE
+    // dds_delete on the reader blocks until any in-flight listener callback
+    // completes (CycloneDDS contract), so after this returns the callback will
+    // never fire again.
+    if (reader->reader > 0) {
+        dds_delete(reader->reader);
+        reader->reader = 0;
+    }
+    if (reader->topic > 0) {
+        dds_delete(reader->topic);
+        reader->topic = 0;
+    }
+    if (reader->listener) {
+        dds_delete_listener(reader->listener);
+        reader->listener = NULL;
+    }
+    if (reader->raw_sertype) {
+        ddsi_sertype_unref(reader->raw_sertype);
+        reader->raw_sertype = NULL;
+    }
+#endif
+
+    free(reader);
+}
+
+bool dds_bridge_reader_is_active(const bridge_dds_reader_t* reader) {
+    if (!reader) {
+        return false;
+    }
+    return reader->is_active;
 }

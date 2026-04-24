@@ -59,6 +59,7 @@ jobs:
       matrix:
         framework:
           - zenoh-pico
+          - cyclonedds
         include:
           - arch: x86_64
             runner: ubuntu-22.04
@@ -93,6 +94,7 @@ jobs:
       matrix:
         framework:
           - zenoh-pico
+          - cyclonedds
     steps:
       - name: Install deps
         run: apt-get update -qq && apt-get install -y -qq zip git ca-certificates
@@ -151,4 +153,6 @@ jobs:
             upload/CCycloneDDS.xcframework.zip \
             upload/CCycloneDDS.xcframework.zip.checksum \
             upload/CZenohPico-linux.artifactbundle.zip \
-            upload/CZenohPico-linux.artifactbundle.zip.checksum
+            upload/CZenohPico-linux.artifactbundle.zip.checksum \
+            upload/CCycloneDDS-linux.artifactbundle.zip \
+            upload/CCycloneDDS-linux.artifactbundle.zip.checksum

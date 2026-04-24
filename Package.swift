@@ -75,6 +75,34 @@ let cZenohPico: Target = {
                 .define("ZENOH_WINDOWS", to: "1"),
             ]
         )
+    #elseif os(Android)
+        return .target(
+            name: "CZenohPico",
+            path: "vendor/zenoh-pico",
+            exclude: [
+                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
+                // Android uses the unix backend (Bionic is POSIX-ish);
+                // exclude every other backend, same pattern as Linux.
+                "src/system/arduino",
+                "src/system/emscripten",
+                "src/system/espidf",
+                "src/system/freertos_plus_tcp",
+                "src/system/mbed",
+                "src/system/rpi_pico",
+                "src/system/void",
+                "src/system/windows",
+                "src/system/zephyr",
+                "src/system/flipper",
+            ],
+            sources: ["src"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("src"),
+                .define("Z_FEATURE_LINK_TCP", to: "1"),
+                .define("Z_FEATURE_LIVELINESS", to: "1"),
+                .define("ZENOH_ANDROID", to: "1"),
+            ]
+        )
     #else
         return .binaryTarget(
             name: "CZenohPico",

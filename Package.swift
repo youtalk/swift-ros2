@@ -112,10 +112,13 @@ let cZenohPico: Target = {
     #endif
 }()
 
-#if !os(Windows)
-    // The DDS path is compiled out on Windows entirely, so cCycloneDDS
-    // is not defined there — no closure evaluation, no stale placeholder
-    // .binaryTarget construction.
+#if !os(Windows) && !os(Android)
+    // The DDS path is compiled out on Windows and Android entirely, so
+    // cCycloneDDS is not defined there — no closure evaluation, no stale
+    // placeholder .binaryTarget construction. Android is carved out for
+    // the same reason Windows is: SwiftPM cannot orchestrate CycloneDDS's
+    // ddsrt CMake-configure-time header generation, and no usable
+    // prebuilt .binaryTarget path exists yet.
     let cCycloneDDS: Target = {
         #if os(Linux)
             return .systemLibrary(
@@ -223,10 +226,11 @@ var targets: [Target] = [
 
 // DDS path + the SwiftROS2 umbrella + examples + umbrella-level tests.
 // These are only included on platforms where CycloneDDS is consumable.
-// Windows will join once M3 settles the DDS-on-Windows story; for now,
-// Windows users should import SwiftROS2Zenoh directly instead of the
-// SwiftROS2 umbrella.
-#if !os(Windows)
+// Windows and Android do not build CycloneDDS from source (SPM cannot
+// orchestrate the ddsrt CMake configure-time header generation), so
+// both platforms import SwiftROS2Zenoh directly instead of the
+// SwiftROS2 umbrella. DDS on Windows / Android is a future track.
+#if !os(Windows) && !os(Android)
     products.append(contentsOf: [
         .library(name: "SwiftROS2", targets: ["SwiftROS2"]),
         .library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]),

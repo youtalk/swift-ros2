@@ -125,3 +125,22 @@ jobs:
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           swift test --parallel
+
+  build-windows:
+    name: Build & Test (Windows x86_64, Zenoh only)
+    needs: [swift-format]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+        with:
+          branch: swift-6.3.1-release
+          tag: 6.3.1-RELEASE
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test --parallel

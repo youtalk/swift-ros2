@@ -1,5 +1,0 @@
-module CCycloneDDS [system] {
-    header "shim.h"
-    link "ddsc"
-    export *
-}

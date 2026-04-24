@@ -189,6 +189,7 @@ var targets: [Target] = [
             .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
             .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
             .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
+            .define("ZENOH_ANDROID", to: "1", .when(platforms: [.android])),
             .define("Z_FEATURE_LINK_TCP", to: "1"),
             .define("Z_FEATURE_LIVELINESS", to: "1"),
         ],

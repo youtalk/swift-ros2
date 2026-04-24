@@ -60,8 +60,42 @@ case "$PKG" in
         cp -r "$ROOT/vendor/zenoh-pico/include/." "$OUT/$TRIPLE/include/"
         ;;
     cyclonedds)
-        echo "error: cyclonedds support added in L3" >&2
-        exit 1
+        cmake -S "$ROOT/vendor/cyclonedds" -B "$WORK" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_INSTALL_PREFIX="$WORK/install" \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_DDSPERF=OFF \
+            -DBUILD_IDLC=OFF \
+            -DENABLE_SSL=OFF \
+            -DENABLE_SECURITY=OFF \
+            -DENABLE_SHM=OFF \
+            -DENABLE_LTO=OFF \
+            -DENABLE_QOS_PROVIDER=OFF \
+            -DENABLE_LIFESPAN=ON \
+            -DENABLE_DEADLINE_MISSED=ON \
+            -DENABLE_TYPE_DISCOVERY=OFF \
+            -DENABLE_TOPIC_DISCOVERY=OFF
+        cmake --build "$WORK" --parallel "$(nproc)"
+        cmake --install "$WORK"
+
+        # Static library
+        cp "$WORK/install/lib/libddsc.a" "$OUT/$TRIPLE/lib/"
+
+        # Public headers (from install step)
+        cp -r "$WORK/install/include/." "$OUT/$TRIPLE/include/"
+
+        # Internal headers consumed by Sources/CDDSBridge.
+        # The copy list is verified in L3.2 by grepping CDDSBridge sources.
+        mkdir -p "$OUT/$TRIPLE/include/dds/ddsi" "$OUT/$TRIPLE/include/dds/ddsrt"
+        cp "$ROOT/vendor/cyclonedds/src/core/ddsi/include/dds/ddsi/ddsi_sertype.h" "$OUT/$TRIPLE/include/dds/ddsi/"
+        cp "$ROOT/vendor/cyclonedds/src/core/ddsi/include/dds/ddsi/ddsi_serdata.h" "$OUT/$TRIPLE/include/dds/ddsi/"
+        cp "$ROOT/vendor/cyclonedds/src/core/ddsi/include/dds/ddsi/q_radmin.h"      "$OUT/$TRIPLE/include/dds/ddsi/"
+        cp "$ROOT/vendor/cyclonedds/src/ddsrt/include/dds/ddsrt/heap.h"             "$OUT/$TRIPLE/include/dds/ddsrt/"
+        cp "$ROOT/vendor/cyclonedds/src/ddsrt/include/dds/ddsrt/md5.h"              "$OUT/$TRIPLE/include/dds/ddsrt/"
         ;;
 esac
 

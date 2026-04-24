@@ -150,3 +150,96 @@ jobs:
         run: swift build
       - name: Test
         run: swift test --parallel
+
+  build-android:
+    name: Build Android (${{ matrix.abi }})
+    needs: [swift-format]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            triple: aarch64-unknown-linux-android28
+          - abi: x86_64
+            triple: x86_64-unknown-linux-android28
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      # Swift 6.3.1 — the Android SDK pinned below is published for 6.3.
+      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+        with:
+          branch: swift-6.3.1-release
+          tag: 6.3.1-RELEASE
+      - name: Install Swift Android SDK
+        env:
+          # Pinned via repository variables so values can be rotated
+          # without a code change. Set both at
+          # github.com/youtalk/swift-ros2/settings/variables/actions:
+          #   SWIFT_ANDROID_SDK_URL      — full https URL of the
+          #                                .artifactbundle from
+          #                                swift.org/install/android
+          #   SWIFT_ANDROID_SDK_CHECKSUM — SHA-256 hex string from the
+          #                                same page
+          # If either is unset, this step fails fast with an actionable
+          # message instead of leaving the swift sdk install command to
+          # surface a less-clear error.
+          SDK_URL: ${{ vars.SWIFT_ANDROID_SDK_URL }}
+          SDK_CHECKSUM: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
+        run: |
+          if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
+            echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
+            echo "       Configure them at https://github.com/youtalk/swift-ros2/settings/variables/actions." >&2
+            exit 1
+          fi
+          swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
+          swift sdk list
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build --swift-sdk ${{ matrix.triple }} -v
+
+  test-android-x86_64:
+    name: Test Android (x86_64 emulator)
+    # Decoupled from build-android: this job rebuilds the x86_64 tests
+    # itself and does not consume artifacts from the matrix, so an
+    # arm64 build failure should not block the emulator signal.
+    needs: [swift-format]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+        with:
+          branch: swift-6.3.1-release
+          tag: 6.3.1-RELEASE
+      - name: Install Swift Android SDK
+        env:
+          SDK_URL: ${{ vars.SWIFT_ANDROID_SDK_URL }}
+          SDK_CHECKSUM: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
+        run: |
+          if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
+            echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
+            exit 1
+          fi
+          swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
+      - name: Build tests for Android x86_64
+        run: swift build --build-tests --swift-sdk x86_64-unknown-linux-android28 -v
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run tests on Android x86_64 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          target: default
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash Scripts/run-android-tests.sh

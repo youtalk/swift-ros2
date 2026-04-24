@@ -2,64 +2,39 @@
 
 import PackageDescription
 
-// Apple platforms: pre-built xcframework binaryTargets hosted on
-// GitHub Releases. Linux: compile the C sources directly via SPM (+ a
-// system-installed libddsc via pkg-config). See Scripts/build-xcframework.sh
-// for the macOS build helper that produces the Apple artifacts.
-let xcframeworkBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
+// All platforms: pre-built binaryTargets hosted on GitHub Releases.
+// Apple platforms receive xcframeworks; Linux receives artifactbundles.
+// See Scripts/build-xcframework.sh for the Apple xcframework build helper.
+let artifactBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.5.0-rc.2"
 
 let cZenohPico: Target = {
     #if os(Linux)
-        return .target(
+        return .binaryTarget(
             name: "CZenohPico",
-            path: "vendor/zenoh-pico",
-            exclude: [
-                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
-                // Non-Linux platform backends. SPM compiles everything under
-                // `sources: ["src"]` unless excluded. zenoh-pico's CMake build
-                // picks the right backend per platform; for SPM + Linux we hand-
-                // pick src/system/unix and drop the rest.
-                "src/system/arduino",
-                "src/system/emscripten",
-                "src/system/espidf",
-                "src/system/freertos_plus_tcp",
-                "src/system/mbed",
-                "src/system/rpi_pico",
-                "src/system/void",
-                "src/system/windows",
-                "src/system/zephyr",
-                "src/system/flipper",
-            ],
-            sources: ["src"],
-            publicHeadersPath: "include",
-            cSettings: [
-                .headerSearchPath("src"),
-                .define("Z_FEATURE_LINK_TCP", to: "1"),
-                .define("Z_FEATURE_LIVELINESS", to: "1"),
-                .define("ZENOH_LINUX", to: "1"),
-            ]
+            url: "\(artifactBaseURL)/CZenohPico-linux.artifactbundle.zip",
+            checksum: "091a9d48841223517e66e395f0b3651d16790044d3d839d611fde96be82f2401"
         )
     #else
         return .binaryTarget(
             name: "CZenohPico",
-            url: "\(xcframeworkBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "de7d7a02605234d364a464fb0169bc18efb46440976b8e8a26021eb416386c95"
+            url: "\(artifactBaseURL)/CZenohPico.xcframework.zip",
+            checksum: "0256d023bc1a4518ccb1d642251dfbcc1e3a9280f2d7c2c9ac3c9083cf914b97"
         )
     #endif
 }()
 
 let cCycloneDDS: Target = {
     #if os(Linux)
-        return .systemLibrary(
+        return .binaryTarget(
             name: "CCycloneDDS",
-            path: "Sources/CCycloneDDS",
-            pkgConfig: "CycloneDDS"
+            url: "\(artifactBaseURL)/CCycloneDDS-linux.artifactbundle.zip",
+            checksum: "b5f3294090f75cbad10cfdbb741bf6c2753879e5979441afeb5721235c03bb0a"
         )
     #else
         return .binaryTarget(
             name: "CCycloneDDS",
-            url: "\(xcframeworkBaseURL)/CCycloneDDS.xcframework.zip",
-            checksum: "bc72071590791fcb989a69af616c1da771f9c6d79b50de4381d8e95ce33fc8ad"
+            url: "\(artifactBaseURL)/CCycloneDDS.xcframework.zip",
+            checksum: "7a6513a1c881968da091bb77a3a1d44f5fc014671e139a87c16950af32c0cc2b"
         )
     #endif
 }()
@@ -108,9 +83,8 @@ let package = Package(
             path: "Sources/SwiftROS2Transport"
         ),
 
-        // Native C FFI: zenoh-pico + CycloneDDS. Apple platforms receive
-        // pre-built xcframeworks; Linux compiles from source (zenoh-pico)
-        // and links via pkg-config (CycloneDDS).
+        // Native C FFI: zenoh-pico + CycloneDDS. All platforms receive
+        // pre-built binaryTargets (xcframeworks on Apple, artifactbundles on Linux).
         cZenohPico,
         cCycloneDDS,
 

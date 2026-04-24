@@ -3,16 +3,17 @@
 import PackageDescription
 
 // Apple platforms: pre-built xcframework binaryTargets hosted on
-// GitHub Releases. Linux and Windows: compile the C sources directly
-// via SPM, using the matching platform backend inside vendor/zenoh-pico.
-// See Scripts/build-xcframework.sh for the macOS build helper.
+// GitHub Releases. Linux, Windows, and Android: compile the C sources
+// directly via SPM, using the matching platform backend inside
+// vendor/zenoh-pico. See Scripts/build-xcframework.sh for the macOS
+// build helper.
 //
 // CycloneDDS on Linux resolves through pkg-config; on Apple it ships
-// as a prebuilt xcframework. Windows DDS support is not yet in this
-// milestone — the entire DDS path (cCycloneDDS, CDDSBridge, SwiftROS2DDS,
-// the SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
-// Windows by the #if !os(Windows) gate around the targets/products
-// additions further down.
+// as a prebuilt xcframework. Windows and Android do not ship DDS —
+// the entire DDS path (cCycloneDDS, CDDSBridge, SwiftROS2DDS, the
+// SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
+// both platforms by the #if !os(Windows) && !os(Android) gate around
+// the targets/products additions further down.
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
 
 let cZenohPico: Target = {

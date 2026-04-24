@@ -83,9 +83,46 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  merge-linux:
+    name: Merge ${{ matrix.framework }} linux artifactbundle
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    container: swift:6.2-jammy
+    strategy:
+      fail-fast: false
+      matrix:
+        framework:
+          - zenoh-pico
+    steps:
+      - name: Install deps
+        run: apt-get update -qq && apt-get install -y -qq zip git ca-certificates
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ matrix.framework }}-*-linux-staging
+          path: staging-downloads/
+      - name: Flatten staging
+        run: |
+          mkdir -p staging
+          for d in staging-downloads/${{ matrix.framework }}-*-linux-staging/*/; do
+            triple=$(basename "$d")
+            cp -r "$d" "staging/$triple"
+          done
+          ls staging/
+      - name: Merge into artifactbundle
+        run: SWIFT_ROS2_VERSION="${GITHUB_REF_NAME#v}" Scripts/merge-linux-artifactbundle.sh ${{ matrix.framework }} staging artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.framework }}-linux
+          path: |
+            artifacts/*.zip
+            artifacts/*.checksum
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Attach to release
-    needs: [build-apple, build-linux]
+    needs: [build-apple, build-linux, merge-linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -110,4 +147,6 @@ jobs:
             upload/CZenohPico.xcframework.zip \
             upload/CZenohPico.xcframework.zip.checksum \
             upload/CCycloneDDS.xcframework.zip \
-            upload/CCycloneDDS.xcframework.zip.checksum
+            upload/CCycloneDDS.xcframework.zip.checksum \
+            upload/CZenohPico-linux.artifactbundle.zip \
+            upload/CZenohPico-linux.artifactbundle.zip.checksum

@@ -4,9 +4,11 @@ import PackageDescription
 
 // Apple platforms: pre-built xcframework binaryTargets hosted on
 // GitHub Releases. Linux: compile the C sources directly via SPM (+ a
-// system-installed libddsc via pkg-config). See Scripts/build-xcframework.sh
-// for the macOS build helper that produces the Apple artifacts.
-let xcframeworkBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
+// system-installed libddsc via pkg-config). Windows: pre-built
+// .artifactbundle zips hosted on the same GitHub Releases. See
+// Scripts/build-xcframework.sh for the macOS build helper; Windows
+// bundle producers land alongside the M2 release-workflow change.
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
 
 let cZenohPico: Target = {
     #if os(Linux)
@@ -39,10 +41,16 @@ let cZenohPico: Target = {
                 .define("ZENOH_LINUX", to: "1"),
             ]
         )
+    #elseif os(Windows)
+        return .binaryTarget(
+            name: "CZenohPico",
+            url: "\(releaseBaseURL)/CZenohPico-windows-x86_64.artifactbundle.zip",
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+        )
     #else
         return .binaryTarget(
             name: "CZenohPico",
-            url: "\(xcframeworkBaseURL)/CZenohPico.xcframework.zip",
+            url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
             checksum: "de7d7a02605234d364a464fb0169bc18efb46440976b8e8a26021eb416386c95"
         )
     #endif
@@ -55,10 +63,16 @@ let cCycloneDDS: Target = {
             path: "Sources/CCycloneDDS",
             pkgConfig: "CycloneDDS"
         )
+    #elseif os(Windows)
+        return .binaryTarget(
+            name: "CCycloneDDS",
+            url: "\(releaseBaseURL)/CCycloneDDS-windows-x86_64.artifactbundle.zip",
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+        )
     #else
         return .binaryTarget(
             name: "CCycloneDDS",
-            url: "\(xcframeworkBaseURL)/CCycloneDDS.xcframework.zip",
+            url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
             checksum: "bc72071590791fcb989a69af616c1da771f9c6d79b50de4381d8e95ce33fc8ad"
         )
     #endif
@@ -110,7 +124,8 @@ let package = Package(
 
         // Native C FFI: zenoh-pico + CycloneDDS. Apple platforms receive
         // pre-built xcframeworks; Linux compiles from source (zenoh-pico)
-        // and links via pkg-config (CycloneDDS).
+        // and links via pkg-config (CycloneDDS); Windows consumes pre-built
+        // .artifactbundle zips.
         cZenohPico,
         cCycloneDDS,
 
@@ -125,8 +140,13 @@ let package = Package(
             cSettings: [
                 .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
                 .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
+                .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
                 .define("Z_FEATURE_LINK_TCP", to: "1"),
                 .define("Z_FEATURE_LIVELINESS", to: "1"),
+            ],
+            linkerSettings: [
+                .linkedLibrary("Ws2_32", .when(platforms: [.windows])),
+                .linkedLibrary("Iphlpapi", .when(platforms: [.windows])),
             ]
         ),
         .target(

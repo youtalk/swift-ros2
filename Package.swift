@@ -57,6 +57,12 @@ let cCycloneDDS: Target = {
             path: "Sources/CCycloneDDS",
             pkgConfig: "CycloneDDS"
         )
+    #elseif os(Windows)
+        return .binaryTarget(
+            name: "CCycloneDDS",
+            url: "\(xcframeworkBaseURL)/CCycloneDDS-windows-x86_64.artifactbundle.zip",
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+        )
     #else
         return .binaryTarget(
             name: "CCycloneDDS",

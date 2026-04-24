@@ -96,6 +96,20 @@ case "$PKG" in
         cp "$ROOT/vendor/cyclonedds/src/core/ddsi/include/dds/ddsi/q_radmin.h"      "$OUT/$TRIPLE/include/dds/ddsi/"
         cp "$ROOT/vendor/cyclonedds/src/ddsrt/include/dds/ddsrt/heap.h"             "$OUT/$TRIPLE/include/dds/ddsrt/"
         cp "$ROOT/vendor/cyclonedds/src/ddsrt/include/dds/ddsrt/md5.h"              "$OUT/$TRIPLE/include/dds/ddsrt/"
+
+        # Verify the copied internal headers cover every #include used by
+        # CDDSBridge. Fails the build if CDDSBridge grows a new internal
+        # include without updating the copy list above.
+        REQUIRED_HEADERS=$(grep -rhoE '#include[[:space:]]+["<]dds/(ddsi|ddsrt)/[^">]+[">]' \
+            "$ROOT/Sources/CDDSBridge/" | sed -E 's/.*["<](dds[^">]+)[">].*/\1/' | sort -u)
+        for h in $REQUIRED_HEADERS; do
+            if [[ ! -f "$OUT/$TRIPLE/include/$h" ]]; then
+                echo "error: CDDSBridge includes <$h> but it is not in the bundle." >&2
+                echo "Update the internal header copy list in Scripts/build-linux-artifactbundle.sh." >&2
+                exit 1
+            fi
+        done
+        echo "==> verified: all $(echo "$REQUIRED_HEADERS" | wc -w) CDDSBridge internal includes are bundled"
         ;;
 esac
 

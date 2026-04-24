@@ -15,10 +15,6 @@ let cZenohPico: Target = {
             path: "vendor/zenoh-pico",
             exclude: [
                 "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
-                // Non-Linux platform backends. SPM compiles everything under
-                // `sources: ["src"]` unless excluded. zenoh-pico's CMake build
-                // picks the right backend per platform; for SPM + Linux we hand-
-                // pick src/system/unix and drop the rest.
                 "src/system/arduino",
                 "src/system/emscripten",
                 "src/system/espidf",
@@ -38,6 +34,12 @@ let cZenohPico: Target = {
                 .define("Z_FEATURE_LIVELINESS", to: "1"),
                 .define("ZENOH_LINUX", to: "1"),
             ]
+        )
+    #elseif os(Windows)
+        return .binaryTarget(
+            name: "CZenohPico",
+            url: "\(xcframeworkBaseURL)/CZenohPico-windows-x86_64.artifactbundle.zip",
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
         )
     #else
         return .binaryTarget(

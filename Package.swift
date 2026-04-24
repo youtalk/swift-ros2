@@ -9,14 +9,14 @@ import PackageDescription
 // Windows (M3 will settle that story). See Scripts/build-xcframework.sh
 // for the Apple xcframework build helper and Scripts/build-linux-artifactbundle.sh
 // + Scripts/merge-linux-artifactbundle.sh for the Linux side.
-let artifactBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.5.0-rc.2"
+let artifactBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.5.0"
 
 let cZenohPico: Target = {
     #if os(Linux)
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(artifactBaseURL)/CZenohPico-linux.artifactbundle.zip",
-            checksum: "091a9d48841223517e66e395f0b3651d16790044d3d839d611fde96be82f2401"
+            checksum: "d39d3729ed7c0d539b62d59d8bb8dbc353b62338ebb47ad7e8cfa6594cc938a2"
         )
     #elseif os(Windows)
         return .target(
@@ -51,7 +51,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(artifactBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "0256d023bc1a4518ccb1d642251dfbcc1e3a9280f2d7c2c9ac3c9083cf914b97"
+            checksum: "e55f70446c6f4c2dbf2bf9983996e6bbd901f4048a019fb76bd1b62db6e9bf1e"
         )
     #endif
 }()
@@ -65,13 +65,13 @@ let cZenohPico: Target = {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(artifactBaseURL)/CCycloneDDS-linux.artifactbundle.zip",
-                checksum: "b5f3294090f75cbad10cfdbb741bf6c2753879e5979441afeb5721235c03bb0a"
+                checksum: "790a02942c8b277001e499f40f21686d7e8f97270b1c004039f08ca844e095ad"
             )
         #else
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(artifactBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "7a6513a1c881968da091bb77a3a1d44f5fc014671e139a87c16950af32c0cc2b"
+                checksum: "4e9d2ff8caacb64b64133b11e07b6a784966429b70826bdee02644e75fa14ca9"
             )
         #endif
     }()

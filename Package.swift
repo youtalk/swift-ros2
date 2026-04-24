@@ -6,9 +6,9 @@ import PackageDescription
 // GitHub Releases. Linux: compile the C sources directly via SPM (+ a
 // system-installed libddsc via pkg-config). Windows: pre-built
 // .artifactbundle zips hosted on the same GitHub Releases. See
-// Scripts/build-xcframework.sh for the macOS helper and
-// Scripts/Build-Windows*.ps1 for the Windows helpers.
-let xcframeworkBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
+// Scripts/build-xcframework.sh for the macOS build helper; Windows
+// bundle producers land alongside the M2 release-workflow change.
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
 
 let cZenohPico: Target = {
     #if os(Linux)
@@ -44,13 +44,13 @@ let cZenohPico: Target = {
     #elseif os(Windows)
         return .binaryTarget(
             name: "CZenohPico",
-            url: "\(xcframeworkBaseURL)/CZenohPico-windows-x86_64.artifactbundle.zip",
+            url: "\(releaseBaseURL)/CZenohPico-windows-x86_64.artifactbundle.zip",
             checksum: "0000000000000000000000000000000000000000000000000000000000000000"
         )
     #else
         return .binaryTarget(
             name: "CZenohPico",
-            url: "\(xcframeworkBaseURL)/CZenohPico.xcframework.zip",
+            url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
             checksum: "de7d7a02605234d364a464fb0169bc18efb46440976b8e8a26021eb416386c95"
         )
     #endif
@@ -66,13 +66,13 @@ let cCycloneDDS: Target = {
     #elseif os(Windows)
         return .binaryTarget(
             name: "CCycloneDDS",
-            url: "\(xcframeworkBaseURL)/CCycloneDDS-windows-x86_64.artifactbundle.zip",
+            url: "\(releaseBaseURL)/CCycloneDDS-windows-x86_64.artifactbundle.zip",
             checksum: "0000000000000000000000000000000000000000000000000000000000000000"
         )
     #else
         return .binaryTarget(
             name: "CCycloneDDS",
-            url: "\(xcframeworkBaseURL)/CCycloneDDS.xcframework.zip",
+            url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
             checksum: "bc72071590791fcb989a69af616c1da771f9c6d79b50de4381d8e95ce33fc8ad"
         )
     #endif

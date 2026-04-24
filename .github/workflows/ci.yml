@@ -136,8 +136,8 @@ jobs:
           submodules: recursive
       - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
         with:
-          branch: swift-6.3.1-release
-          tag: 6.3.1-RELEASE
+          branch: swift-6.0.2-release
+          tag: 6.0.2-RELEASE
       - name: Swift version
         run: swift --version
       - name: Build

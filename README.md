@@ -23,7 +23,7 @@ Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source
 | Mac Catalyst  | 16.0                      | `binaryTarget` xcframework                    |
 | visionOS      | 1.0                       | `binaryTarget` xcframework                    |
 | Linux         | Ubuntu 22.04 / 24.04 (x86_64, aarch64) | zenoh-pico source build + CycloneDDS via `pkg-config` |
-| Windows       | Windows 10 (x86_64)                     | zenoh-pico source build (Zenoh only — DDS pending)    |
+| Windows       | Windows 10 / 11 (x86_64)               | zenoh-pico source build (Zenoh only — DDS pending)    |
 
 Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2), a Swift 6.0.2 Linux matrix (Humble on Ubuntu 22.04, Jazzy/Rolling on Ubuntu 24.04, x86_64 and aarch64), and Swift 6.3.1 on Windows (`windows-latest`).
 
@@ -69,7 +69,7 @@ swift test                               # 69 pass, 2 LINUX_IP-gated skips
 
 ### Windows
 
-Windows ships Zenoh only. DDS support (via vcpkg CycloneDDS) is not yet available and is tracked as a follow-up milestone.
+Windows ships Zenoh only. DDS support on Windows is tracked as a follow-up milestone.
 
 Add the package to your `Package.swift` as usual and declare a dependency on `SwiftROS2Zenoh` (the `SwiftROS2` umbrella is excluded from the Windows build graph):
 

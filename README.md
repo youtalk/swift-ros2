@@ -7,7 +7,7 @@ Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source
 ## Features
 
 - **Dual transport out of the box.** `SwiftROS2Zenoh` talks to `rmw_zenoh_cpp`; `SwiftROS2DDS` talks to `rmw_cyclonedds_cpp`. Swap between them with a single config change.
-- **No RCL dependency.** Everything happens at the wire level, so iOS, iPadOS, macOS, Mac Catalyst, visionOS, and Linux all share the same Swift API.
+- **No RCL dependency.** Everything happens at the wire level, so iOS, iPadOS, macOS, Mac Catalyst, visionOS, Linux, and Windows all share the same Swift API.
 - **Swift-native API.** `async`/`await`, `AsyncStream` subscriptions, `Sendable` conformance, structured concurrency.
 - **Pre-built Apple binaries.** `CZenohPico.xcframework` + `CCycloneDDS.xcframework` attached to every GitHub Release — `swift build` downloads them directly; no CMake, no local bootstrap.
 - **Multi-distro wire format.** Humble, Jazzy, Kilted, Rolling. Select `wireMode` explicitly on the `TransportConfig`; when unspecified, Zenoh defaults to Jazzy.
@@ -23,8 +23,9 @@ Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source
 | Mac Catalyst  | 16.0                      | `binaryTarget` xcframework                    |
 | visionOS      | 1.0                       | `binaryTarget` xcframework                    |
 | Linux         | Ubuntu 22.04 / 24.04 (x86_64, aarch64) | zenoh-pico source build + CycloneDDS via `pkg-config` |
+| Windows       | Windows 10 (x86_64)                     | zenoh-pico source build (Zenoh only — DDS pending)    |
 
-Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2) plus a Swift 6.0.2 Linux matrix: Humble on Ubuntu 22.04, Jazzy on Ubuntu 24.04, and Rolling on Ubuntu 24.04 — each exercised on both x86_64 and aarch64.
+Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2), a Swift 6.0.2 Linux matrix (Humble on Ubuntu 22.04, Jazzy/Rolling on Ubuntu 24.04, x86_64 and aarch64), and Swift 6.3.1 on Windows (`windows-latest`).
 
 ## Installation
 
@@ -65,6 +66,28 @@ export PKG_CONFIG_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:$PKG_C
 swift build
 swift test                               # 69 pass, 2 LINUX_IP-gated skips
 ```
+
+### Windows
+
+Windows ships Zenoh only. DDS support (via vcpkg CycloneDDS) is not yet available and is tracked as a follow-up milestone.
+
+Add the package to your `Package.swift` as usual and declare a dependency on `SwiftROS2Zenoh` (the `SwiftROS2` umbrella is excluded from the Windows build graph):
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.4.0"),
+],
+targets: [
+    .target(
+        name: "YourApp",
+        dependencies: [
+            .product(name: "SwiftROS2Zenoh", package: "swift-ros2"),
+        ]
+    ),
+]
+```
+
+Requires Swift 6.3.1 on Windows. No `source setup.bash` or `PKG_CONFIG_PATH` steps are needed — `swift build` handles the zenoh-pico source build automatically.
 
 ## Quick Start
 

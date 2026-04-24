@@ -110,7 +110,9 @@ jobs:
           done
           ls staging/
       - name: Merge into artifactbundle
-        run: SWIFT_ROS2_VERSION="${GITHUB_REF_NAME#v}" Scripts/merge-linux-artifactbundle.sh ${{ matrix.framework }} staging artifacts
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: SWIFT_ROS2_VERSION="${TAG#v}" Scripts/merge-linux-artifactbundle.sh ${{ matrix.framework }} staging artifacts
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.framework }}-linux

@@ -3,11 +3,14 @@
 import PackageDescription
 
 // Apple platforms: pre-built xcframework binaryTargets hosted on
-// GitHub Releases. Linux: compile the C sources directly via SPM (+ a
-// system-installed libddsc via pkg-config). Windows: pre-built
-// .artifactbundle zips hosted on the same GitHub Releases. See
-// Scripts/build-xcframework.sh for the macOS build helper; Windows
-// bundle producers land alongside the M2 release-workflow change.
+// GitHub Releases. Linux and Windows: compile the C sources directly
+// via SPM, using the matching platform backend inside vendor/zenoh-pico.
+// See Scripts/build-xcframework.sh for the macOS build helper.
+//
+// CycloneDDS Linux still resolves through pkg-config; Windows DDS
+// support is not yet in this milestone — the cCycloneDDS Windows arm
+// below is a placeholder that will never be fetched as long as downstream
+// builds stay within the Zenoh / core products.
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
 
 let cZenohPico: Target = {
@@ -42,10 +45,33 @@ let cZenohPico: Target = {
             ]
         )
     #elseif os(Windows)
-        return .binaryTarget(
+        return .target(
             name: "CZenohPico",
-            url: "\(releaseBaseURL)/CZenohPico-windows-x86_64.artifactbundle.zip",
-            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+            path: "vendor/zenoh-pico",
+            exclude: [
+                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
+                // Non-Windows platform backends — parallel to the Linux arm
+                // above, just with src/system/unix excluded and
+                // src/system/windows kept.
+                "src/system/arduino",
+                "src/system/emscripten",
+                "src/system/espidf",
+                "src/system/freertos_plus_tcp",
+                "src/system/mbed",
+                "src/system/rpi_pico",
+                "src/system/unix",
+                "src/system/void",
+                "src/system/zephyr",
+                "src/system/flipper",
+            ],
+            sources: ["src"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("src"),
+                .define("Z_FEATURE_LINK_TCP", to: "1"),
+                .define("Z_FEATURE_LIVELINESS", to: "1"),
+                .define("ZENOH_WINDOWS", to: "1"),
+            ]
         )
     #else
         return .binaryTarget(
@@ -56,18 +82,14 @@ let cZenohPico: Target = {
     #endif
 }()
 
+// Only referenced on non-Windows platforms — the DDS path is entirely
+// compiled out for Windows at the targets-array level below.
 let cCycloneDDS: Target = {
     #if os(Linux)
         return .systemLibrary(
             name: "CCycloneDDS",
             path: "Sources/CCycloneDDS",
             pkgConfig: "CycloneDDS"
-        )
-    #elseif os(Windows)
-        return .binaryTarget(
-            name: "CCycloneDDS",
-            url: "\(releaseBaseURL)/CCycloneDDS-windows-x86_64.artifactbundle.zip",
-            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
         )
     #else
         return .binaryTarget(
@@ -78,77 +100,108 @@ let cCycloneDDS: Target = {
     #endif
 }()
 
-let package = Package(
-    name: "swift-ros2",
-    platforms: [
-        .iOS(.v16),
-        .macOS(.v13),
-        .macCatalyst(.v16),
-        .visionOS(.v1),
-    ],
-    products: [
+// Products and targets common to every supported platform (the Zenoh
+// path and the pure-Swift layers).
+var products: [Product] = [
+    .library(name: "SwiftROS2CDR", targets: ["SwiftROS2CDR"]),
+    .library(name: "SwiftROS2Messages", targets: ["SwiftROS2Messages"]),
+    .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
+    .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
+    .library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]),
+]
+
+var targets: [Target] = [
+    // CDR serialization (pure Swift, no dependencies)
+    .target(
+        name: "SwiftROS2CDR",
+        path: "Sources/SwiftROS2CDR"
+    ),
+
+    // Wire format codecs (no dependencies)
+    .target(
+        name: "SwiftROS2Wire",
+        path: "Sources/SwiftROS2Wire"
+    ),
+
+    // Message protocols and built-in types
+    .target(
+        name: "SwiftROS2Messages",
+        dependencies: ["SwiftROS2CDR"],
+        path: "Sources/SwiftROS2Messages"
+    ),
+
+    // Transport abstraction layer
+    .target(
+        name: "SwiftROS2Transport",
+        dependencies: ["SwiftROS2CDR", "SwiftROS2Wire"],
+        path: "Sources/SwiftROS2Transport"
+    ),
+
+    // Native C FFI for zenoh-pico. Apple platforms receive the pre-built
+    // xcframework; Linux and Windows compile from source using the matching
+    // platform backend inside vendor/zenoh-pico.
+    cZenohPico,
+
+    // C bridge for zenoh-pico (Conduit-authored FFI shim).
+    .target(
+        name: "CZenohBridge",
+        dependencies: ["CZenohPico"],
+        path: "Sources/CZenohBridge",
+        sources: ["zenoh_bridge.c"],
+        publicHeadersPath: "include",
+        cSettings: [
+            .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
+            .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
+            .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
+            .define("Z_FEATURE_LINK_TCP", to: "1"),
+            .define("Z_FEATURE_LIVELINESS", to: "1"),
+        ],
+        linkerSettings: [
+            .linkedLibrary("Ws2_32", .when(platforms: [.windows])),
+            .linkedLibrary("Iphlpapi", .when(platforms: [.windows])),
+        ]
+    ),
+
+    // Swift-facing Zenoh module — hosts ZenohClient, the default
+    // implementation of ZenohClientProtocol defined in SwiftROS2Transport.
+    .target(
+        name: "SwiftROS2Zenoh",
+        dependencies: ["CZenohBridge", "SwiftROS2Transport", "SwiftROS2Wire"],
+        path: "Sources/SwiftROS2Zenoh"
+    ),
+
+    // Pure-Swift and Zenoh-path tests (available on every platform)
+    .testTarget(
+        name: "SwiftROS2CDRTests",
+        dependencies: ["SwiftROS2CDR"],
+        path: "Tests/SwiftROS2CDRTests"
+    ),
+    .testTarget(
+        name: "SwiftROS2WireTests",
+        dependencies: ["SwiftROS2Wire"],
+        path: "Tests/SwiftROS2WireTests"
+    ),
+    .testTarget(
+        name: "SwiftROS2ZenohTests",
+        dependencies: ["SwiftROS2Zenoh"],
+        path: "Tests/SwiftROS2ZenohTests"
+    ),
+]
+
+// DDS path + the SwiftROS2 umbrella + examples + umbrella-level tests.
+// These are only included on platforms where CycloneDDS is consumable.
+// Windows will join once M3 settles the DDS-on-Windows story; for now,
+// Windows users should import SwiftROS2Zenoh directly instead of the
+// SwiftROS2 umbrella.
+#if !os(Windows)
+    products.append(contentsOf: [
         .library(name: "SwiftROS2", targets: ["SwiftROS2"]),
-        .library(name: "SwiftROS2CDR", targets: ["SwiftROS2CDR"]),
-        .library(name: "SwiftROS2Messages", targets: ["SwiftROS2Messages"]),
-        .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
-        .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
-        .library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]),
         .library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]),
-    ],
-    targets: [
-        // CDR serialization (pure Swift, no dependencies)
-        .target(
-            name: "SwiftROS2CDR",
-            path: "Sources/SwiftROS2CDR"
-        ),
+    ])
 
-        // Wire format codecs (no dependencies)
-        .target(
-            name: "SwiftROS2Wire",
-            path: "Sources/SwiftROS2Wire"
-        ),
-
-        // Message protocols and built-in types
-        .target(
-            name: "SwiftROS2Messages",
-            dependencies: ["SwiftROS2CDR"],
-            path: "Sources/SwiftROS2Messages"
-        ),
-
-        // Transport abstraction layer
-        .target(
-            name: "SwiftROS2Transport",
-            dependencies: ["SwiftROS2CDR", "SwiftROS2Wire"],
-            path: "Sources/SwiftROS2Transport"
-        ),
-
-        // Native C FFI: zenoh-pico + CycloneDDS. Apple platforms receive
-        // pre-built xcframeworks; Linux compiles from source (zenoh-pico)
-        // and links via pkg-config (CycloneDDS); Windows consumes pre-built
-        // .artifactbundle zips.
-        cZenohPico,
+    targets.append(contentsOf: [
         cCycloneDDS,
 
-        // C bridges (Conduit-authored FFI shims that simplify the zenoh-pico
-        // and CycloneDDS APIs for Swift callers).
-        .target(
-            name: "CZenohBridge",
-            dependencies: ["CZenohPico"],
-            path: "Sources/CZenohBridge",
-            sources: ["zenoh_bridge.c"],
-            publicHeadersPath: "include",
-            cSettings: [
-                .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
-                .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
-                .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
-                .define("Z_FEATURE_LINK_TCP", to: "1"),
-                .define("Z_FEATURE_LIVELINESS", to: "1"),
-            ],
-            linkerSettings: [
-                .linkedLibrary("Ws2_32", .when(platforms: [.windows])),
-                .linkedLibrary("Iphlpapi", .when(platforms: [.windows])),
-            ]
-        ),
         .target(
             name: "CDDSBridge",
             dependencies: ["CCycloneDDS"],
@@ -160,21 +213,13 @@ let package = Package(
             ]
         ),
 
-        // Swift-facing Zenoh / DDS modules. Host ZenohClient / DDSClient,
-        // the default implementations of the ZenohClientProtocol /
-        // DDSClientProtocol seams defined in SwiftROS2Transport.
-        .target(
-            name: "SwiftROS2Zenoh",
-            dependencies: ["CZenohBridge", "SwiftROS2Transport", "SwiftROS2Wire"],
-            path: "Sources/SwiftROS2Zenoh"
-        ),
         .target(
             name: "SwiftROS2DDS",
             dependencies: ["CDDSBridge", "SwiftROS2Transport", "SwiftROS2Wire"],
             path: "Sources/SwiftROS2DDS"
         ),
 
-        // Public API: Context, Node, Publisher, Subscription
+        // Public API umbrella: Context, Node, Publisher, Subscription
         .target(
             name: "SwiftROS2",
             dependencies: [
@@ -201,26 +246,10 @@ let package = Package(
             path: "Sources/Examples/Listener"
         ),
 
-        // Tests
-        .testTarget(
-            name: "SwiftROS2CDRTests",
-            dependencies: ["SwiftROS2CDR"],
-            path: "Tests/SwiftROS2CDRTests"
-        ),
-        .testTarget(
-            name: "SwiftROS2WireTests",
-            dependencies: ["SwiftROS2Wire"],
-            path: "Tests/SwiftROS2WireTests"
-        ),
         .testTarget(
             name: "SwiftROS2Tests",
             dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2CDR"],
             path: "Tests/SwiftROS2Tests"
-        ),
-        .testTarget(
-            name: "SwiftROS2ZenohTests",
-            dependencies: ["SwiftROS2Zenoh"],
-            path: "Tests/SwiftROS2ZenohTests"
         ),
         .testTarget(
             name: "SwiftROS2DDSTests",
@@ -232,5 +261,17 @@ let package = Package(
             dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport"],
             path: "Tests/SwiftROS2IntegrationTests"
         ),
-    ]
+    ])
+#endif
+
+let package = Package(
+    name: "swift-ros2",
+    platforms: [
+        .iOS(.v16),
+        .macOS(.v13),
+        .macCatalyst(.v16),
+        .visionOS(.v1),
+    ],
+    products: products,
+    targets: targets
 )

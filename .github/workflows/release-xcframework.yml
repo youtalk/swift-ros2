@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  build-apple:
     name: Build ${{ matrix.framework }}.xcframework
     runs-on: macos-15
     strategy:
@@ -50,9 +50,42 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-linux:
+    name: Build ${{ matrix.framework }}.artifactbundle (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    container: ubuntu:22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        framework:
+          - zenoh-pico
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            triple: aarch64-unknown-linux-gnu
+    steps:
+      - name: Install build deps
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq git cmake build-essential ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build staging
+        run: Scripts/build-linux-artifactbundle.sh ${{ matrix.framework }} ${{ matrix.triple }} staging
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.framework }}-${{ matrix.arch }}-linux-staging
+          path: staging/
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Attach to release
-    needs: build
+    needs: [build-apple, build-linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

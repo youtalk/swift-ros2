@@ -150,3 +150,75 @@ jobs:
         run: swift build
       - name: Test
         run: swift test --parallel
+
+  build-android:
+    name: Build Android (${{ matrix.abi }})
+    needs: [swift-format]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            triple: aarch64-unknown-linux-android28
+          - abi: x86_64
+            triple: x86_64-unknown-linux-android28
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      # Swift 6.3.1 — the Android SDK pinned below is published for 6.3.
+      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+        with:
+          branch: swift-6.3.1-release
+          tag: 6.3.1-RELEASE
+      - name: Install Swift Android SDK
+        env:
+          # Swift 6.3 Android SDK pinned 2026-04-24. Replace <pinned-url>
+          # and <pinned-sha> with the values from swift.org/install/android
+          # at merge time.
+          SDK_URL: "<pinned-url>"
+          SDK_CHECKSUM: "<pinned-sha>"
+        run: |
+          swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
+          swift sdk list
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build --swift-sdk ${{ matrix.triple }} -v
+
+  test-android-x86_64:
+    name: Test Android (x86_64 emulator)
+    needs: [build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+        with:
+          branch: swift-6.3.1-release
+          tag: 6.3.1-RELEASE
+      - name: Install Swift Android SDK
+        env:
+          SDK_URL: "<pinned-url>"
+          SDK_CHECKSUM: "<pinned-sha>"
+        run: swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
+      - name: Build tests for Android x86_64
+        run: swift build --build-tests --swift-sdk x86_64-unknown-linux-android28 -v
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run tests on Android x86_64 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          target: default
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash Scripts/run-android-tests.sh

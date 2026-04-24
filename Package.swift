@@ -4,8 +4,10 @@ import PackageDescription
 
 // Apple platforms: pre-built xcframework binaryTargets hosted on
 // GitHub Releases. Linux: compile the C sources directly via SPM (+ a
-// system-installed libddsc via pkg-config). See Scripts/build-xcframework.sh
-// for the macOS build helper that produces the Apple artifacts.
+// system-installed libddsc via pkg-config). Windows: pre-built
+// .artifactbundle zips hosted on the same GitHub Releases. See
+// Scripts/build-xcframework.sh for the macOS helper and
+// Scripts/Build-Windows*.ps1 for the Windows helpers.
 let xcframeworkBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
 
 let cZenohPico: Target = {
@@ -15,6 +17,10 @@ let cZenohPico: Target = {
             path: "vendor/zenoh-pico",
             exclude: [
                 "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
+                // Non-Linux platform backends. SPM compiles everything under
+                // `sources: ["src"]` unless excluded. zenoh-pico's CMake build
+                // picks the right backend per platform; for SPM + Linux we hand-
+                // pick src/system/unix and drop the rest.
                 "src/system/arduino",
                 "src/system/emscripten",
                 "src/system/espidf",
@@ -118,7 +124,8 @@ let package = Package(
 
         // Native C FFI: zenoh-pico + CycloneDDS. Apple platforms receive
         // pre-built xcframeworks; Linux compiles from source (zenoh-pico)
-        // and links via pkg-config (CycloneDDS).
+        // and links via pkg-config (CycloneDDS); Windows consumes pre-built
+        // .artifactbundle zips.
         cZenohPico,
         cCycloneDDS,
 

@@ -6,3 +6,8 @@ DerivedData/
 .DS_Store
 .claude/
 CLAUDE.md
+
+Vendor/*-arm64/
+Vendor/*-x86_64/
+Vendor/include/
+Vendor/pkgconfig/

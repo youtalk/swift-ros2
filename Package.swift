@@ -3,16 +3,17 @@
 import PackageDescription
 
 // Apple platforms: pre-built xcframework binaryTargets hosted on
-// GitHub Releases. Linux and Windows: compile the C sources directly
-// via SPM, using the matching platform backend inside vendor/zenoh-pico.
-// See Scripts/build-xcframework.sh for the macOS build helper.
+// GitHub Releases. Linux, Windows, and Android: compile the C sources
+// directly via SPM, using the matching platform backend inside
+// vendor/zenoh-pico. See Scripts/build-xcframework.sh for the macOS
+// build helper.
 //
 // CycloneDDS on Linux resolves through pkg-config; on Apple it ships
-// as a prebuilt xcframework. Windows DDS support is not yet in this
-// milestone — the entire DDS path (cCycloneDDS, CDDSBridge, SwiftROS2DDS,
-// the SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
-// Windows by the #if !os(Windows) gate around the targets/products
-// additions further down.
+// as a prebuilt xcframework. Windows and Android do not ship DDS —
+// the entire DDS path (cCycloneDDS, CDDSBridge, SwiftROS2DDS, the
+// SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
+// both platforms by the #if !os(Windows) && !os(Android) gate around
+// the targets/products additions further down.
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
 
 let cZenohPico: Target = {
@@ -75,6 +76,34 @@ let cZenohPico: Target = {
                 .define("ZENOH_WINDOWS", to: "1"),
             ]
         )
+    #elseif os(Android)
+        return .target(
+            name: "CZenohPico",
+            path: "vendor/zenoh-pico",
+            exclude: [
+                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
+                // Android uses the unix backend (Bionic is POSIX-ish);
+                // exclude every other backend, same pattern as Linux.
+                "src/system/arduino",
+                "src/system/emscripten",
+                "src/system/espidf",
+                "src/system/freertos_plus_tcp",
+                "src/system/mbed",
+                "src/system/rpi_pico",
+                "src/system/void",
+                "src/system/windows",
+                "src/system/zephyr",
+                "src/system/flipper",
+            ],
+            sources: ["src"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("src"),
+                .define("Z_FEATURE_LINK_TCP", to: "1"),
+                .define("Z_FEATURE_LIVELINESS", to: "1"),
+                .define("ZENOH_ANDROID", to: "1"),
+            ]
+        )
     #else
         return .binaryTarget(
             name: "CZenohPico",
@@ -84,10 +113,13 @@ let cZenohPico: Target = {
     #endif
 }()
 
-#if !os(Windows)
-    // The DDS path is compiled out on Windows entirely, so cCycloneDDS
-    // is not defined there — no closure evaluation, no stale placeholder
-    // .binaryTarget construction.
+#if !os(Windows) && !os(Android)
+    // The DDS path is compiled out on Windows and Android entirely, so
+    // cCycloneDDS is not defined there — no closure evaluation, no stale
+    // placeholder .binaryTarget construction. Android is carved out for
+    // the same reason Windows is: SwiftPM cannot orchestrate CycloneDDS's
+    // ddsrt CMake-configure-time header generation, and no usable
+    // prebuilt .binaryTarget path exists yet.
     let cCycloneDDS: Target = {
         #if os(Linux)
             return .systemLibrary(
@@ -158,6 +190,7 @@ var targets: [Target] = [
             .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
             .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
             .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
+            .define("ZENOH_ANDROID", to: "1", .when(platforms: [.android])),
             .define("Z_FEATURE_LINK_TCP", to: "1"),
             .define("Z_FEATURE_LIVELINESS", to: "1"),
         ],
@@ -195,10 +228,11 @@ var targets: [Target] = [
 
 // DDS path + the SwiftROS2 umbrella + examples + umbrella-level tests.
 // These are only included on platforms where CycloneDDS is consumable.
-// Windows will join once M3 settles the DDS-on-Windows story; for now,
-// Windows users should import SwiftROS2Zenoh directly instead of the
-// SwiftROS2 umbrella.
-#if !os(Windows)
+// Windows and Android do not build CycloneDDS from source (SPM cannot
+// orchestrate the ddsrt CMake configure-time header generation), so
+// both platforms import SwiftROS2Zenoh directly instead of the
+// SwiftROS2 umbrella. DDS on Windows / Android is a future track.
+#if !os(Windows) && !os(Android)
     products.append(contentsOf: [
         .library(name: "SwiftROS2", targets: ["SwiftROS2"]),
         .library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]),

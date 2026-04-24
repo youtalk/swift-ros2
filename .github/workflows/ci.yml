@@ -65,3 +65,28 @@ jobs:
         run: swift build
       - name: Test
         run: swift test --parallel
+
+  build-windows:
+    name: Build & Test (Windows x86_64, Zenoh only)
+    needs: [swift-format]
+    runs-on: windows-latest
+    # Pin Swift 6.3.1 here (not 6.0.2 like macOS) because 6.0.2's Windows
+    # SDK shim assumes older Windows Kits headers than the current
+    # windows-latest runner image ships — it fails with "could not build
+    # module 'ucrt'". 6.3.1 bundles up-to-date shims and works out of the
+    # box. macOS stays on Xcode 16.2 (Swift 6.0.x); Linux uses swift:6.2
+    # containers (required for .artifactbundle staticLibrary support).
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+        with:
+          branch: swift-6.3.1-release
+          tag: 6.3.1-RELEASE
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test --parallel

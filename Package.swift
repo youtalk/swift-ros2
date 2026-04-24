@@ -7,10 +7,12 @@ import PackageDescription
 // via SPM, using the matching platform backend inside vendor/zenoh-pico.
 // See Scripts/build-xcframework.sh for the macOS build helper.
 //
-// CycloneDDS Linux still resolves through pkg-config; Windows DDS
-// support is not yet in this milestone — the cCycloneDDS Windows arm
-// below is a placeholder that will never be fetched as long as downstream
-// builds stay within the Zenoh / core products.
+// CycloneDDS on Linux resolves through pkg-config; on Apple it ships
+// as a prebuilt xcframework. Windows DDS support is not yet in this
+// milestone — the entire DDS path (cCycloneDDS, CDDSBridge, SwiftROS2DDS,
+// the SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
+// Windows by the #if !os(Windows) gate around the targets/products
+// additions further down.
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
 
 let cZenohPico: Target = {
@@ -82,23 +84,26 @@ let cZenohPico: Target = {
     #endif
 }()
 
-// Only referenced on non-Windows platforms — the DDS path is entirely
-// compiled out for Windows at the targets-array level below.
-let cCycloneDDS: Target = {
-    #if os(Linux)
-        return .systemLibrary(
-            name: "CCycloneDDS",
-            path: "Sources/CCycloneDDS",
-            pkgConfig: "CycloneDDS"
-        )
-    #else
-        return .binaryTarget(
-            name: "CCycloneDDS",
-            url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-            checksum: "bc72071590791fcb989a69af616c1da771f9c6d79b50de4381d8e95ce33fc8ad"
-        )
-    #endif
-}()
+#if !os(Windows)
+    // The DDS path is compiled out on Windows entirely, so cCycloneDDS
+    // is not defined there — no closure evaluation, no stale placeholder
+    // .binaryTarget construction.
+    let cCycloneDDS: Target = {
+        #if os(Linux)
+            return .systemLibrary(
+                name: "CCycloneDDS",
+                path: "Sources/CCycloneDDS",
+                pkgConfig: "CycloneDDS"
+            )
+        #else
+            return .binaryTarget(
+                name: "CCycloneDDS",
+                url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
+                checksum: "bc72071590791fcb989a69af616c1da771f9c6d79b50de4381d8e95ce33fc8ad"
+            )
+        #endif
+    }()
+#endif
 
 // Products and targets common to every supported platform (the Zenoh
 // path and the pure-Swift layers).

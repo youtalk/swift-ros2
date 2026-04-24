@@ -7,7 +7,7 @@ Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source
 ## Features
 
 - **Dual transport out of the box.** `SwiftROS2Zenoh` talks to `rmw_zenoh_cpp`; `SwiftROS2DDS` talks to `rmw_cyclonedds_cpp`. Swap between them with a single config change.
-- **No RCL dependency.** Everything happens at the wire level, so iOS, iPadOS, macOS, Mac Catalyst, visionOS, Linux, and Windows all share the same Swift API.
+- **No RCL dependency.** Everything happens at the wire level, so Apple platforms and Linux share the same high-level Swift API. Windows currently supports the Zenoh path and uses transport-specific modules rather than the `SwiftROS2` umbrella.
 - **Swift-native API.** `async`/`await`, `AsyncStream` subscriptions, `Sendable` conformance, structured concurrency.
 - **Pre-built Apple binaries.** `CZenohPico.xcframework` + `CCycloneDDS.xcframework` attached to every GitHub Release — `swift build` downloads them directly; no CMake, no local bootstrap.
 - **Multi-distro wire format.** Humble, Jazzy, Kilted, Rolling. Select `wireMode` explicitly on the `TransportConfig`; when unspecified, Zenoh defaults to Jazzy.
@@ -25,7 +25,7 @@ Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source
 | Linux         | Ubuntu 22.04 / 24.04 (x86_64, aarch64) | zenoh-pico source build + CycloneDDS via `pkg-config` |
 | Windows       | Windows 10 / 11 (x86_64)               | zenoh-pico source build (Zenoh only — DDS pending)    |
 
-Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2), a Swift 6.0.2 Linux matrix (Humble on Ubuntu 22.04, Jazzy/Rolling on Ubuntu 24.04, x86_64 and aarch64), and Swift 6.3.1 on Windows (`windows-latest`).
+Swift 5.9+ on Apple platforms and Linux; Windows currently requires Swift 6.3.1. CI runs `macos-15` (Apple Silicon, Xcode 16.2), a Swift 6.0.2 Linux matrix (Humble on Ubuntu 22.04, Jazzy/Rolling on Ubuntu 24.04, x86_64 and aarch64), and Swift 6.3.1 on Windows (`windows-latest`).
 
 ## Installation
 
@@ -90,6 +90,8 @@ targets: [
 Requires Swift 6.3.1 on Windows. No `source setup.bash` or `PKG_CONFIG_PATH` steps are needed — `swift build` handles the zenoh-pico source build automatically.
 
 ## Quick Start
+
+**Note for Windows:** the examples below import the `SwiftROS2` umbrella, which is not built on Windows. Windows users can replicate the Zenoh examples using `SwiftROS2Zenoh`'s `ZenohClient` directly — the `ROS2Context`/`ROS2Node` wrappers land on Windows when the DDS path does.
 
 ### Publish an IMU message over Zenoh
 

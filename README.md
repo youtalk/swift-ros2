@@ -2,14 +2,14 @@
 
 Native Swift client library for ROS 2. Publishes and subscribes over **Zenoh** (via zenoh-pico) or **DDS** (via CycloneDDS) without a bridge, without pulling in the full ROS 2 stack.
 
-Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source build on Linux.
+Shipping as **0.5.0** — pre-built xcframeworks on every Apple platform, pre-built static library bundles on Linux x86_64 + aarch64.
 
 ## Features
 
 - **Dual transport out of the box.** `SwiftROS2Zenoh` talks to `rmw_zenoh_cpp`; `SwiftROS2DDS` talks to `rmw_cyclonedds_cpp`. Swap between them with a single config change.
 - **No RCL dependency.** Everything happens at the wire level, so iOS, iPadOS, macOS, Mac Catalyst, visionOS, and Linux all share the same Swift API.
 - **Swift-native API.** `async`/`await`, `AsyncStream` subscriptions, `Sendable` conformance, structured concurrency.
-- **Pre-built Apple binaries.** `CZenohPico.xcframework` + `CCycloneDDS.xcframework` attached to every GitHub Release — `swift build` downloads them directly; no CMake, no local bootstrap.
+- **Pre-built binaries.** `CZenohPico` + `CCycloneDDS` attached to every GitHub Release as xcframeworks (Apple) and `.artifactbundle` static libraries (Linux) — `swift build` downloads them directly; no CMake, no local bootstrap.
 - **Multi-distro wire format.** Humble, Jazzy, Kilted, Rolling. Select `wireMode` explicitly on the `TransportConfig`; when unspecified, Zenoh defaults to Jazzy.
 - **20 built-in message types** across sensor_msgs, geometry_msgs, std_msgs, audio_common_msgs, and tf2_msgs. Pure-Swift XCDR v1 encoder + decoder covers both publish and subscribe.
 - **Production proven.** Extracted from [Conduit](https://apps.apple.com/app/conduit-ros2-sensor-publisher/id6738043971), which pushes 12 sensor streams at up to 100 Hz.
@@ -22,9 +22,9 @@ Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source
 | macOS         | 13.0                      | `binaryTarget` xcframework                    |
 | Mac Catalyst  | 16.0                      | `binaryTarget` xcframework                    |
 | visionOS      | 1.0                       | `binaryTarget` xcframework                    |
-| Linux         | Ubuntu 22.04 / 24.04 (x86_64, aarch64) | zenoh-pico source build + CycloneDDS via `pkg-config` |
+| Linux         | Ubuntu 22.04 / 24.04 (x86_64, aarch64) | `.artifactbundle` static libraries (from release)     |
 
-Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2) plus a Swift 6.0.2 Linux matrix: Humble on Ubuntu 22.04, Jazzy on Ubuntu 24.04, and Rolling on Ubuntu 24.04 — each exercised on both x86_64 and aarch64.
+Swift 5.9+ on Apple platforms; Swift 6.2+ on Linux. CI runs `macos-15` (Apple Silicon, Xcode 16.2) plus a Swift 6.2 Linux matrix: Ubuntu 22.04, Ubuntu 24.04 × 2 (Jazzy + Rolling), exercised on x86_64.
 
 ## Installation
 
@@ -33,7 +33,7 @@ Swift 5.9+ everywhere. CI runs `macos-15` (Apple Silicon, Xcode 16.2) plus a Swi
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.4.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.5.0"),
 ],
 targets: [
     .target(
@@ -45,26 +45,23 @@ targets: [
 ]
 ```
 
-That's it — `swift build` downloads the xcframeworks from the 0.4.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `ZenohClient` / `DDSClient` directly (e.g. for custom session configuration or testing).
+That's it — `swift build` downloads the xcframeworks from the 0.5.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `ZenohClient` / `DDSClient` directly (e.g. for custom session configuration or testing).
 
 ### Linux
 
-```bash
-# Ubuntu 24.04
-sudo apt install ros-jazzy-cyclonedds   # provides libddsc via pkg-config
-git clone --recursive https://github.com/youtalk/swift-ros2.git
-cd swift-ros2
-bash Scripts/build-linux-deps.sh        # verifies pkg-config finds CycloneDDS
+swift-ros2 ships pre-built zenoh-pico and CycloneDDS static libraries on GitHub Release for `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (Ubuntu 22.04 / glibc 2.35 baseline, forward-compatible with newer distros).
 
-# Make pkg-config find CycloneDDS in the current shell. build-linux-deps.sh
-# exports these variables only inside its own process, so they have to be
-# re-exported here before `swift build` invokes the C toolchain.
-source /opt/ros/jazzy/setup.bash
-export PKG_CONFIG_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
-
-swift build
-swift test                               # 69 pass, 2 LINUX_IP-gated skips
+```swift
+// Package.swift
+.package(url: "https://github.com/youtalk/swift-ros2", from: "0.5.0")
 ```
+
+```bash
+swift build
+swift test --parallel
+```
+
+No ROS 2 install is required to build swift-ros2 itself. To exchange messages with ROS 2 peers, ROS 2 must be installed on whichever host runs the matching subscriber — that is an independent concern.
 
 ## Quick Start
 

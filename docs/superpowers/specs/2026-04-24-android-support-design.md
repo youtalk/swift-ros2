@@ -7,7 +7,7 @@
 
 ## 1. Background
 
-swift-ros2 ships on Apple (iOS / iPadOS / macOS / Mac Catalyst / visionOS), Linux (Ubuntu 22.04 / 24.04, x86_64 + aarch64), and Windows (x86_64; Zenoh only, merged in `8c55971`). On non-Apple platforms, swift-ros2 compiles the C dependencies **from source via SwiftPM** — Linux pulls in `vendor/zenoh-pico/src/system/unix/…`, Windows pulls in `vendor/zenoh-pico/src/system/windows/…`, each with the matching `ZENOH_<PLATFORM>` preprocessor define. The `.artifactbundle` route for non-Apple static libraries was explored in PR #32 (Linux binary distribution) and **rejected** on 2026-04-24 — Windows M2 had already pivoted back to source build for the same underlying SwiftPM-on-Windows rejection of C-library `.artifactbundle` inputs, and the Linux attempt surfaced additional cross-platform ergonomic issues (tracked in #26). Source-build remains the canonical non-Apple distribution path.
+swift-ros2 ships on Apple (iOS / iPadOS / macOS / Mac Catalyst / visionOS), Linux (Ubuntu 22.04 / 24.04, x86_64 + aarch64), and Windows (x86_64; Zenoh only, merged in `8c55971`). Non-Apple platforms use a mixed native-dependency model: **`zenoh-pico` is compiled from source via SwiftPM** — Linux pulls in `vendor/zenoh-pico/src/system/unix/…`, Windows pulls in `vendor/zenoh-pico/src/system/windows/…`, each with the matching `ZENOH_<PLATFORM>` preprocessor define — while **CycloneDDS on Linux is resolved via `pkg-config` as a SwiftPM `.systemLibrary`**, and DDS is excluded entirely on Windows. The `.artifactbundle` route for non-Apple static libraries was explored in PR #32 (Linux binary distribution) and **rejected** on 2026-04-24 — Windows M2 had already pivoted back to source build for the same underlying SwiftPM-on-Windows rejection of C-library `.artifactbundle` inputs, and the Linux attempt surfaced additional cross-platform ergonomic issues (tracked in #26). Source-build remains the canonical non-Apple distribution path for vendored C code such as `zenoh-pico`.
 
 On 2026-03-24 the Swift project shipped **Swift 6.3**, which includes the first official Swift SDK for Android. This closes the tooling gap. Android is the natural next platform, and the "source build from `vendor/zenoh-pico`" model already used on Linux and Windows is the lowest-risk way to bring Android in.
 
@@ -35,7 +35,7 @@ Surveyed at commit `8c55971` (Windows M2 merged), plus the Swift 6.3 Android SDK
 - (b) `Package.swift` grows a fourth `cZenohPico` arm for Android (source build, unix backend, `ZENOH_ANDROID` define) and the DDS-carve-out gate extends to include Android.
 - (c) CI runs `swift build` for both ABIs + `swift test` on an x86_64 emulator.
 
-No release-workflow changes. No artifact bundles. No bundle scripts. No checksum pinning.
+No release-workflow changes. No artifact bundles. No bundle scripts. No checksum pinning for C dependency artifacts; the Swift Android SDK download in CI is URL + SHA-256 pinned (see §6).
 
 ## 3. Distribution strategy — source build (matches Linux + Windows)
 
@@ -264,6 +264,6 @@ Four PRs total (fork PR + Package.swift PR + CI jobs PR + README/Scripts PR, tho
 - [Swift 6.3 Released | Swift.org](https://www.swift.org/blog/swift-6.3-released/) — includes the Android SDK announcement.
 - [Swift Android SDK installation](https://www.swift.org/install/android/) — `swift sdk install` flow.
 - Windows M2 commit `8c55971` — precedent for source-build + DDS carve-out.
-- `docs/superpowers/specs/2026-04-24-linux-binary-distribution-design.md` — the rejected Linux binary-distribution design (PR #32). Captures the SwiftPM non-Apple `.artifactbundle` investigation that Android does not retry.
+- PR #32 — the rejected Linux binary-distribution attempt. Captures the SwiftPM non-Apple `.artifactbundle` investigation that Android does not retry. The design doc never landed on `main` (PR was closed before merge).
 - `eclipse-zenoh/roadmap` discussion #98 — cross-compile zenoh-pico for `aarch64-linux-android`.
 - [reactivecircus/android-emulator-runner](https://github.com/ReactiveCircus/android-emulator-runner) — CI emulator action.

@@ -55,7 +55,7 @@ ROS 2 is increasingly running on consumer-grade endpoints: phones collecting sen
 | Mobile       | iOS 32.3%, Android 67.5%                         | (KaiOS / Samsung ≈ 0.2%)   | **≈ 99.7%** of the mobile market   |
 | Desktop      | Windows 60.8%, macOS 14.8%, Linux 3.2%           | ChromeOS 1.6% (rest is Statcounter's "Unknown" bucket) | **≈ 78.7%** of the desktop market  |
 | XR           | visionOS                                         | Meta Quest / Pico / OpenXR-on-Android-arm not yet supported | (small market today, Apple Vision Pro install base only) |
-| All devices  | Android 37.9% + iOS 18.6% + Windows 26.3% + macOS 6.4% | Linux desktop, ChromeOS, KaiOS, etc. | **≈ 89.3%** of identifiable share  |
+| All devices  | Android 37.9% + iOS 18.6% + Windows 26.3% + macOS 6.4% + Linux 1.4% | ChromeOS, KaiOS, etc.       | **≈ 90.7%** of identifiable share  |
 
 In practice this means almost every consumer device that someone might want to attach to a ROS 2 graph — a phone publishing sensor data, a tablet running a teleoperation UI, a Windows or macOS laptop running rviz / Foxglove, a Linux SBC inside a robot — can publish and subscribe through the same SwiftPM-resolvable package.
 

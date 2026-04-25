@@ -154,7 +154,11 @@ jobs:
   build-android:
     name: Build Android (${{ matrix.abi }})
     needs: [swift-format]
-    runs-on: ubuntu-latest
+    # Pin explicitly to ubuntu-24.04 — the Swift 6.3.1 tarball downloaded
+    # below is the ubuntu24.04 build, so the runner must stay on 24.04.
+    # Using ubuntu-latest would break Android CI the day GitHub promotes
+    # 26.04 (glibc / libstdc++ mismatch against the 24.04 swiftmodule).
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

@@ -1,5 +1,6 @@
 // swift-tools-version: 5.9
 
+import Foundation
 import PackageDescription
 
 // Apple platforms: pre-built xcframework binaryTargets hosted on
@@ -24,8 +25,19 @@ import PackageDescription
 // like `.when(platforms: [.android])` on cSettings stay correct
 // regardless because SPM evaluates those against the target platform.
 let targetOS: String = {
-    if let override = Context.environment["SWIFT_ROS2_TARGET_OS"], !override.isEmpty {
-        return override
+    // Explicit allow-list so typos or unexpected values fail fast here
+    // instead of silently falling through to the Apple arm and quietly
+    // re-enabling the DDS path.
+    let allowed: Set<String> = ["linux", "windows", "android", "apple"]
+    if let raw = Context.environment["SWIFT_ROS2_TARGET_OS"] {
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !normalized.isEmpty {
+            guard allowed.contains(normalized) else {
+                let joined = allowed.sorted().joined(separator: ", ")
+                fatalError("SWIFT_ROS2_TARGET_OS must be one of {\(joined)}; got '\(raw)'")
+            }
+            return normalized
+        }
     }
     #if os(Linux)
         return "linux"

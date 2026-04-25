@@ -23,17 +23,25 @@ fi
 # Locate the Swift Android runtime that the test binaries dynamically
 # link against. Without these .so files on the device, every test
 # launch fails with an opaque dlopen error — fail fast here instead.
-if ! SWIFT_SDK_ROOT="$(swift sdk configuration show x86_64-unknown-linux-android28 2>/dev/null | awk -F': ' '/sdkRootPath/ {print $2}')"; then
-  echo "ERROR: 'swift sdk configuration show x86_64-unknown-linux-android28' failed. Is the Swift Android SDK installed?" >&2
+#
+# `swift sdk configuration show` would be the natural source of truth,
+# but reactivecircus/android-emulator-runner@v2's script subshell does
+# not reliably inherit $GITHUB_PATH additions, so `swift` isn't always
+# on PATH here. Discover the installed artifactbundle directly instead
+# — SPM always extracts to ~/.config/swiftpm/swift-sdks/ per the Swift
+# SDK spec.
+SDK_BUNDLE=$(find "${HOME}/.config/swiftpm/swift-sdks" -maxdepth 1 -type d -name '*android*.artifactbundle' 2>/dev/null | head -1)
+if [[ -z "${SDK_BUNDLE:-}" ]]; then
+  echo "ERROR: Swift Android SDK bundle not found under \$HOME/.config/swiftpm/swift-sdks — was 'swift sdk install' run?" >&2
   exit 2
 fi
-if [[ -z "${SWIFT_SDK_ROOT:-}" ]]; then
-  echo "ERROR: Swift SDK configuration did not report an sdkRootPath for x86_64-unknown-linux-android28." >&2
-  exit 2
-fi
-SWIFT_RUNTIME_DIR="$SWIFT_SDK_ROOT/usr/lib/swift/android"
+# Swift runtime .so files live under swift-resources/usr/lib/swift-<arch>/android.
+# Match the arch to x86_64 (the only emulator matrix entry today).
+SWIFT_RUNTIME_DIR="${SDK_BUNDLE}/swift-android/swift-resources/usr/lib/swift-x86_64/android"
 if [[ ! -d "$SWIFT_RUNTIME_DIR" ]]; then
   echo "ERROR: Swift Android runtime directory not found at $SWIFT_RUNTIME_DIR." >&2
+  echo "       Bundle contents:" >&2
+  ls -la "${SDK_BUNDLE}/swift-android/swift-resources/usr/lib/" 2>&1 | sed 's/^/         /' >&2 || true
   exit 2
 fi
 

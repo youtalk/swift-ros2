@@ -32,17 +32,19 @@ Bringing ROS 2 to a phone, headset, or laptop usually means cross-compiling `rcl
 
 ## Platforms
 
-| Platform              | Minimum target                                 | Integration path                                    | Transports     | CI job             |
-|-----------------------|------------------------------------------------|-----------------------------------------------------|----------------|--------------------|
-| iOS / iPadOS          | 16.0                                           | `binaryTarget` xcframework                          | Zenoh + DDS    | `build-macos`      |
-| macOS                 | 13.0                                           | `binaryTarget` xcframework                          | Zenoh + DDS    | `build-macos`      |
-| Mac Catalyst          | 16.0                                           | `binaryTarget` xcframework                          | Zenoh + DDS    | `build-macos`      |
-| visionOS              | 1.0                                            | `binaryTarget` xcframework                          | Zenoh + DDS    | `build-macos`      |
-| Linux                 | Ubuntu 22.04 / 24.04 (x86_64, aarch64)         | `zenoh-pico` source build + `pkg-config` for DDS    | Zenoh + DDS    | `build-linux` (×6) |
-| Windows               | Windows 10 / 11 (x86_64)                       | `zenoh-pico` source build (Winsock + Iphlpapi)      | Zenoh only     | `build-windows`    |
-| Android               | API 28+ (arm64-v8a, x86_64)                    | `zenoh-pico` source build (Bionic, unix backend)    | Zenoh only     | `build-android` (×2) |
+| Platform              | Minimum target                                 | Integration path                                    | Transports     | CI job per push                       | xcframework slices built at tag time |
+|-----------------------|------------------------------------------------|-----------------------------------------------------|----------------|---------------------------------------|--------------------------------------|
+| iOS / iPadOS          | 16.0                                           | `binaryTarget` xcframework                          | Zenoh + DDS    | (covered by `build-macos` Swift compile) | `iphoneos` + `iphonesimulator`       |
+| macOS                 | 13.0                                           | `binaryTarget` xcframework                          | Zenoh + DDS    | `build-macos` (`swift build` + `swift test`) | `macosx`                             |
+| Mac Catalyst          | 16.0                                           | `binaryTarget` xcframework                          | Zenoh + DDS    | (covered by `build-macos` Swift compile) | `maccatalyst`                        |
+| visionOS              | 1.0                                            | `binaryTarget` xcframework                          | Zenoh + DDS    | (covered by `build-macos` Swift compile) | `xros` + `xrsimulator`               |
+| Linux                 | Ubuntu 22.04 / 24.04 (x86_64, aarch64)         | `zenoh-pico` source build + `pkg-config` for DDS    | Zenoh + DDS    | `build-linux` (×6: 3 distros × 2 arches)  | n/a (source build)                   |
+| Windows               | Windows 10 / 11 (x86_64)                       | `zenoh-pico` source build (Winsock + Iphlpapi)      | Zenoh only     | `build-windows`                       | n/a (source build)                   |
+| Android               | API 28+ (arm64-v8a, x86_64)                    | `zenoh-pico` source build (Bionic, unix backend)    | Zenoh only     | `build-android` (×2 ABIs)             | n/a (source build)                   |
 
-Swift 5.9+ on Apple platforms; Linux uses Swift 6.0.2; Windows requires Swift 6.3.1 (the bundled Windows SDK shim in 6.0.x assumes older Windows Kits headers than the current `windows-latest` image ships, failing with `could not build module 'ucrt'`); Android uses the Swift 6.3 Android SDK from swift.org.
+The `build-macos` job runs `swift build` / `swift test` on `macos-15`, which compiles the Swift sources for the macOS host only — that proves the Swift code compiles against the Apple toolchain, but it does *not* drive `xcodebuild` against `iphoneos` / `iphonesimulator` / `maccatalyst` / `xros` / `xrsimulator` destinations. Those non-host Apple slices are built end-to-end only by the [`release-xcframework.yml`](.github/workflows/release-xcframework.yml) workflow at tag time, which produces the `CZenohPico.xcframework` + `CCycloneDDS.xcframework` zips attached to each GitHub release. Per-push runtime validation on iOS / visionOS / Mac Catalyst comes from [Conduit](https://apps.apple.com/app/conduit-ros2-sensor-publisher/id6738043971) (the production user) rather than CI.
+
+Swift 5.9+ on Apple platforms; Linux uses Swift 6.0.2; Windows requires Swift 6.3.1 (the bundled Windows SDK shim in 6.0.x assumes older Windows Kits headers than the current `windows-latest` image ships, failing with `could not build module 'ucrt'`); Android uses the Swift 6.3.1 Android SDK from swift.org (matched against the toolchain `swift sdk install` resolves).
 
 ## OS coverage at a glance
 
@@ -76,7 +78,7 @@ targets: [
 ]
 ```
 
-`swift build` downloads the xcframeworks attached to the 0.6.0 release. `SwiftROS2` re-exports `SwiftROS2Zenoh` + `SwiftROS2DDS` and exposes the high-level `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` API. Add `SwiftROS2Zenoh` / `SwiftROS2DDS` to your dependencies only if you want to drive `ZenohClient` / `DDSClient` directly (e.g. for custom session config or test mocks).
+`swift build` downloads the Apple xcframework binaries that `Package.swift` pins. (The pin lags one PR behind every tag — the URL + checksums are bumped in a follow-up "pin release URL + xcframework checksums" PR once `release-xcframework.yml` has attached the zips and the GitHub-hosted SHA-256s exist. Practically that means a consumer who pins `from: "X.Y.Z"` resolves to the X.Y.Z commit and downloads whatever binaries that commit's manifest was pointing at, which is usually the previous release's; tracking `main` always picks up the latest pinned URL.) The high-level API arrives via `import SwiftROS2`, which exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links `SwiftROS2Zenoh` + `SwiftROS2DDS`. Add `SwiftROS2Zenoh` / `SwiftROS2DDS` to your target dependencies only if you want to call `ZenohClient` / `DDSClient` by name (e.g. for custom session config or test mocks) — they are *depended on* by the umbrella but not `@_exported` from it.
 
 ### Linux
 
@@ -116,7 +118,7 @@ Requires Swift 6.3.1. No `setup.bash` or `PKG_CONFIG_PATH` step — `swift build
 
 ### Android (cross-compile from macOS or Linux)
 
-Install the Swift 6.3 Android SDK from [swift.org/install/android](https://www.swift.org/install/android/), pinning the version to your toolchain:
+Install the Swift 6.3.1 Android SDK from [swift.org/install/android](https://www.swift.org/install/android/) (point release matched to the host Swift toolchain — CI uses 6.3.1):
 
 ```bash
 swift sdk install <android-sdk-url> --checksum <sha>
@@ -137,7 +139,7 @@ SWIFT_ROS2_TARGET_OS=android swift build --swift-sdk aarch64-unknown-linux-andro
 # or x86_64-unknown-linux-android28 for emulator targets
 ```
 
-`SWIFT_ROS2_TARGET_OS=android` is required when cross-compiling from a Linux host. SwiftPM evaluates manifest-scope `#if os(...)` against the host, so on Linux it would otherwise pull in the DDS path that isn't buildable for Android. Apple-host cross-compiles inherit `apple` from `#if os(macOS)` so the override is unnecessary there. The variable is validated against an allow-list — typos fail fast with `fatalError` at manifest compile.
+`SWIFT_ROS2_TARGET_OS=android` is required whenever the host OS differs from the target — both Linux → Android and macOS → Android. SwiftPM evaluates manifest-scope `#if os(...)` against the host, so without the override a Linux host would pull in the DDS path that isn't buildable for Android, and a macOS host would pick the Apple `binaryTarget` arm and never source-build `zenoh-pico` for Android at all. The variable is validated against an allow-list (`{android, apple, linux, windows}`) and any typo fails the manifest compile with a `fatalError` naming the offending value.
 
 ```swift
 import SwiftROS2Zenoh    // the SwiftROS2 umbrella isn't built on Android — same carve-out as Windows
@@ -193,13 +195,16 @@ End-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift ru
 ## Module layout
 
 ```
-import SwiftROS2          // public API — re-exports CDR / Messages / Transport / Wire + Zenoh + DDS
+import SwiftROS2          // public API — re-exports CDR / Messages / Transport / Wire only
     ├── SwiftROS2CDR        — XCDR v1 encoder + decoder (pure Swift, no deps)
     ├── SwiftROS2Wire       — Zenoh / DDS wire codecs, ROS2Distro, TypeNameConverter
     ├── SwiftROS2Messages   — ROS2Message protocols + 23 built-in types
     └── SwiftROS2Transport  — TransportSession / TransportConfig / EntityManager / GIDManager
 
-// Transport-specific, opt-in:
+// Transport modules: depended on by SwiftROS2 (so the high-level
+// ROS2Context / ROS2Node API works after `import SwiftROS2`), but
+// NOT @_exported — import them explicitly to reach ZenohClient /
+// DDSClient.
 import SwiftROS2Zenoh      — ZenohClient (zenoh-pico FFI through CZenohBridge)
 import SwiftROS2DDS        — DDSClient (CycloneDDS FFI through CDDSBridge)
 ```
@@ -256,7 +261,7 @@ Each release has a corresponding [GitHub release](https://github.com/youtalk/swi
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **0.6.0**  | 2026-04-24 | **Android support** — arm64-v8a + x86_64 via the Swift 6.3 Android SDK; `zenoh-pico` source build with `ZENOH_ANDROID` (Bionic unix backend, vendored `pthread_cancel` / `_z_task_cancel` stubs); `SWIFT_ROS2_TARGET_OS` env override for cross-compile from a Linux host (allow-list-validated, fails the manifest compile on typos); `build-android` matrix (×2) added to CI on `ubuntu-24.04` with NDK r27c. Zenoh only — DDS-on-Android tracked as future work. |
+| **0.6.0**  | 2026-04-24 | **Android support** — arm64-v8a + x86_64 via the Swift 6.3.1 Android SDK; `zenoh-pico` source build with `ZENOH_ANDROID` (Bionic unix backend, vendored `pthread_cancel` / `_z_task_cancel` stubs); `SWIFT_ROS2_TARGET_OS` env override required for any cross-compile (allow-list-validated, fails the manifest compile on typos); `build-android` matrix (×2 ABIs) added to CI on `ubuntu-24.04` with NDK r27c. Zenoh only — DDS-on-Android tracked as future work. |
 | 0.5.0      | 2026-04-24 | **Windows x86_64 support** — three-arm `Package.swift` platform split, `zenoh-pico` source build with `ZENOH_WINDOWS` and Winsock + Iphlpapi linkage, `build-windows` job on `windows-latest` (Swift 6.3.1). Zenoh only.                                                                                              |
 | 0.4.0      | 2026-04-20 | **DDS subscriber** — `raw_cdr_serdata_from_ser` fragchain walk in `CDDSBridge`, `bridge_dds_reader_t` + listener callback, `DDSReaderHandle` / `createRawReader` / `destroyReader` on `DDSClientProtocol`, `DDSTransportSession.createSubscriber` wired through; `swift run listener dds` enabled. Minimal `talker` / `listener` example executables added. |
 | 0.3.1      | 2026-04-19 | **Hardened CDR decoder** — bounds-checks untrusted sequence + string lengths before `reserveCapacity`; fails fast on malformed null-terminated strings instead of silently dropping bytes. |

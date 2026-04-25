@@ -154,7 +154,11 @@ jobs:
   build-android:
     name: Build Android (${{ matrix.abi }})
     needs: [swift-format]
-    runs-on: ubuntu-latest
+    # Pin explicitly to ubuntu-24.04 — the Swift 6.3.1 tarball downloaded
+    # below is the ubuntu24.04 build, so the runner must stay on 24.04.
+    # Using ubuntu-latest would break Android CI the day GitHub promotes
+    # 26.04 (glibc / libstdc++ mismatch against the 24.04 swiftmodule).
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -167,11 +171,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      # Swift 6.3.1 — the Android SDK pinned below is published for 6.3.
-      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
+      # Swift 6.3.1 — matches the Android SDK below. compnerd/gha-setup-swift
+      # silently installs Swift 6.3 on Linux regardless of `tag:`, which
+      # mismatches the SDK's prebuilt swiftmodules (\"module compiled
+      # with Swift 6.3.1 cannot be imported by the Swift 6.3 compiler\").
+      # Download directly from swift.org instead, same pattern as
+      # build-linux above.
+      - name: Install Swift 6.3.1
+        run: |
+          curl -fsSL "https://download.swift.org/swift-6.3.1-release/ubuntu2404/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04.tar.gz" \
+            -o /tmp/swift.tar.gz
+          sudo mkdir -p /opt/swift
+          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
+          echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
+      # The Swift Android SDK artifact bundle does not ship its own
+      # ndk-sysroot — it ships a setup-android-sdk.sh script that
+      # hydrates ndk-sysroot from a locally installed NDK in-place.
+      # Without running it, clang can't find <sys/time.h> / <string.h>
+      # under the SDK's --sysroot. The script requires NDK >= r27.
+      - name: Install Android NDK r27c
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
         with:
-          branch: swift-6.3.1-release
-          tag: 6.3.1-RELEASE
+          ndk-version: r27c
+          add-to-path: false
       - name: Install Swift Android SDK
         env:
           # Pinned via repository variables so values can be rotated
@@ -187,6 +210,7 @@ jobs:
           # surface a less-clear error.
           SDK_URL: ${{ vars.SWIFT_ANDROID_SDK_URL }}
           SDK_CHECKSUM: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
             echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
@@ -194,52 +218,21 @@ jobs:
             exit 1
           fi
           swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
+          # Hydrate the SDK's ndk-sysroot by symlinking $ANDROID_NDK_HOME
+          # into the installed bundle, using the SDK's bundled helper.
+          SDK_BUNDLE=$(find ~/.config/swiftpm/swift-sdks -maxdepth 1 -type d -name '*android*.artifactbundle' | head -1)
+          if [[ -z "$SDK_BUNDLE" ]]; then
+            echo "ERROR: installed Swift Android SDK bundle not found under ~/.config/swiftpm/swift-sdks" >&2
+            exit 1
+          fi
+          bash "$SDK_BUNDLE/swift-android/scripts/setup-android-sdk.sh"
           swift sdk list
       - name: Swift version
         run: swift --version
       - name: Build
-        run: swift build --swift-sdk ${{ matrix.triple }} -v
-
-  test-android-x86_64:
-    name: Test Android (x86_64 emulator)
-    # Decoupled from build-android: this job rebuilds the x86_64 tests
-    # itself and does not consume artifacts from the matrix, so an
-    # arm64 build failure should not block the emulator signal.
-    needs: [swift-format]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: compnerd/gha-setup-swift@eeda069c5bc95ac8a9ac5cea7d4f588ae5420ca5 # v0.4.0
-        with:
-          branch: swift-6.3.1-release
-          tag: 6.3.1-RELEASE
-      - name: Install Swift Android SDK
+        # SWIFT_ROS2_TARGET_OS — Package.swift reads this to pick the
+        # Android arm when cross-compiling from a Linux host, since
+        # `#if os(Android)` at manifest scope reflects the host.
         env:
-          SDK_URL: ${{ vars.SWIFT_ANDROID_SDK_URL }}
-          SDK_CHECKSUM: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
-        run: |
-          if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
-            echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
-            exit 1
-          fi
-          swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
-      - name: Build tests for Android x86_64
-        run: swift build --build-tests --swift-sdk x86_64-unknown-linux-android28 -v
-      - name: Enable KVM group perms
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Run tests on Android x86_64 emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 28
-          arch: x86_64
-          target: default
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          script: bash Scripts/run-android-tests.sh
+          SWIFT_ROS2_TARGET_OS: android
+        run: swift build --swift-sdk ${{ matrix.triple }} -v

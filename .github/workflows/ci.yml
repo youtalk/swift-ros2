@@ -152,7 +152,7 @@ jobs:
         run: swift test --parallel
 
   build-android:
-    name: Build Android (${{ matrix.abi }})
+    name: Build (Android ${{ matrix.abi }})
     needs: [swift-format]
     # Pin explicitly to ubuntu-24.04 — the Swift 6.3.1 tarball downloaded
     # below is the ubuntu24.04 build, so the runner must stay on 24.04.

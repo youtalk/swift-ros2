@@ -2,7 +2,7 @@
 
 Native Swift client library for ROS 2. Publishes and subscribes over **Zenoh** (via zenoh-pico) or **DDS** (via CycloneDDS) without a bridge, without pulling in the full ROS 2 stack.
 
-Shipping as **0.4.0** — pre-built xcframeworks on every Apple platform, source build on Linux.
+Shipping as **0.5.0** — pre-built xcframeworks on every Apple platform; zenoh-pico source build on Linux and Windows (Zenoh only on Windows; DDS pending).
 
 ## Features
 
@@ -34,7 +34,7 @@ Swift 5.9+ on Apple platforms and Linux; Windows currently requires Swift 6.3.1.
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.4.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.5.0"),
 ],
 targets: [
     .target(
@@ -46,7 +46,7 @@ targets: [
 ]
 ```
 
-That's it — `swift build` downloads the xcframeworks from the 0.4.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `ZenohClient` / `DDSClient` directly (e.g. for custom session configuration or testing).
+That's it — `swift build` downloads the xcframeworks from the 0.5.0 release assets. `SwiftROS2` already links `SwiftROS2Zenoh` + `SwiftROS2DDS` transitively, so the high-level `ROS2Context` / `ROS2Node` API works out of the box. Add the transport-specific products only if you need `ZenohClient` / `DDSClient` directly (e.g. for custom session configuration or testing).
 
 ### Linux
 
@@ -75,7 +75,7 @@ Add the package to your `Package.swift` as usual and declare a dependency on `Sw
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.4.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.5.0"),
 ],
 targets: [
     .target(
@@ -200,6 +200,7 @@ PRs welcome. The wire format fixtures in `Tests/SwiftROS2WireTests/` and the gol
 - [x] 0.2.0: Publisher + Subscriber core, pure-Swift CDR, Jazzy/Humble wire codecs, Apple xcframework + Linux source build, dual-transport (Zenoh + DDS) FFI
 - [x] 0.3.1: CDR decoder bounds + string null-terminator validation — rejects untrusted length prefixes before `reserveCapacity`, fails fast on malformed strings instead of silently dropping bytes.
 - [x] 0.4.0: DDS subscriber support — `raw_cdr_serdata_from_ser` fragchain walk, `bridge_dds_reader_t` + listener callback, `DDSReaderHandle` / `createRawReader` / `destroyReader` on `DDSClientProtocol`, `DDSTransportSession.createSubscriber` wired through, `swift run listener dds` enabled.
+- [x] 0.5.0: Windows x86_64 support — three-arm `Package.swift` platform split, `zenoh-pico` source build with `ZENOH_WINDOWS` define and Winsock + Iphlpapi linkage, `build-windows` CI job on `windows-latest` (Swift 6.3.1). Zenoh only; CycloneDDS-on-Windows is tracked as a follow-up. README installation row + Windows subsection added.
 - [ ] Services (request/reply) and Actions (goal/feedback/result)
 - [ ] `swift-ros2-gen` code generator for `.msg` / `.srv` / `.action` files
 - [ ] Expanded message catalog (nav_msgs, visualization_msgs, …)

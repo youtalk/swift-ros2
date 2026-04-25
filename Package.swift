@@ -12,50 +12,80 @@ import PackageDescription
 // as a prebuilt xcframework. Windows and Android do not ship DDS —
 // the entire DDS path (cCycloneDDS, CDDSBridge, SwiftROS2DDS, the
 // SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
-// both platforms by the #if !os(Windows) && !os(Android) gate around
-// the targets/products additions further down.
+// both platforms via the runtime `if !isWindowsBuild && !isAndroidBuild`
+// gate around the targets/products additions further down.
+//
+// Cross-compilation target detection. Plain `#if os(...)` at manifest
+// scope reflects the HOST, which breaks when cross-compiling from
+// Linux to Android (`swift build --swift-sdk <android-triple>`): the
+// Linux arm would be selected and the DDS path pulled in. CI exports
+// `SWIFT_ROS2_TARGET_OS=android` for the Android matrix so the arm
+// selection below matches the intended target. Target-scoped settings
+// like `.when(platforms: [.android])` on cSettings stay correct
+// regardless because SPM evaluates those against the target platform.
+let targetOS: String = {
+    if let override = Context.environment["SWIFT_ROS2_TARGET_OS"], !override.isEmpty {
+        return override
+    }
+    #if os(Linux)
+        return "linux"
+    #elseif os(Windows)
+        return "windows"
+    #elseif os(Android)
+        return "android"
+    #else
+        return "apple"
+    #endif
+}()
+
+let isLinuxBuild = targetOS == "linux"
+let isWindowsBuild = targetOS == "windows"
+let isAndroidBuild = targetOS == "android"
+
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.5.0"
 
+// Non-unix zenoh-pico platform backends shared between the Linux and
+// Android arms — both use the unix backend inside `src/system/unix`.
+let zenohPicoNonUnixBackends = [
+    "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
+    "src/system/arduino",
+    "src/system/emscripten",
+    "src/system/espidf",
+    "src/system/freertos_plus_tcp",
+    "src/system/mbed",
+    "src/system/rpi_pico",
+    "src/system/void",
+    "src/system/windows",
+    "src/system/zephyr",
+    "src/system/flipper",
+]
+
 let cZenohPico: Target = {
-    #if os(Linux)
+    if isLinuxBuild || isAndroidBuild {
         return .target(
             name: "CZenohPico",
             path: "vendor/zenoh-pico",
-            exclude: [
-                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
-                // Non-Linux platform backends. SPM compiles everything under
-                // `sources: ["src"]` unless excluded. zenoh-pico's CMake build
-                // picks the right backend per platform; for SPM + Linux we hand-
-                // pick src/system/unix and drop the rest.
-                "src/system/arduino",
-                "src/system/emscripten",
-                "src/system/espidf",
-                "src/system/freertos_plus_tcp",
-                "src/system/mbed",
-                "src/system/rpi_pico",
-                "src/system/void",
-                "src/system/windows",
-                "src/system/zephyr",
-                "src/system/flipper",
-            ],
+            exclude: zenohPicoNonUnixBackends,
             sources: ["src"],
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("src"),
                 .define("Z_FEATURE_LINK_TCP", to: "1"),
                 .define("Z_FEATURE_LIVELINESS", to: "1"),
-                .define("ZENOH_LINUX", to: "1"),
+                // Target-platform conditional — SPM evaluates against the
+                // actual target triple, so this picks up ZENOH_ANDROID on
+                // Android cross-builds even though the Linux host drove
+                // the `isLinuxBuild || isAndroidBuild` arm selection.
+                .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
+                .define("ZENOH_ANDROID", to: "1", .when(platforms: [.android])),
             ]
         )
-    #elseif os(Windows)
+    } else if isWindowsBuild {
         return .target(
             name: "CZenohPico",
             path: "vendor/zenoh-pico",
             exclude: [
                 "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
-                // Non-Windows platform backends — parallel to the Linux arm
-                // above, just with src/system/unix excluded and
-                // src/system/windows kept.
                 "src/system/arduino",
                 "src/system/emscripten",
                 "src/system/espidf",
@@ -76,66 +106,15 @@ let cZenohPico: Target = {
                 .define("ZENOH_WINDOWS", to: "1"),
             ]
         )
-    #elseif os(Android)
-        return .target(
-            name: "CZenohPico",
-            path: "vendor/zenoh-pico",
-            exclude: [
-                "CMakeLists.txt", "README.md", "LICENSE", "tests", "examples", "docs", "ci",
-                // Android uses the unix backend (Bionic is POSIX-ish);
-                // exclude every other backend, same pattern as Linux.
-                "src/system/arduino",
-                "src/system/emscripten",
-                "src/system/espidf",
-                "src/system/freertos_plus_tcp",
-                "src/system/mbed",
-                "src/system/rpi_pico",
-                "src/system/void",
-                "src/system/windows",
-                "src/system/zephyr",
-                "src/system/flipper",
-            ],
-            sources: ["src"],
-            publicHeadersPath: "include",
-            cSettings: [
-                .headerSearchPath("src"),
-                .define("Z_FEATURE_LINK_TCP", to: "1"),
-                .define("Z_FEATURE_LIVELINESS", to: "1"),
-                .define("ZENOH_ANDROID", to: "1"),
-            ]
-        )
-    #else
+    } else {
+        // Apple: binary xcframework.
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
             checksum: "3cc9437a1ed68b539a86dad687cc470013472a15a48ed6c1e3d8c9c51e8f0e28"
         )
-    #endif
+    }
 }()
-
-#if !os(Windows) && !os(Android)
-    // The DDS path is compiled out on Windows and Android entirely, so
-    // cCycloneDDS is not defined there — no closure evaluation, no stale
-    // placeholder .binaryTarget construction. Android is carved out for
-    // the same reason Windows is: SwiftPM cannot orchestrate CycloneDDS's
-    // ddsrt CMake-configure-time header generation, and no usable
-    // prebuilt .binaryTarget path exists yet.
-    let cCycloneDDS: Target = {
-        #if os(Linux)
-            return .systemLibrary(
-                name: "CCycloneDDS",
-                path: "Sources/CCycloneDDS",
-                pkgConfig: "CycloneDDS"
-            )
-        #else
-            return .binaryTarget(
-                name: "CCycloneDDS",
-                url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "fe47aa6f0896b8babec9b4782db463c9461208b89429aba9c92fe82ecec59e44"
-            )
-        #endif
-    }()
-#endif
 
 // Products and targets common to every supported platform (the Zenoh
 // path and the pure-Swift layers).
@@ -175,8 +154,8 @@ var targets: [Target] = [
     ),
 
     // Native C FFI for zenoh-pico. Apple platforms receive the pre-built
-    // xcframework; Linux and Windows compile from source using the matching
-    // platform backend inside vendor/zenoh-pico.
+    // xcframework; Linux, Windows, and Android compile from source using
+    // the matching platform backend inside vendor/zenoh-pico.
     cZenohPico,
 
     // C bridge for zenoh-pico (Conduit-authored FFI shim).
@@ -232,7 +211,23 @@ var targets: [Target] = [
 // orchestrate the ddsrt CMake configure-time header generation), so
 // both platforms import SwiftROS2Zenoh directly instead of the
 // SwiftROS2 umbrella. DDS on Windows / Android is a future track.
-#if !os(Windows) && !os(Android)
+if !isWindowsBuild && !isAndroidBuild {
+    let cCycloneDDS: Target = {
+        if isLinuxBuild {
+            return .systemLibrary(
+                name: "CCycloneDDS",
+                path: "Sources/CCycloneDDS",
+                pkgConfig: "CycloneDDS"
+            )
+        } else {
+            return .binaryTarget(
+                name: "CCycloneDDS",
+                url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
+                checksum: "fe47aa6f0896b8babec9b4782db463c9461208b89429aba9c92fe82ecec59e44"
+            )
+        }
+    }()
+
     products.append(contentsOf: [
         .library(name: "SwiftROS2", targets: ["SwiftROS2"]),
         .library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]),
@@ -301,7 +296,7 @@ var targets: [Target] = [
             path: "Tests/SwiftROS2IntegrationTests"
         ),
     ])
-#endif
+}
 
 let package = Package(
     name: "swift-ros2",

@@ -172,6 +172,17 @@ jobs:
         with:
           branch: swift-6.3.1-release
           tag: 6.3.1-RELEASE
+      # The Swift Android SDK artifact bundle does not ship its own
+      # ndk-sysroot — it ships a setup-android-sdk.sh script that
+      # hydrates ndk-sysroot from a locally installed NDK in-place.
+      # Without running it, clang can't find <sys/time.h> / <string.h>
+      # under the SDK's --sysroot. The script requires NDK >= r27.
+      - name: Install Android NDK r27c
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          add-to-path: false
       - name: Install Swift Android SDK
         env:
           # Pinned via repository variables so values can be rotated
@@ -187,6 +198,7 @@ jobs:
           # surface a less-clear error.
           SDK_URL: ${{ vars.SWIFT_ANDROID_SDK_URL }}
           SDK_CHECKSUM: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
             echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
@@ -194,10 +206,23 @@ jobs:
             exit 1
           fi
           swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
+          # Hydrate the SDK's ndk-sysroot by symlinking $ANDROID_NDK_HOME
+          # into the installed bundle, using the SDK's bundled helper.
+          SDK_BUNDLE=$(find ~/.config/swiftpm/swift-sdks -maxdepth 1 -type d -name '*android*.artifactbundle' | head -1)
+          if [[ -z "$SDK_BUNDLE" ]]; then
+            echo "ERROR: installed Swift Android SDK bundle not found under ~/.config/swiftpm/swift-sdks" >&2
+            exit 1
+          fi
+          bash "$SDK_BUNDLE/swift-android/scripts/setup-android-sdk.sh"
           swift sdk list
       - name: Swift version
         run: swift --version
       - name: Build
+        # SWIFT_ROS2_TARGET_OS — Package.swift reads this to pick the
+        # Android arm when cross-compiling from a Linux host, since
+        # `#if os(Android)` at manifest scope reflects the host.
+        env:
+          SWIFT_ROS2_TARGET_OS: android
         run: swift build --swift-sdk ${{ matrix.triple }} -v
 
   test-android-x86_64:
@@ -215,17 +240,32 @@ jobs:
         with:
           branch: swift-6.3.1-release
           tag: 6.3.1-RELEASE
+      - name: Install Android NDK r27c
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          add-to-path: false
       - name: Install Swift Android SDK
         env:
           SDK_URL: ${{ vars.SWIFT_ANDROID_SDK_URL }}
           SDK_CHECKSUM: ${{ vars.SWIFT_ANDROID_SDK_CHECKSUM }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           if [[ -z "$SDK_URL" || -z "$SDK_CHECKSUM" ]]; then
             echo "ERROR: repository variables SWIFT_ANDROID_SDK_URL and SWIFT_ANDROID_SDK_CHECKSUM must both be set." >&2
             exit 1
           fi
           swift sdk install "$SDK_URL" --checksum "$SDK_CHECKSUM"
+          SDK_BUNDLE=$(find ~/.config/swiftpm/swift-sdks -maxdepth 1 -type d -name '*android*.artifactbundle' | head -1)
+          if [[ -z "$SDK_BUNDLE" ]]; then
+            echo "ERROR: installed Swift Android SDK bundle not found under ~/.config/swiftpm/swift-sdks" >&2
+            exit 1
+          fi
+          bash "$SDK_BUNDLE/swift-android/scripts/setup-android-sdk.sh"
       - name: Build tests for Android x86_64
+        env:
+          SWIFT_ROS2_TARGET_OS: android
         run: swift build --build-tests --swift-sdk x86_64-unknown-linux-android28 -v
       - name: Enable KVM group perms
         run: |

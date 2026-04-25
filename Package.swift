@@ -14,7 +14,7 @@ import PackageDescription
 // SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
 // both platforms by the #if !os(Windows) && !os(Android) gate around
 // the targets/products additions further down.
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.4.0"
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.5.0"
 
 let cZenohPico: Target = {
     #if os(Linux)
@@ -108,7 +108,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "de7d7a02605234d364a464fb0169bc18efb46440976b8e8a26021eb416386c95"
+            checksum: "3cc9437a1ed68b539a86dad687cc470013472a15a48ed6c1e3d8c9c51e8f0e28"
         )
     #endif
 }()
@@ -131,7 +131,7 @@ let cZenohPico: Target = {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "bc72071590791fcb989a69af616c1da771f9c6d79b50de4381d8e95ce33fc8ad"
+                checksum: "fe47aa6f0896b8babec9b4782db463c9461208b89429aba9c92fe82ecec59e44"
             )
         #endif
     }()

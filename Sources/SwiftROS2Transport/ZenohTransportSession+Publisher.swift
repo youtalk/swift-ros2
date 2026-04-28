@@ -87,7 +87,7 @@ extension ZenohTransportSession {
         return publisher
     }
 
-    func appendPublisher(_ publisher: ZenohTransportPublisher, for topic: String) {
+    private func appendPublisher(_ publisher: ZenohTransportPublisher, for topic: String) {
         publishersLock.lock()
         publishers[topic] = publisher
         publishersLock.unlock()

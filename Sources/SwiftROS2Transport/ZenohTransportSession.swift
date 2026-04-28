@@ -15,7 +15,7 @@ import SwiftROS2Wire
 /// consuming app (e.g., Conduit) to provide its own C bridge wrapper.
 public final class ZenohTransportSession: TransportSession, @unchecked Sendable {
     let client: any ZenohClientProtocol
-    private var config: TransportConfig?
+    var config: TransportConfig?
     private var publishers: [String: ZenohTransportPublisher] = [:]
     private let lock = NSLock()
     private let entityManager: EntityManager
@@ -179,47 +179,6 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         return publisher
     }
 
-    public func createSubscriber(
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: TransportQoS,
-        handler: @escaping @Sendable (Data, UInt64) -> Void
-    ) throws -> any TransportSubscriber {
-        guard isConnected else {
-            throw TransportError.notConnected
-        }
-
-        guard let config = config else {
-            throw TransportError.notConnected
-        }
-
-        let wireMode = resolvedWireMode ?? .jazzy
-        let codec = ZenohWireCodec(distro: wireMode)
-
-        let effectiveTypeHash: String?
-        if wireMode.supportsTypeHash {
-            effectiveTypeHash = typeHash
-        } else {
-            effectiveTypeHash = nil
-        }
-
-        let keyExpr = codec.makeKeyExpr(
-            domainId: config.domainId,
-            namespace: extractNamespace(from: topic),
-            topic: extractTopicName(from: topic),
-            typeName: typeName,
-            typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder
-        )
-
-        let subHandle = try client.subscribe(keyExpr: keyExpr) { sample in
-            let timestampNs = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
-            handler(sample.payload, timestampNs)
-        }
-
-        return ZenohTransportSubscriberWrapper(handle: subHandle, topic: topic)
-    }
-
     public func checkHealth() -> Bool {
         client.isSessionHealthy()
     }
@@ -240,7 +199,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         return pubs
     }
 
-    private func extractNamespace(from topic: String) -> String {
+    func extractNamespace(from topic: String) -> String {
         let components = topic.split(separator: "/").map(String.init)
         if components.count > 1 {
             return "/" + components.dropLast().joined(separator: "/")
@@ -248,7 +207,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         return "/"
     }
 
-    private func extractTopicName(from topic: String) -> String {
+    func extractTopicName(from topic: String) -> String {
         let components = topic.split(separator: "/").map(String.init)
         return components.last ?? topic
     }
@@ -326,32 +285,5 @@ public final class ZenohTransportPublisher: TransportPublisher, @unchecked Senda
         lock.unlock()
 
         try? token?.close()
-    }
-}
-
-// MARK: - Zenoh Transport Subscriber Wrapper
-
-final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unchecked Sendable {
-    private let handle: any ZenohSubscriberHandle
-    public let topic: String
-    private var _isActive = true
-    private let lock = NSLock()
-
-    public var isActive: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return _isActive
-    }
-
-    init(handle: any ZenohSubscriberHandle, topic: String) {
-        self.handle = handle
-        self.topic = topic
-    }
-
-    public func close() throws {
-        lock.lock()
-        _isActive = false
-        lock.unlock()
-        try handle.close()
     }
 }

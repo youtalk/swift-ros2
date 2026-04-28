@@ -14,7 +14,7 @@ import SwiftROS2Wire
 /// The client protocol is injected at construction time, allowing the
 /// consuming app (e.g., Conduit) to provide its own C bridge wrapper.
 public final class ZenohTransportSession: TransportSession, @unchecked Sendable {
-    private let client: any ZenohClientProtocol
+    let client: any ZenohClientProtocol
     private var config: TransportConfig?
     private var publishers: [String: ZenohTransportPublisher] = [:]
     private let lock = NSLock()
@@ -78,32 +78,6 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
             throw TransportError.connectionFailed(error.localizedDescription ?? "Zenoh connection failed")
         } catch let error as TransportError {
             throw error
-        }
-    }
-
-    private func connectWithTimeout(locator: String, timeout: TimeInterval) async throws {
-        let result = ConnectionResult()
-        let client = self.client
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try client.open(locator: locator)
-                result.setCompleted()
-            } catch {
-                result.setError(error)
-            }
-        }
-
-        let startTime = Date()
-        while !result.isCompleted() {
-            if Date().timeIntervalSince(startTime) > timeout {
-                throw TransportError.connectionTimeout(timeout)
-            }
-            try await Task.sleep(nanoseconds: 50_000_000)  // 50ms polling
-        }
-
-        if let error = result.getError() {
-            throw TransportError.connectionFailed(error.localizedDescription)
         }
     }
 
@@ -277,39 +251,6 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
     private func extractTopicName(from topic: String) -> String {
         let components = topic.split(separator: "/").map(String.init)
         return components.last ?? topic
-    }
-}
-
-// MARK: - Connection Result (Thread-safe)
-
-final class ConnectionResult: @unchecked Sendable {
-    private var error: Error?
-    private var completed = false
-    private let lock = NSLock()
-
-    func setCompleted() {
-        lock.lock()
-        completed = true
-        lock.unlock()
-    }
-
-    func setError(_ err: Error) {
-        lock.lock()
-        error = err
-        completed = true
-        lock.unlock()
-    }
-
-    func isCompleted() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return completed
-    }
-
-    func getError() -> Error? {
-        lock.lock()
-        defer { lock.unlock() }
-        return error
     }
 }
 

@@ -8,6 +8,8 @@
 [![Swift](https://img.shields.io/badge/Swift-5.9%20%7C%206.0%20%7C%206.3-orange.svg)](https://swift.org)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy%20%7C%20Kilted%20%7C%20Rolling-22314E.svg)](https://docs.ros.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![SPI Swift compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/youtalk/swift-ros2)
+[![SPI platform compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/youtalk/swift-ros2)
 
 Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics over **Zenoh** (via `zenoh-pico`) or **DDS** (via CycloneDDS) — without a bridge, without `rcl` / `rclcpp`, on every consumer device OS that runs Swift.
 

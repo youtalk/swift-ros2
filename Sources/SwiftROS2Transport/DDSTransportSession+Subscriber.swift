@@ -20,7 +20,7 @@ extension DDSTransportSession {
         }
 
         lock.lock()
-        guard _isOpen else {
+        guard isOpen else {
             lock.unlock()
             throw TransportError.notConnected
         }

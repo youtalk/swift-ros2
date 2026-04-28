@@ -20,14 +20,14 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
     var subscribers: [DDSTransportSubscriberImpl] = []
     let lock = NSLock()
     private var _sessionId: String = ""
-    var _isOpen = false
+    var isOpen = false
 
     public var transportType: TransportType { .dds }
 
     public var isConnected: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return _isOpen && client.isConnected()
+        return isOpen && client.isConnected()
     }
 
     public var sessionId: String {
@@ -71,7 +71,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
 
         lock.lock()
         self.config = config
-        self._isOpen = true
+        self.isOpen = true
         self._sessionId = client.getSessionId() ?? generateFallbackSessionId()
         lock.unlock()
     }
@@ -88,7 +88,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
         }
 
         lock.lock()
-        _isOpen = false
+        isOpen = false
         _sessionId = ""
         config = nil
         lock.unlock()

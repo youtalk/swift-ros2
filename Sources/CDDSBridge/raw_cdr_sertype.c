@@ -27,12 +27,12 @@
 #  include <dds/ddsi/ddsi_radmin.h>
 #  define RAW_CDR_RDATA_T struct ddsi_rdata
 #  define RAW_CDR_RMSG_PAYLOADOFF(m, o) DDSI_RMSG_PAYLOADOFF((m), (o))
-#  define RAW_CDR_RDATA_PAYLOAD_OFF(r) DDSI_RDATA_PAYLOAD_OFF(r)
+#  define RAW_CDR_RDATA_PAYLOAD_OFF(r) DDSI_RDATA_PAYLOAD_OFF((r))
 #else
 #  include <dds/ddsi/q_radmin.h>
 #  define RAW_CDR_RDATA_T struct nn_rdata
 #  define RAW_CDR_RMSG_PAYLOADOFF(m, o) NN_RMSG_PAYLOADOFF((m), (o))
-#  define RAW_CDR_RDATA_PAYLOAD_OFF(r) NN_RDATA_PAYLOAD_OFF(r)
+#  define RAW_CDR_RDATA_PAYLOAD_OFF(r) NN_RDATA_PAYLOAD_OFF((r))
 #endif
 
 // =============================================================================

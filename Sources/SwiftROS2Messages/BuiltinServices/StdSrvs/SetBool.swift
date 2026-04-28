@@ -1,7 +1,6 @@
 // SetBool.swift
 // std_srvs/srv/SetBool service type
 
-import Foundation
 import SwiftROS2CDR
 
 /// std_srvs/srv/SetBool

@@ -1,7 +1,6 @@
 // Trigger.swift
 // std_srvs/srv/Trigger service type
 
-import Foundation
 import SwiftROS2CDR
 
 /// std_srvs/srv/Trigger
@@ -31,7 +30,7 @@ public enum TriggerSrv: ROS2ServiceType {
         }
 
         public init(from decoder: CDRDecoder) throws {
-            _ = try? decoder.readUInt8()
+            _ = try decoder.readUInt8()
         }
     }
 

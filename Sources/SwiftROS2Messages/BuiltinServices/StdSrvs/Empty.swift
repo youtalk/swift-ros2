@@ -1,7 +1,6 @@
 // Empty.swift
 // std_srvs/srv/Empty service type
 
-import Foundation
 import SwiftROS2CDR
 
 /// std_srvs/srv/Empty
@@ -34,7 +33,7 @@ public enum EmptySrv: ROS2ServiceType {
 
         public init(from decoder: CDRDecoder) throws {
             // Dummy byte; ignore the value.
-            _ = try? decoder.readUInt8()
+            _ = try decoder.readUInt8()
         }
     }
 
@@ -52,7 +51,7 @@ public enum EmptySrv: ROS2ServiceType {
         }
 
         public init(from decoder: CDRDecoder) throws {
-            _ = try? decoder.readUInt8()
+            _ = try decoder.readUInt8()
         }
     }
 }

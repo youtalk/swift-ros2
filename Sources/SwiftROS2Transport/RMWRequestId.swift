@@ -1,7 +1,6 @@
 // RMWRequestId.swift
 // DDS service request-id primitive (rmw_cyclonedds_cpp interop)
 
-import Foundation
 import SwiftROS2CDR
 
 /// 24-byte sample-identity prefix carried by every DDS service
@@ -15,8 +14,8 @@ import SwiftROS2CDR
 /// The `int8[16]` array has 1-byte alignment, so the 8-byte
 /// `sequence_number` lands on offset 16 with no padding.
 public struct RMWRequestId: Sendable, Equatable {
-    public var writerGuid: [UInt8]  // 16 bytes
-    public var sequenceNumber: Int64
+    public let writerGuid: [UInt8]  // 16 bytes
+    public let sequenceNumber: Int64
 
     public static let cdrByteCount: Int = 24
 

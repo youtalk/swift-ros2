@@ -100,7 +100,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
         client.isConnected()
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Helpers
 
     func bridgeQoS(from qos: TransportQoS) -> DDSBridgeQoSConfig {
         DDSBridgeQoSConfig(

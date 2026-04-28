@@ -15,7 +15,25 @@
 #include <assert.h>
 #include <dds/ddsrt/heap.h>
 #include <dds/ddsrt/md5.h>
-#include <dds/ddsi/q_radmin.h>
+
+// CycloneDDS 11 (released 2026-04 in ros-rolling apt) renamed the receive-side
+// fragment-chain admin header from <dds/ddsi/q_radmin.h> to
+// <dds/ddsi/ddsi_radmin.h> and the type from `struct nn_rdata` to
+// `struct ddsi_rdata`. The struct fields (rmsg, nextfrag, min, maxp1) and the
+// payload macros (NN_*/DDSI_*) are otherwise identical. Pick the right header
+// at compile time so the same source builds against humble/jazzy (0.10.x) and
+// rolling (11.x).
+#if __has_include(<dds/ddsi/ddsi_radmin.h>)
+#  include <dds/ddsi/ddsi_radmin.h>
+#  define RAW_CDR_RDATA_T struct ddsi_rdata
+#  define RAW_CDR_RMSG_PAYLOADOFF(m, o) DDSI_RMSG_PAYLOADOFF((m), (o))
+#  define RAW_CDR_RDATA_PAYLOAD_OFF(r) DDSI_RDATA_PAYLOAD_OFF((r))
+#else
+#  include <dds/ddsi/q_radmin.h>
+#  define RAW_CDR_RDATA_T struct nn_rdata
+#  define RAW_CDR_RMSG_PAYLOADOFF(m, o) NN_RMSG_PAYLOADOFF((m), (o))
+#  define RAW_CDR_RDATA_PAYLOAD_OFF(r) NN_RDATA_PAYLOAD_OFF((r))
+#endif
 
 // =============================================================================
 // MARK: - Sertype Operations Implementation
@@ -146,7 +164,7 @@ static struct ddsi_serdata *raw_cdr_serdata_from_ser_iov(
 static struct ddsi_serdata *raw_cdr_serdata_from_ser(
     const struct ddsi_sertype *type,
     enum ddsi_serdata_kind kind,
-    const struct nn_rdata *fragchain,
+    const RAW_CDR_RDATA_T *fragchain,
     size_t size)
 {
     // Must have at least the 4-byte XCDR encapsulation header.
@@ -180,7 +198,7 @@ static struct ddsi_serdata *raw_cdr_serdata_from_ser(
         assert(fragchain->maxp1 <= size);
         if (fragchain->maxp1 > off) {
             const unsigned char *payload =
-                NN_RMSG_PAYLOADOFF(fragchain->rmsg, NN_RDATA_PAYLOAD_OFF(fragchain));
+                RAW_CDR_RMSG_PAYLOADOFF(fragchain->rmsg, RAW_CDR_RDATA_PAYLOAD_OFF(fragchain));
             memcpy(rd->cdr_data + off, payload + off - fragchain->min, fragchain->maxp1 - off);
             off = fragchain->maxp1;
         }

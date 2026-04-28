@@ -54,7 +54,7 @@ let isLinuxBuild = targetOS == "linux"
 let isWindowsBuild = targetOS == "windows"
 let isAndroidBuild = targetOS == "android"
 
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.6.0"
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.6.1"
 
 // Non-unix zenoh-pico platform backends shared between the Linux and
 // Android arms — both use the unix backend inside `src/system/unix`.
@@ -123,7 +123,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "1e35069f923d2892680555c3c07d3cac864934ead3fbe2523b3767c222f41908"
+            checksum: "5e7ea4118a9a89929a5fb9840cd4d1907f9714c640af12f56c600a116a07283b"
         )
     }
 }()
@@ -235,7 +235,7 @@ if !isWindowsBuild && !isAndroidBuild {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "e5cb2d358acb2682bace03aed0971cc5a92892cc58ef5416f9161b51b06c9c80"
+                checksum: "03ff41ba90f7e466dedef7cf2f092923035d9772ff7031ce88f0d79108b3f748"
             )
         }
     }()

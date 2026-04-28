@@ -1,0 +1,131 @@
+// DDSTransportSession+Publisher.swift
+// Publisher creation and the DDSTransportPublisherImpl concrete type.
+
+import Foundation
+import SwiftROS2Wire
+
+extension DDSTransportSession {
+    public func createPublisher(
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: TransportQoS
+    ) throws -> any TransportPublisher {
+        guard !topic.isEmpty else {
+            throw TransportError.invalidConfiguration("Topic name cannot be empty")
+        }
+
+        guard !typeName.isEmpty else {
+            throw TransportError.invalidConfiguration("Type name cannot be empty")
+        }
+
+        lock.lock()
+        guard _isOpen else {
+            lock.unlock()
+            throw TransportError.notConnected
+        }
+
+        if publishers[topic] != nil {
+            lock.unlock()
+            throw TransportError.publisherCreationFailed("Publisher already exists for topic: \(topic)")
+        }
+        lock.unlock()
+
+        // Convert ROS 2 names to DDS names
+        let ddsCodec = DDSWireCodec()
+        let ddsTopicName = ddsCodec.ddsTopic(from: topic)
+        let ddsTypeName = ddsCodec.ddsTypeName(from: typeName)
+        let userData = ddsCodec.userDataString(typeHash: typeHash)
+
+        // Build QoS
+        let cfg = bridgeQoS(from: qos)
+
+        let writerHandle = try client.createRawWriter(
+            topicName: ddsTopicName,
+            typeName: ddsTypeName,
+            qos: cfg,
+            userData: userData
+        )
+
+        let publisher = DDSTransportPublisherImpl(
+            client: client,
+            writer: writerHandle,
+            topic: topic
+        )
+
+        appendPublisher(publisher, for: topic)
+        return publisher
+    }
+
+    private func appendPublisher(_ publisher: DDSTransportPublisherImpl, for topic: String) {
+        lock.lock()
+        publishers[topic] = publisher
+        lock.unlock()
+    }
+
+    func takeAllPublishers() -> [DDSTransportPublisherImpl] {
+        lock.lock()
+        let pubs = Array(publishers.values)
+        publishers.removeAll()
+        lock.unlock()
+        return pubs
+    }
+}
+
+// MARK: - DDS Transport Publisher
+
+final class DDSTransportPublisherImpl: TransportPublisher, @unchecked Sendable {
+    private let client: any DDSClientProtocol
+    private var writer: (any DDSWriterHandle)?
+    public let topic: String
+    private let lock = NSLock()
+    private var closed = false
+
+    public var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if closed { return false }
+        return writer?.isActive ?? false
+    }
+
+    init(client: any DDSClientProtocol, writer: any DDSWriterHandle, topic: String) {
+        self.client = client
+        self.writer = writer
+        self.topic = topic
+    }
+
+    public func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
+        guard !data.isEmpty else {
+            throw TransportError.publishFailed("Data is empty")
+        }
+
+        guard data.count >= 4 else {
+            throw TransportError.publishFailed("Data too short: missing CDR encapsulation header")
+        }
+
+        lock.lock()
+        guard !closed, let w = writer else {
+            lock.unlock()
+            throw TransportError.publisherClosed
+        }
+        lock.unlock()
+
+        try client.writeRawCDR(writer: w, data: data, timestamp: timestamp)
+    }
+
+    public func close() throws {
+        lock.lock()
+        guard !closed else {
+            lock.unlock()
+            return
+        }
+        closed = true
+        let w = writer
+        writer = nil
+        lock.unlock()
+
+        if let w = w {
+            client.destroyWriter(w)
+        }
+    }
+}

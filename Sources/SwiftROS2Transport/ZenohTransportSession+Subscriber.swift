@@ -49,7 +49,7 @@ extension ZenohTransportSession {
 
 // MARK: - Zenoh Transport Subscriber Wrapper
 
-final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unchecked Sendable {
+private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unchecked Sendable {
     private let handle: any ZenohSubscriberHandle
     public let topic: String
     private var _isActive = true

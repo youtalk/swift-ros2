@@ -5,7 +5,6 @@
 // transport sessions when emitting liveliness tokens. The function
 // itself is a pure mapping and has no transport-specific logic.
 
-import Foundation
 import SwiftROS2Wire
 
 extension TransportQoS {

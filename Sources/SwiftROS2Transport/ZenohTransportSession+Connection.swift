@@ -33,7 +33,7 @@ extension ZenohTransportSession {
 
 // MARK: - Connection Result (Thread-safe)
 
-final class ConnectionResult: @unchecked Sendable {
+private final class ConnectionResult: @unchecked Sendable {
     private var error: Error?
     private var completed = false
     private let lock = NSLock()

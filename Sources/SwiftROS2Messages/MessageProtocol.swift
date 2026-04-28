@@ -20,12 +20,31 @@ public struct ROS2MessageTypeInfo: Sendable {
 
 /// Type information for a ROS 2 service
 public struct ROS2ServiceTypeInfo: Sendable {
+    /// ROS format service name (e.g., "example_interfaces/srv/AddTwoInts")
     public let serviceName: String
+
+    /// ROS format request type name (e.g., "example_interfaces/srv/AddTwoInts_Request")
+    public let requestTypeName: String
+
+    /// ROS format response type name (e.g., "example_interfaces/srv/AddTwoInts_Response")
+    public let responseTypeName: String
+
+    /// Type hash for Jazzy+ on the request side (e.g., "RIHS01_..."), nil for Humble
     public let requestTypeHash: String?
+
+    /// Type hash for Jazzy+ on the response side, nil for Humble
     public let responseTypeHash: String?
 
-    public init(serviceName: String, requestTypeHash: String? = nil, responseTypeHash: String? = nil) {
+    public init(
+        serviceName: String,
+        requestTypeName: String,
+        responseTypeName: String,
+        requestTypeHash: String? = nil,
+        responseTypeHash: String? = nil
+    ) {
         self.serviceName = serviceName
+        self.requestTypeName = requestTypeName
+        self.responseTypeName = responseTypeName
         self.requestTypeHash = requestTypeHash
         self.responseTypeHash = responseTypeHash
     }
@@ -82,7 +101,7 @@ public typealias ROS2Message = ROS2MessageType & CDRCodable
 // MARK: - Service Protocol
 
 /// Protocol for ROS 2 service types
-public protocol ROS2Service: Sendable {
+public protocol ROS2ServiceType: Sendable {
     associatedtype Request: CDRCodable & Sendable
     associatedtype Response: CDRCodable & Sendable
     static var typeInfo: ROS2ServiceTypeInfo { get }

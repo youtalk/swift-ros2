@@ -101,7 +101,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         client.isSessionHealthy()
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Topic Path Helpers
 
     func extractNamespace(from topic: String) -> String {
         let components = topic.split(separator: "/").map(String.init)

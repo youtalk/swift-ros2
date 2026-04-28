@@ -1,0 +1,12 @@
+version: 1
+builder:
+  configs:
+    - platform: macosSpm
+      documentation_targets:
+        - SwiftROS2
+        - SwiftROS2Zenoh
+        - SwiftROS2DDS
+        - SwiftROS2Transport
+        - SwiftROS2Messages
+        - SwiftROS2Wire
+        - SwiftROS2CDR

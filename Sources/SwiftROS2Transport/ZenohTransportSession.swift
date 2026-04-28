@@ -414,31 +414,3 @@ final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unchecked Sen
         try handle.close()
     }
 }
-
-// MARK: - TransportQoS → QoSPolicy Conversion
-
-extension TransportQoS {
-    /// Convert to wire-level QoSPolicy for liveliness token encoding
-    public func toQoSPolicy() -> QoSPolicy {
-        let rel: QoSPolicy.Reliability = self.reliability == .reliable ? .reliable : .bestEffort
-        let dur: QoSPolicy.Durability = self.durability == .transientLocal ? .transientLocal : .volatile
-        let hist: QoSPolicy.HistoryPolicy
-        let depth: Int
-
-        switch self.history {
-        case .keepLast(let n):
-            hist = .keepLast
-            depth = n
-        case .keepAll:
-            hist = .keepAll
-            depth = 1000
-        }
-
-        return QoSPolicy(
-            reliability: rel,
-            durability: dur,
-            historyPolicy: hist,
-            historyDepth: depth
-        )
-    }
-}

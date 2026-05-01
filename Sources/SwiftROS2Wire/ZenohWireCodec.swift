@@ -81,22 +81,6 @@ public struct ZenohWireCodec: WireCodec {
         tsNsec: Int64,
         gid: [UInt8]
     ) -> Data {
-        precondition(gid.count == 16, "Publisher GID must be exactly 16 bytes, got \(gid.count)")
-
-        var data = Data(capacity: 33)
-
-        var seqLE = seq.littleEndian
-        withUnsafeBytes(of: &seqLE) { data.append(contentsOf: $0) }
-
-        var tsLE = tsNsec.littleEndian
-        withUnsafeBytes(of: &tsLE) { data.append(contentsOf: $0) }
-
-        // LEB128 length prefix for 16-byte GID array
-        data.append(0x10)
-
-        data.append(contentsOf: gid)
-
-        assert(data.count == 33, "Attachment must be exactly 33 bytes")
-        return data
+        AttachmentBuilder.build(seq: seq, tsNsec: tsNsec, gid: gid)
     }
 }

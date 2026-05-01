@@ -103,19 +103,24 @@ final class NodeLifecycleTests: XCTestCase {
         let sub = try await node.createSubscription(StringMsg.self, topic: "chatter")
         let pub = try await node.createPublisher(StringMsg.self, topic: "chatter")
 
-        try pub.publish(StringMsg(data: "hello world"))
+        // Start the consumer before publish, then await its first delivery
+        // deterministically. Avoids the timing-dependent Task.sleep dance.
+        let received = expectation(description: "Receive first subscription message")
 
         let task = Task { () -> StringMsg? in
             for await msg in sub.messages {
+                received.fulfill()
                 return msg
             }
             return nil
         }
-        // Give the AsyncStream a moment.
-        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try pub.publish(StringMsg(data: "hello world"))
+
+        await fulfillment(of: [received], timeout: 1.0)
         sub.cancel()
-        let received = await task.value
-        XCTAssertEqual(received?.data, "hello world")
+        let message = await task.value
+        XCTAssertEqual(message?.data, "hello world")
     }
 
     // MARK: - QoS propagation

@@ -25,6 +25,19 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
 
     func open(config: TransportConfig) async throws {
         if let e = openShouldThrow { throw e }
+        // Mirror real Zenoh / DDS sessions: reject configs whose transport type
+        // doesn't match this session and run the same validate() check.
+        guard config.type == transportType else {
+            throw TransportError.invalidConfiguration(
+                "Expected \(transportType) configuration, got \(config.type)"
+            )
+        }
+        try config.validate()
+        recordOpen(config: config)
+    }
+
+    /// Sync helper — keeps NSLock out of the async open() context.
+    private func recordOpen(config: TransportConfig) {
         lock.lock()
         defer { lock.unlock() }
         openedConfigs.append(config)
@@ -32,10 +45,22 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     }
 
     func close() throws {
+        let publishersToClose: [MockTransportPublisher]
+        let subscribersToClose: [MockTransportSubscriber]
+
         lock.lock()
-        defer { lock.unlock() }
         closedCount += 1
         isConnected = false
+        publishersToClose = publishers
+        subscribersToClose = subscribers
+        lock.unlock()
+
+        for publisher in publishersToClose {
+            try publisher.close()
+        }
+        for subscriber in subscribersToClose {
+            try subscriber.close()
+        }
     }
 
     func checkHealth() -> Bool { isConnected }
@@ -44,17 +69,32 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         topic: String, typeName: String, typeHash: String?, qos: TransportQoS
     ) throws -> any TransportPublisher {
         if let e = createPublisherShouldThrow { throw e }
+        // Mirror real Zenoh / DDS sessions: refuse on a closed session and
+        // reject empty topic / type names.
+        guard isConnected else {
+            throw TransportError.notConnected
+        }
+        guard !topic.isEmpty else {
+            throw TransportError.invalidConfiguration("Topic name cannot be empty")
+        }
+        guard !typeName.isEmpty else {
+            throw TransportError.invalidConfiguration("Type name cannot be empty")
+        }
         let pub = MockTransportPublisher(topic: topic, typeName: typeName, typeHash: typeHash, qos: qos)
         lock.lock()
         defer { lock.unlock() }
         publishers.append(pub)
         // Wire publisher → matching subscribers so publish() forwards through.
+        // Match on topic + typeName + typeHash, and skip subscribers that
+        // have already been closed/cancelled.
         pub.deliveryFanout = { [weak self] data, ts in
             guard let self = self else { return }
             let matches: [MockTransportSubscriber] = {
                 self.lock.lock()
                 defer { self.lock.unlock() }
-                return self.subscribers.filter { $0.topic == topic }
+                return self.subscribers.filter { sub in
+                    sub.isActive && sub.topic == topic && sub.typeName == typeName && sub.typeHash == typeHash
+                }
             }()
             for sub in matches {
                 sub.handler(data, ts)
@@ -68,6 +108,15 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any TransportSubscriber {
         if let e = createSubscriberShouldThrow { throw e }
+        guard isConnected else {
+            throw TransportError.notConnected
+        }
+        guard !topic.isEmpty else {
+            throw TransportError.invalidConfiguration("Topic name cannot be empty")
+        }
+        guard !typeName.isEmpty else {
+            throw TransportError.invalidConfiguration("Type name cannot be empty")
+        }
         let sub = MockTransportSubscriber(
             topic: topic,
             typeName: typeName,

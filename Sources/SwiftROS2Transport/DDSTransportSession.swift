@@ -103,22 +103,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
     // MARK: - Helpers
 
     func bridgeQoS(from qos: TransportQoS) -> DDSBridgeQoSConfig {
-        DDSBridgeQoSConfig(
-            reliability: qos.reliability == .reliable ? .reliable : .bestEffort,
-            durability: qos.durability == .transientLocal ? .transientLocal : .volatile,
-            historyKind: {
-                switch qos.history {
-                case .keepLast: return .keepLast
-                case .keepAll: return .keepAll
-                }
-            }(),
-            historyDepth: {
-                switch qos.history {
-                case .keepLast(let n): return Int32(n)
-                case .keepAll: return 0
-                }
-            }()
-        )
+        TransportQoSMapper.toDDSBridgeQoSConfig(qos)
     }
 
     private func generateFallbackSessionId() -> String {

@@ -65,12 +65,15 @@ jobs:
             BINARY_ARGS+=("$bundle/Contents/MacOS/$name")
           done
           echo "::group::Per-target line coverage"
-          xcrun llvm-cov report \
+          # Coverage is informational — never gate the macOS job on it.
+          if ! xcrun llvm-cov report \
             "${BINARY_ARGS[@]}" \
             -instr-profile="$PROF_DATA" \
             -ignore-filename-regex="(\.build/|Tests/|vendor/)" \
             -summary-only \
-            | tee coverage-summary.txt
+            | tee coverage-summary.txt; then
+            echo "::warning::Coverage report generation failed; continuing because this step is informational"
+          fi
           echo "::endgroup::"
       - name: Upload coverage summary
         if: always()

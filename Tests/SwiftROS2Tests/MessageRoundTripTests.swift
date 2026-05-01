@@ -442,6 +442,209 @@ final class MessageRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded.positionCovarianceType, NavSatFix.CovarianceType.diagonalKnown.rawValue)
     }
 
+    // MARK: - Geometry Messages (TF)
+
+    func testTFMessageEmptyRoundTrip() throws {
+        let original = TFMessage(transforms: [])
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try TFMessage(from: decoder)
+
+        XCTAssertEqual(decoded.transforms.count, 0)
+    }
+
+    func testTFMessageRoundTrip() throws {
+        let original = TFMessage(transforms: [
+            TransformStamped(
+                header: Header(sec: 100, nanosec: 0, frameId: "world"),
+                childFrameId: "base_link",
+                transform: Transform(
+                    translation: Vector3(x: 1.0, y: 2.0, z: 3.0),
+                    rotation: Quaternion(x: 0.0, y: 0.0, z: 0.707, w: 0.707)
+                )
+            ),
+            TransformStamped(
+                header: Header(sec: 200, nanosec: 500000000, frameId: "base_link"),
+                childFrameId: "sensor_link",
+                transform: Transform(
+                    translation: Vector3(x: 0.1, y: 0.0, z: 0.5),
+                    rotation: Quaternion(x: 0.0, y: 0.0, z: 0.0, w: 1.0)
+                )
+            ),
+        ])
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try TFMessage(from: decoder)
+
+        XCTAssertEqual(decoded.transforms.count, 2)
+        XCTAssertEqual(decoded.transforms[0].header.frameId, "world")
+        XCTAssertEqual(decoded.transforms[0].childFrameId, "base_link")
+        XCTAssertEqual(decoded.transforms[0].transform.translation, original.transforms[0].transform.translation)
+        XCTAssertEqual(decoded.transforms[0].transform.rotation, original.transforms[0].transform.rotation)
+        XCTAssertEqual(decoded.transforms[1].header.frameId, "base_link")
+        XCTAssertEqual(decoded.transforms[1].childFrameId, "sensor_link")
+    }
+
+    func testTFMessageTypeInfo() {
+        XCTAssertEqual(TFMessage.typeInfo.typeName, "tf2_msgs/msg/TFMessage")
+        XCTAssertNotNil(TFMessage.typeInfo.typeHash)
+        XCTAssertTrue(TFMessage.typeInfo.typeHash!.hasPrefix("RIHS01_"))
+    }
+
+    // MARK: - Sensor Messages (RegionOfInterest)
+
+    func testRegionOfInterestDefaultRoundTrip() throws {
+        let original = RegionOfInterest()
+
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        try original.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try RegionOfInterest(from: decoder)
+
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.xOffset, 0)
+        XCTAssertEqual(decoded.yOffset, 0)
+        XCTAssertEqual(decoded.height, 0)
+        XCTAssertEqual(decoded.width, 0)
+        XCTAssertFalse(decoded.doRectify)
+    }
+
+    func testRegionOfInterestRoundTrip() throws {
+        let original = RegionOfInterest(xOffset: 10, yOffset: 20, height: 480, width: 640, doRectify: true)
+
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        try original.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try RegionOfInterest(from: decoder)
+
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.xOffset, 10)
+        XCTAssertEqual(decoded.yOffset, 20)
+        XCTAssertEqual(decoded.height, 480)
+        XCTAssertEqual(decoded.width, 640)
+        XCTAssertTrue(decoded.doRectify)
+    }
+
+    func testRegionOfInterestFullFrameFactory() throws {
+        let roi = RegionOfInterest.fullFrame(width: 1920, height: 1080)
+
+        XCTAssertEqual(roi.xOffset, 0)
+        XCTAssertEqual(roi.yOffset, 0)
+        XCTAssertEqual(roi.width, 1920)
+        XCTAssertEqual(roi.height, 1080)
+        XCTAssertFalse(roi.doRectify)
+
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        try roi.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try RegionOfInterest(from: decoder)
+
+        XCTAssertEqual(decoded, roi)
+    }
+
+    // MARK: - Sensor Messages (CameraInfo)
+
+    func testCameraInfoDefaultRoundTrip() throws {
+        let original = CameraInfo()
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try CameraInfo(from: decoder)
+
+        XCTAssertEqual(decoded.height, 0)
+        XCTAssertEqual(decoded.width, 0)
+        XCTAssertEqual(decoded.distortionModel, "plumb_bob")
+        XCTAssertEqual(decoded.d.count, 0)
+        XCTAssertEqual(decoded.k.count, 9)
+        XCTAssertEqual(decoded.r, [1, 0, 0, 0, 1, 0, 0, 0, 1])
+        XCTAssertEqual(decoded.p.count, 12)
+        XCTAssertEqual(decoded.binningX, 0)
+        XCTAssertEqual(decoded.binningY, 0)
+    }
+
+    func testCameraInfoRoundTrip() throws {
+        let original = CameraInfo(
+            header: Header(sec: 1000, nanosec: 0, frameId: "camera_optical_frame"),
+            height: 480,
+            width: 640,
+            distortionModel: "plumb_bob",
+            d: [0.1, -0.2, 0.001, 0.0005, 0.0],
+            k: [500.0, 0.0, 320.0, 0.0, 500.0, 240.0, 0.0, 0.0, 1.0],
+            r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            p: [500.0, 0.0, 320.0, 0.0, 0.0, 500.0, 240.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            binningX: 1,
+            binningY: 1,
+            roi: RegionOfInterest(xOffset: 0, yOffset: 0, height: 480, width: 640, doRectify: false)
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try CameraInfo(from: decoder)
+
+        XCTAssertEqual(decoded.header.frameId, "camera_optical_frame")
+        XCTAssertEqual(decoded.height, 480)
+        XCTAssertEqual(decoded.width, 640)
+        XCTAssertEqual(decoded.distortionModel, "plumb_bob")
+        XCTAssertEqual(decoded.d.count, 5)
+        XCTAssertEqual(decoded.d[0], 0.1, accuracy: 1e-12)
+        XCTAssertEqual(decoded.d[1], -0.2, accuracy: 1e-12)
+        XCTAssertEqual(decoded.k, original.k)
+        XCTAssertEqual(decoded.r, original.r)
+        XCTAssertEqual(decoded.p, original.p)
+        XCTAssertEqual(decoded.binningX, 1)
+        XCTAssertEqual(decoded.binningY, 1)
+        XCTAssertEqual(decoded.roi, original.roi)
+    }
+
+    func testCameraInfoEmptyDistortionSequenceRoundTrip() throws {
+        let original = CameraInfo(
+            header: Header(sec: 2000, nanosec: 0, frameId: "cam"),
+            height: 720,
+            width: 1280,
+            distortionModel: "rational_polynomial",
+            d: [],
+            k: [600.0, 0.0, 640.0, 0.0, 600.0, 360.0, 0.0, 0.0, 1.0],
+            r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            p: [600.0, 0.0, 640.0, 0.0, 0.0, 600.0, 360.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            binningX: 0,
+            binningY: 0,
+            roi: RegionOfInterest.fullFrame(width: 1280, height: 720)
+        )
+
+        let encoder = CDREncoder()
+        try original.encode(to: encoder)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try CameraInfo(from: decoder)
+
+        XCTAssertEqual(decoded.d.count, 0)
+        XCTAssertEqual(decoded.distortionModel, "rational_polynomial")
+        XCTAssertEqual(decoded.roi.width, 1280)
+        XCTAssertEqual(decoded.roi.height, 720)
+    }
+
+    func testCameraInfoTypeInfo() {
+        XCTAssertEqual(CameraInfo.typeInfo.typeName, "sensor_msgs/msg/CameraInfo")
+        XCTAssertNotNil(CameraInfo.typeInfo.typeHash)
+        XCTAssertTrue(CameraInfo.typeInfo.typeHash!.hasPrefix("RIHS01_"))
+    }
+
     /// Locks the byte-level CDR layout of sensor_msgs/NavSatFix to the IDL offsets so
     /// stray manual padding cannot drift the fields again. Round-trip tests alone miss
     /// this class of bug because a buggy encoder pairs with a symmetrically-buggy

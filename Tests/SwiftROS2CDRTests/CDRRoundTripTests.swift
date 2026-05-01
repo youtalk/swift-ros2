@@ -159,6 +159,106 @@ final class CDRRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded, values)
     }
 
+    func testFloat32ArrayRoundTrip() throws {
+        let values: [Float] = [1.0, 2.5, -3.14, 0.0, 100.0, 200.0]
+
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        encoder.writeFloat32Array(values)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try decoder.readFloat32Array(count: 6)
+        XCTAssertEqual(decoded.count, values.count)
+        for (d, e) in zip(decoded, values) {
+            XCTAssertEqual(d, e, accuracy: 0.0001)
+        }
+    }
+
+    func testFloat32SequenceRoundTrip() throws {
+        let values: [Float] = [0.1, 0.2, 0.3]
+
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        encoder.writeFloat32Sequence(values)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try decoder.readFloat32Sequence()
+        XCTAssertEqual(decoded.count, values.count)
+        for (d, e) in zip(decoded, values) {
+            XCTAssertEqual(d, e, accuracy: 0.0001)
+        }
+    }
+
+    func testInt32SequenceRoundTrip() throws {
+        let values: [Int32] = [-1, 0, 1, Int32.max, Int32.min]
+
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        encoder.writeInt32Sequence(values)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        let decoded = try decoder.readInt32Sequence()
+        XCTAssertEqual(decoded, values)
+    }
+
+    func testUInt64RoundTrip() throws {
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        encoder.writeUInt64(UInt64.max)
+        encoder.writeUInt64(0)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        XCTAssertEqual(try decoder.readUInt64(), UInt64.max)
+        XCTAssertEqual(try decoder.readUInt64(), 0)
+    }
+
+    func testInt16RoundTrip() throws {
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        encoder.writeInt16(-32768)
+        encoder.writeInt16(32767)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        XCTAssertEqual(try decoder.readInt16(), -32768)
+        XCTAssertEqual(try decoder.readInt16(), 32767)
+    }
+
+    func testWritePaddingAndRawBytes() throws {
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        encoder.writeUInt8(0xAB)
+        encoder.writePadding(3)
+        encoder.writeRawBytes([UInt8]([0x01, 0x02, 0x03]))
+        encoder.writeRawBytes(Data([0xDE, 0xAD]))
+
+        // Verify total byte count: 4 (encap) + 1 + 3 + 3 + 2 = 13
+        XCTAssertEqual(encoder.count, 13)
+
+        let decoder = try CDRDecoder(data: encoder.getData())
+        XCTAssertEqual(try decoder.readUInt8(), 0xAB)
+        // Skip the 3 padding bytes
+        try decoder.skipBytes(3)
+        let raw = try decoder.readRawBytes(count: 3)
+        XCTAssertEqual(Array(raw), [0x01, 0x02, 0x03])
+    }
+
+    func testEncoderReset() throws {
+        let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
+        encoder.writeUInt32(42)
+        let countBefore = encoder.count
+
+        encoder.reset()
+        XCTAssertEqual(encoder.count, 0)
+        XCTAssertNotEqual(encoder.count, countBefore)
+
+        // After reset write fresh content and verify
+        encoder.writeEncapsulationHeader()
+        encoder.writeUInt32(99)
+        let decoder = try CDRDecoder(data: encoder.getData())
+        XCTAssertEqual(try decoder.readUInt32(), 99)
+    }
+
     func testUInt8SequenceRoundTrip() throws {
         let data = Data([0x00, 0x01, 0xFF, 0x42, 0x88])
 

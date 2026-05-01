@@ -198,4 +198,53 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(ROS2Distro.jazzy.formatTypeHash("RIHS01_abc"), "RIHS01_abc")
         XCTAssertEqual(ROS2Distro.jazzy.formatTypeHash(nil), "")
     }
+
+    func testDistroDisplayNames() {
+        XCTAssertEqual(ROS2Distro.humble.displayName, "Humble")
+        XCTAssertEqual(ROS2Distro.jazzy.displayName, "Jazzy")
+        XCTAssertEqual(ROS2Distro.kilted.displayName, "Kilted")
+        XCTAssertEqual(ROS2Distro.rolling.displayName, "Rolling")
+    }
+
+    func testDistroIsLegacySchema() {
+        XCTAssertTrue(ROS2Distro.humble.isLegacySchema)
+        XCTAssertFalse(ROS2Distro.jazzy.isLegacySchema)
+        XCTAssertFalse(ROS2Distro.kilted.isLegacySchema)
+        XCTAssertFalse(ROS2Distro.rolling.isLegacySchema)
+    }
+
+    func testDistroWireGroup() {
+        XCTAssertEqual(ROS2Distro.humble.wireGroup, .legacy)
+        XCTAssertEqual(ROS2Distro.jazzy.wireGroup, .modern)
+        XCTAssertEqual(ROS2Distro.kilted.wireGroup, .modern)
+        XCTAssertEqual(ROS2Distro.rolling.wireGroup, .modern)
+    }
+
+    func testDistroTypeHashPlaceholder() {
+        XCTAssertEqual(ROS2Distro.humble.typeHashPlaceholder, "TypeHashNotSupported")
+        XCTAssertEqual(ROS2Distro.jazzy.typeHashPlaceholder, "TypeHashNotSupported")
+    }
+
+    func testDistroAlwaysIncludeTypeHashInKey() {
+        XCTAssertTrue(ROS2Distro.humble.alwaysIncludeTypeHashInKey)
+        XCTAssertFalse(ROS2Distro.jazzy.alwaysIncludeTypeHashInKey)
+        XCTAssertFalse(ROS2Distro.kilted.alwaysIncludeTypeHashInKey)
+        XCTAssertFalse(ROS2Distro.rolling.alwaysIncludeTypeHashInKey)
+    }
+
+    func testWireGroupDistros() {
+        XCTAssertEqual(ROS2Distro.WireGroup.legacy.distros, [.humble])
+        XCTAssertEqual(ROS2Distro.WireGroup.modern.distros, [.jazzy, .kilted, .rolling])
+    }
+
+    func testWireGroupRawValues() {
+        XCTAssertEqual(ROS2Distro.WireGroup.legacy.rawValue, "Humble and earlier")
+        XCTAssertEqual(ROS2Distro.WireGroup.modern.rawValue, "Iron and later")
+    }
+
+    func testDistroAllCases() {
+        XCTAssertEqual(ROS2Distro.allCases.count, 4)
+        XCTAssertTrue(ROS2Distro.allCases.contains(.humble))
+        XCTAssertTrue(ROS2Distro.allCases.contains(.rolling))
+    }
 }

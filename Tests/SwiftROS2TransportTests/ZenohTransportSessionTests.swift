@@ -70,7 +70,7 @@ final class ZenohTransportSessionTests: XCTestCase {
         XCTAssertEqual(session.resolvedWireMode, .jazzy)
     }
 
-    func testOpenPropagatesTimeout() async {
+    func testOpenPropagatesConnectionFailure() async {
         let client = MockZenohClient()
         client.openShouldThrow = .sessionCreationFailed("boom")
         let session = ZenohTransportSession(client: client)
@@ -171,25 +171,20 @@ final class ZenohTransportSessionTests: XCTestCase {
 
     func testCreateSubscriberRegistersKeyExpr() async throws {
         let (session, client) = try await openSession(wireMode: .jazzy)
-        let received = NSLock()
-        var bytes: Data?
+        let bytes = Box<Data?>(nil)
         let sub = try session.createSubscriber(
             topic: "/ios/imu",
             typeName: "sensor_msgs/msg/Imu",
             typeHash: "RIHS01_abc",
             qos: .sensorData
         ) { data, _ in
-            received.lock()
-            defer { received.unlock() }
-            bytes = data
+            bytes.value = data
         }
         XCTAssertTrue(sub.isActive)
         XCTAssertEqual(client.subscriptions.count, 1)
 
         let sample = ZenohSample(keyExpr: "ignored", payload: Data([0x01, 0x02]), attachment: nil)
         client.deliver(sample: sample, toKeyExpr: client.subscriptions[0].key)
-        received.lock()
-        defer { received.unlock() }
-        XCTAssertEqual(bytes, Data([0x01, 0x02]))
+        XCTAssertEqual(bytes.value, Data([0x01, 0x02]))
     }
 }

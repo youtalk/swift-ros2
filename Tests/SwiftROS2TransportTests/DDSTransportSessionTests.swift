@@ -148,24 +148,19 @@ final class DDSTransportSessionTests: XCTestCase {
 
     func testSubscriberHandlerReceivesDeliveredSamples() async throws {
         let (session, client) = try await openSession()
-        let received = NSLock()
-        var captured: (Data, UInt64)?
+        let captured = Box<(Data, UInt64)?>(nil)
         _ = try session.createSubscriber(
             topic: "/x",
             typeName: "std_msgs/msg/String",
             typeHash: nil,
             qos: .sensorData
         ) { data, ts in
-            received.lock()
-            defer { received.unlock() }
-            captured = (data, ts)
+            captured.value = (data, ts)
         }
         client.deliver(toTopic: "rt/x", data: Data([0xAB, 0xCD]), timestamp: 99)
 
-        received.lock()
-        defer { received.unlock() }
-        XCTAssertEqual(captured?.0, Data([0xAB, 0xCD]))
-        XCTAssertEqual(captured?.1, 99)
+        XCTAssertEqual(captured.value?.0, Data([0xAB, 0xCD]))
+        XCTAssertEqual(captured.value?.1, 99)
     }
 
     func testCloseDestroysOutstandingWritersAndReaders() async throws {

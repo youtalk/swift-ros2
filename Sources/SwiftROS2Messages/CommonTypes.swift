@@ -47,6 +47,7 @@ public struct Header: CDRCodable, Sendable, Equatable {
 
 // MARK: - geometry_msgs/Vector3
 
+/// A three-dimensional vector corresponding to `geometry_msgs/Vector3`.
 public struct Vector3: CDRCodable, Sendable, Equatable {
     public var x: Double
     public var y: Double
@@ -73,6 +74,7 @@ public struct Vector3: CDRCodable, Sendable, Equatable {
 
 // MARK: - geometry_msgs/Quaternion
 
+/// A unit quaternion representing orientation, corresponding to `geometry_msgs/Quaternion`.
 public struct Quaternion: CDRCodable, Sendable, Equatable {
     public var x: Double
     public var y: Double
@@ -103,6 +105,7 @@ public struct Quaternion: CDRCodable, Sendable, Equatable {
 
 // MARK: - geometry_msgs/Point
 
+/// A point in 3D space corresponding to `geometry_msgs/Point`.
 public struct Point: CDRCodable, Sendable, Equatable {
     public var x: Double
     public var y: Double
@@ -129,6 +132,7 @@ public struct Point: CDRCodable, Sendable, Equatable {
 
 // MARK: - geometry_msgs/Pose
 
+/// A position and orientation in 3D space, corresponding to `geometry_msgs/Pose`.
 public struct Pose: CDRCodable, Sendable, Equatable {
     public var position: Point
     public var orientation: Quaternion
@@ -151,6 +155,7 @@ public struct Pose: CDRCodable, Sendable, Equatable {
 
 // MARK: - geometry_msgs/Twist
 
+/// Linear and angular velocity, corresponding to `geometry_msgs/Twist`.
 public struct Twist: CDRCodable, Sendable, Equatable {
     public var linear: Vector3
     public var angular: Vector3
@@ -173,6 +178,7 @@ public struct Twist: CDRCodable, Sendable, Equatable {
 
 // MARK: - geometry_msgs/Transform
 
+/// A translation and rotation describing a coordinate frame transform, corresponding to `geometry_msgs/Transform`.
 public struct Transform: CDRCodable, Sendable, Equatable {
     public var translation: Vector3
     public var rotation: Quaternion
@@ -195,6 +201,10 @@ public struct Transform: CDRCodable, Sendable, Equatable {
 
 // MARK: - Covariance Constants
 
+/// Sentinel values and helpers for ROS 2 covariance matrices.
+///
+/// Use ``unknown`` (−1.0) to indicate that covariance is not available,
+/// following the ROS 2 sensor-message convention.
 public enum CovarianceConstants {
     public static let unknown: Double = -1.0
 

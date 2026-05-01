@@ -119,6 +119,7 @@ public protocol ROS2Action: Sendable {
 
 // MARK: - CDR Serialization Errors
 
+/// Errors thrown during CDR encoding or decoding of ROS 2 message payloads.
 public enum CDRSerializationError: Error, LocalizedError {
     case invalidCovarianceArraySize(expected: Int, actual: Int)
     case serializationFailed(String)

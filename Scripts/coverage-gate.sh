@@ -4,8 +4,10 @@
 # Scripts/coverage-thresholds.txt and exit non-zero on any breach.
 #
 # Reads `xcrun llvm-cov report -summary-only` output on stdin or as the
-# first positional file argument. Output is the report itself (passed
-# through) plus a final pass/fail summary on stderr.
+# first positional file argument. Echoes the report through to stdout,
+# then prints a `=== Coverage gate ===` block: PASS lines on stdout,
+# FAIL lines on stderr. Exits 0 on all-pass, 1 on any breach, 2 on a
+# missing or malformed thresholds file.
 #
 # Usage:
 #   xcrun llvm-cov report ... -summary-only | Scripts/coverage-gate.sh
@@ -20,6 +22,33 @@ if [[ ! -f "$THRESHOLDS_FILE" ]]; then
   exit 2
 fi
 
+# Parse thresholds into parallel arrays (bash 3.2 compatible — no declare -A).
+# Validate up-front so a malformed file fails fast before we echo the report.
+THRESHOLD_KEYS=()
+THRESHOLD_VALS=()
+lineno=0
+while IFS='=' read -r key value; do
+  lineno=$((lineno + 1))
+  # Skip blank lines and full-line comments.
+  [[ -z "${key// }" || "$key" =~ ^[[:space:]]*# ]] && continue
+  key=$(echo "$key" | tr -d '[:space:]')
+  value=$(echo "$value" | tr -d '[:space:]')
+  if [[ -z "$key" ]]; then
+    echo "ERROR: $THRESHOLDS_FILE:$lineno has no key before '='" >&2
+    exit 2
+  fi
+  if [[ -z "$value" ]]; then
+    echo "ERROR: $THRESHOLDS_FILE:$lineno '$key' has no threshold value" >&2
+    exit 2
+  fi
+  if [[ ! "$value" =~ ^[0-9]+$ ]] || (( value < 0 || value > 100 )); then
+    echo "ERROR: $THRESHOLDS_FILE:$lineno '$key=$value' is not an integer percent in 0..100" >&2
+    exit 2
+  fi
+  THRESHOLD_KEYS+=("$key")
+  THRESHOLD_VALS+=("$value")
+done < "$THRESHOLDS_FILE"
+
 # Read the report — argument-or-stdin.
 if [[ $# -ge 1 ]]; then
   REPORT="$(cat "$1")"
@@ -29,29 +58,6 @@ fi
 
 # Echo the report so CI users can still see it.
 echo "$REPORT"
-
-# Parse thresholds into parallel arrays (bash 3.2 compatible — no declare -A).
-THRESHOLD_KEYS=()
-THRESHOLD_VALS=()
-while IFS='=' read -r key value; do
-  [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
-  key=$(echo "$key" | tr -d '[:space:]')
-  value=$(echo "$value" | tr -d '[:space:]')
-  THRESHOLD_KEYS+=("$key")
-  THRESHOLD_VALS+=("$value")
-done < "$THRESHOLDS_FILE"
-
-# Helper: look up threshold for a target name; prints empty string if absent.
-threshold_for() {
-  local name="$1"
-  local i
-  for i in "${!THRESHOLD_KEYS[@]}"; do
-    if [[ "${THRESHOLD_KEYS[$i]}" == "$name" ]]; then
-      echo "${THRESHOLD_VALS[$i]}"
-      return
-    fi
-  done
-}
 
 # llvm-cov -summary-only emits one line per source file plus a TOTAL line.
 # With -ignore-filename-regex stripping the leading path, filenames appear as

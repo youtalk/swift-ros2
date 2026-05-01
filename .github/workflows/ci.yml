@@ -61,8 +61,8 @@ jobs:
             -instr-profile="$PROF_DATA" \
             -ignore-filename-regex="(\\.build/|Tests/|vendor/)" \
             -summary-only \
-            | tee coverage-summary.txt \
-            | ./Scripts/coverage-gate.sh
+            > coverage-summary.txt
+          bash Scripts/coverage-gate.sh coverage-summary.txt
       - name: Upload coverage summary
         if: always()
         uses: actions/upload-artifact@v4

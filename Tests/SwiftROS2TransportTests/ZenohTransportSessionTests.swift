@@ -1,0 +1,195 @@
+import SwiftROS2Transport
+import SwiftROS2Wire
+import XCTest
+
+final class ZenohTransportSessionTests: XCTestCase {
+    // MARK: - Helpers
+
+    private func openSession(
+        wireMode: ROS2Distro? = .jazzy,
+        client: MockZenohClient = MockZenohClient()
+    ) async throws -> (ZenohTransportSession, MockZenohClient) {
+        let session = ZenohTransportSession(client: client)
+        let config = TransportConfig.zenoh(
+            locator: "tcp/127.0.0.1:7447",
+            wireMode: wireMode,
+            connectionTimeout: 1.0
+        )
+        try await session.open(config: config)
+        return (session, client)
+    }
+
+    // MARK: - open / close
+
+    func testOpenWithMismatchedTransportTypeThrows() async {
+        let session = ZenohTransportSession(client: MockZenohClient())
+        let config = TransportConfig.ddsMulticast()
+        do {
+            try await session.open(config: config)
+            XCTFail("Expected invalidConfiguration")
+        } catch TransportError.invalidConfiguration {
+            // ok
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
+    func testOpenWithoutLocatorThrows() async {
+        let session = ZenohTransportSession(client: MockZenohClient())
+        let config = TransportConfig(type: .zenoh, zenohLocator: nil)
+        do {
+            try await session.open(config: config)
+            XCTFail("Expected invalidConfiguration")
+        } catch TransportError.invalidConfiguration {
+            // ok
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
+    func testOpenSucceedsThroughMock() async throws {
+        let (session, client) = try await openSession()
+        XCTAssertEqual(client.openedLocators, ["tcp/127.0.0.1:7447"])
+        XCTAssertTrue(session.isConnected)
+        XCTAssertEqual(session.transportType, .zenoh)
+    }
+
+    func testOpenWiresExplicitWireMode() async throws {
+        let (session, _) = try await openSession(wireMode: .humble)
+        XCTAssertEqual(session.resolvedWireMode, .humble)
+    }
+
+    func testOpenDefaultsToJazzyWhenNoWireModeGiven() async throws {
+        let session = ZenohTransportSession(client: MockZenohClient())
+        let config = TransportConfig.zenoh(
+            locator: "tcp/127.0.0.1:7447",
+            wireMode: nil,
+            connectionTimeout: 1.0
+        )
+        try await session.open(config: config)
+        XCTAssertEqual(session.resolvedWireMode, .jazzy)
+    }
+
+    func testOpenPropagatesTimeout() async {
+        let client = MockZenohClient()
+        client.openShouldThrow = .sessionCreationFailed("boom")
+        let session = ZenohTransportSession(client: client)
+        let config = TransportConfig.zenoh(locator: "tcp/127.0.0.1:7447", connectionTimeout: 1.0)
+        do {
+            try await session.open(config: config)
+            XCTFail("Expected connectionFailed")
+        } catch TransportError.connectionFailed {
+            // ok
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
+    func testCloseClearsResolvedWireMode() async throws {
+        let (session, client) = try await openSession()
+        try session.close()
+        XCTAssertEqual(client.closedCount, 1)
+        XCTAssertNil(session.resolvedWireMode)
+    }
+
+    // MARK: - createPublisher
+
+    func testCreatePublisherDeclaresKeyExprAndLiveliness() async throws {
+        let (session, client) = try await openSession(wireMode: .jazzy)
+        let pub = try session.createPublisher(
+            topic: "/ios/imu",
+            typeName: "sensor_msgs/msg/Imu",
+            typeHash: "RIHS01_abc",
+            qos: .sensorData
+        )
+        XCTAssertTrue(pub.isActive)
+        XCTAssertEqual(client.keyExprDeclarations.count, 1)
+        XCTAssertEqual(client.keyExprDeclarations.first, "0/ios/imu/sensor_msgs::msg::dds_::Imu_/RIHS01_abc")
+        XCTAssertEqual(client.livelinessDeclarations.count, 1)
+        XCTAssertTrue(client.livelinessDeclarations.first?.hasPrefix("@ros2_lv/0/") == true)
+    }
+
+    func testCreatePublisherWithoutOpenThrowsNotConnected() {
+        let session = ZenohTransportSession(client: MockZenohClient())
+        XCTAssertThrowsError(
+            try session.createPublisher(topic: "/x", typeName: "y", typeHash: nil, qos: .sensorData)
+        ) { error in
+            guard case TransportError.notConnected = error else {
+                XCTFail("Wrong error: \(error)")
+                return
+            }
+        }
+    }
+
+    func testPublishSendsAttachmentAndPayload() async throws {
+        let (session, client) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/ios/imu",
+            typeName: "sensor_msgs/msg/Imu",
+            typeHash: "RIHS01_abc",
+            qos: .sensorData
+        )
+        let payload = Data([0x00, 0x01, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF])
+        try pub.publish(data: payload, timestamp: 1_000_000_000, sequenceNumber: 7)
+
+        XCTAssertEqual(client.puts.count, 1)
+        let put = client.puts[0]
+        XCTAssertEqual(put.payload, payload)
+        XCTAssertEqual(put.attachment?.count, 33, "Attachment must be 33 bytes")
+    }
+
+    func testPublishAfterCloseThrowsPublisherClosed() async throws {
+        let (session, _) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/x",
+            typeName: "std_msgs/msg/String",
+            typeHash: nil,
+            qos: .sensorData
+        )
+        try pub.close()
+        XCTAssertThrowsError(try pub.publish(data: Data(), timestamp: 0, sequenceNumber: 0)) { error in
+            guard case TransportError.publisherClosed = error else {
+                XCTFail("Wrong error: \(error)")
+                return
+            }
+        }
+    }
+
+    func testCloseSessionAlsoClosesPublishers() async throws {
+        let (session, _) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/x",
+            typeName: "std_msgs/msg/String",
+            typeHash: nil,
+            qos: .sensorData
+        )
+        try session.close()
+        XCTAssertFalse(pub.isActive)
+    }
+
+    // MARK: - createSubscriber
+
+    func testCreateSubscriberRegistersKeyExpr() async throws {
+        let (session, client) = try await openSession(wireMode: .jazzy)
+        let received = NSLock()
+        var bytes: Data?
+        let sub = try session.createSubscriber(
+            topic: "/ios/imu",
+            typeName: "sensor_msgs/msg/Imu",
+            typeHash: "RIHS01_abc",
+            qos: .sensorData
+        ) { data, _ in
+            received.lock()
+            defer { received.unlock() }
+            bytes = data
+        }
+        XCTAssertTrue(sub.isActive)
+        XCTAssertEqual(client.subscriptions.count, 1)
+
+        let sample = ZenohSample(keyExpr: "ignored", payload: Data([0x01, 0x02]), attachment: nil)
+        client.deliver(sample: sample, toKeyExpr: client.subscriptions[0].key)
+        received.lock()
+        defer { received.unlock() }
+        XCTAssertEqual(bytes, Data([0x01, 0x02]))
+    }
+}

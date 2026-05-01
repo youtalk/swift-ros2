@@ -39,42 +39,30 @@ jobs:
         run: swift build
       - name: Test (with coverage)
         run: swift test --parallel --enable-code-coverage
-      - name: Coverage report (informational)
+      - name: Coverage gate
         run: |
-          # Find the .xctest binary and the merged profdata produced by SwiftPM.
           BIN_PATH=$(swift build --show-bin-path)
           PROF_DATA="${BIN_PATH}/codecov/default.profdata"
           if [[ ! -f "$PROF_DATA" ]]; then
-            echo "No profdata found at $PROF_DATA — skipping coverage report"
-            exit 0
+            echo "ERROR: no profdata at $PROF_DATA" >&2
+            exit 1
           fi
-          # Locate every .xctest bundle that was just exercised. SwiftPM names them
-          # <package>PackageTests.xctest on macOS.
           XCTEST_BINS=()
           while IFS= read -r line; do
             XCTEST_BINS+=("$line")
           done < <(find "$BIN_PATH" -name "*.xctest" -type d)
-          if [[ ${#XCTEST_BINS[@]} -eq 0 ]]; then
-            echo "No xctest bundles found — skipping coverage report"
-            exit 0
-          fi
-          # The actual binary lives inside Contents/MacOS/<name>.
           BINARY_ARGS=()
           for bundle in "${XCTEST_BINS[@]}"; do
             name=$(basename "$bundle" .xctest)
             BINARY_ARGS+=("$bundle/Contents/MacOS/$name")
           done
-          echo "::group::Per-target line coverage"
-          # Coverage is informational — never gate the macOS job on it.
-          if ! xcrun llvm-cov report \
+          xcrun llvm-cov report \
             "${BINARY_ARGS[@]}" \
             -instr-profile="$PROF_DATA" \
-            -ignore-filename-regex="(\.build/|Tests/|vendor/)" \
+            -ignore-filename-regex="(\\.build/|Tests/|vendor/)" \
             -summary-only \
-            | tee coverage-summary.txt; then
-            echo "::warning::Coverage report generation failed; continuing because this step is informational"
-          fi
-          echo "::endgroup::"
+            | tee coverage-summary.txt \
+            | ./Scripts/coverage-gate.sh
       - name: Upload coverage summary
         if: always()
         uses: actions/upload-artifact@v4

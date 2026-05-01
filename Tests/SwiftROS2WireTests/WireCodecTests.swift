@@ -149,6 +149,25 @@ final class WireCodecTests: XCTestCase {
         }
     }
 
+    func testAttachmentBoundaryValues() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let gid = [UInt8](repeating: 0xFF, count: 16)
+        let attachment = codec.buildAttachment(seq: Int64.min, tsNsec: Int64.max, gid: gid)
+
+        XCTAssertEqual(attachment.count, 33)
+
+        let seq = attachment.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 0, as: Int64.self) }
+        XCTAssertEqual(Int64(littleEndian: seq), Int64.min)
+
+        let ts = attachment.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 8, as: Int64.self) }
+        XCTAssertEqual(Int64(littleEndian: ts), Int64.max)
+
+        XCTAssertEqual(attachment[16], 0x10)
+        for i in 0..<16 {
+            XCTAssertEqual(attachment[17 + i], 0xFF)
+        }
+    }
+
     // MARK: - DDS Wire Codec
 
     func testDDSTopic() {

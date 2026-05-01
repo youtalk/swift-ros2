@@ -215,6 +215,11 @@ var targets: [Target] = [
         dependencies: ["SwiftROS2Zenoh"],
         path: "Tests/SwiftROS2ZenohTests"
     ),
+    .testTarget(
+        name: "SwiftROS2TransportTests",
+        dependencies: ["SwiftROS2Transport", "SwiftROS2Wire"],
+        path: "Tests/SwiftROS2TransportTests"
+    ),
 ]
 
 // DDS path + the SwiftROS2 umbrella + examples + umbrella-level tests.

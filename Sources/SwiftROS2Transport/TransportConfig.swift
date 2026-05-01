@@ -6,6 +6,10 @@ import SwiftROS2Wire
 
 // MARK: - Transport Type
 
+/// The underlying transport mechanism used to connect to ROS 2.
+///
+/// Choose `.zenoh` for cross-platform support (including mobile and desktop) or
+/// `.dds` for direct CycloneDDS communication on Apple platforms and Linux.
 public enum TransportType: String, Codable, CaseIterable, Sendable {
     case zenoh
     case dds
@@ -20,6 +24,10 @@ public enum TransportType: String, Codable, CaseIterable, Sendable {
 
 // MARK: - DDS Discovery Mode
 
+/// How CycloneDDS discovers remote participants on the network.
+///
+/// Use `.multicast` on networks that support it, `.unicast` when multicast is blocked
+/// (common on Wi-Fi), or `.hybrid` to try multicast first and fall back to unicast.
 public enum DDSDiscoveryMode: String, Codable, CaseIterable, Sendable {
     case multicast
     case unicast
@@ -35,6 +43,10 @@ public enum DDSDiscoveryMode: String, Codable, CaseIterable, Sendable {
 
 // MARK: - DDS Peer
 
+/// A remote DDS participant identified by IP address and UDP port.
+///
+/// Used to configure unicast or hybrid DDS discovery when multicast is unavailable.
+/// The discovery port follows the CycloneDDS formula: `7400 + domainId * 250`.
 public struct DDSPeer: Codable, Equatable, Sendable {
     public let address: String
     public let port: UInt16
@@ -59,6 +71,10 @@ public struct DDSPeer: Codable, Equatable, Sendable {
 
 // MARK: - Transport Configuration
 
+/// Complete configuration for a transport session, covering both Zenoh and DDS parameters.
+///
+/// Construct instances using the static factory methods ``zenoh(locator:domainId:wireMode:connectionTimeout:)``,
+/// ``ddsMulticast(domainId:)``, or ``ddsUnicast(peers:domainId:)`` rather than the memberwise initializer.
 public struct TransportConfig: Sendable {
     public let type: TransportType
     public let domainId: Int

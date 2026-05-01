@@ -41,6 +41,10 @@ public protocol TransportSession: AnyObject, Sendable {
 
 // MARK: - Transport Publisher Protocol
 
+/// An active publisher handle that writes pre-serialized CDR payloads to a transport.
+///
+/// Conforming types are returned by ``TransportSession/createPublisher(topic:typeName:typeHash:qos:)``
+/// and must remain sendable across concurrency domains.
 public protocol TransportPublisher: Sendable {
     func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws
     func close() throws
@@ -50,6 +54,10 @@ public protocol TransportPublisher: Sendable {
 
 // MARK: - Transport Subscriber Protocol
 
+/// An active subscriber handle that receives raw CDR payloads from a transport.
+///
+/// Conforming types are returned by ``TransportSession/createSubscriber(topic:typeName:typeHash:qos:handler:)``
+/// and must remain sendable across concurrency domains.
 public protocol TransportSubscriber: Sendable {
     var topic: String { get }
     var isActive: Bool { get }
@@ -58,6 +66,10 @@ public protocol TransportSubscriber: Sendable {
 
 // MARK: - Transport QoS
 
+/// Quality-of-service settings used internally by the transport layer.
+///
+/// End users should prefer the higher-level ``QoSProfile`` presets; `TransportQoS` is derived
+/// automatically from a `QoSProfile` when creating publishers and subscriptions.
 public struct TransportQoS: Sendable, Equatable {
     public enum Reliability: String, Sendable {
         case reliable
@@ -105,6 +117,9 @@ public struct TransportQoS: Sendable, Equatable {
 
 // MARK: - Transport Errors
 
+/// Errors thrown by transport session operations such as connect, publish, and subscribe.
+///
+/// Check ``isRecoverable`` to decide whether a retry is appropriate.
 public enum TransportError: Error, LocalizedError {
     case connectionFailed(String)
     case connectionTimeout(TimeInterval)

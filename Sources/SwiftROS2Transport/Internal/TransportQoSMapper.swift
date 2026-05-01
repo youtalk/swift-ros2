@@ -1,7 +1,7 @@
 // TransportQoSMapper.swift
 // Internal mapping helpers from TransportQoS to wire and DDS-bridge QoS.
 //
-// Centralizes the three-way conversion so DDSTransportSession.bridgeQoS,
+// Centralizes the shared mapping logic so DDSTransportSession.bridgeQoS,
 // TransportQoS.toQoSPolicy, and any future consumer all share one
 // implementation. Internal — public callers go through the existing
 // public conversion methods.

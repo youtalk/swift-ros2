@@ -9,7 +9,7 @@ import XCTest
 final class ClientPendingTableTests: XCTestCase {
     func testInsertAndResolve() async throws {
         let table = ClientPendingTable()
-        async let pending: Data = table.insert(seq: 1) { _ in /* will be resolved externally */  }
+        async let pending: Data = table.insert(seq: 1) { _ in }  // resolved externally
         try await Task.sleep(nanoseconds: 10_000_000)
         let didResolve = await table.resolve(seq: 1, with: .success(Data([0x01])))
         XCTAssertTrue(didResolve)
@@ -19,7 +19,7 @@ final class ClientPendingTableTests: XCTestCase {
 
     func testResolveByOtherCaller() async throws {
         let table = ClientPendingTable()
-        async let pending: Data = table.insert(seq: 7) { _ in /* will be resolved externally */  }
+        async let pending: Data = table.insert(seq: 7) { _ in }  // resolved externally
         try await Task.sleep(nanoseconds: 10_000_000)
         let didResolve = await table.resolve(seq: 7, with: .success(Data([0xAA])))
         XCTAssertTrue(didResolve)

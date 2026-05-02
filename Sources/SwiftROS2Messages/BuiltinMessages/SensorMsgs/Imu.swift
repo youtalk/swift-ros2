@@ -1,7 +1,6 @@
 // Imu.swift
 // sensor_msgs/msg/Imu
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/Imu

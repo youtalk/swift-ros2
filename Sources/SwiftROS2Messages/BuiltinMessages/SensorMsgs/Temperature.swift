@@ -1,7 +1,6 @@
 // Temperature.swift
 // sensor_msgs/msg/Temperature
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/Temperature

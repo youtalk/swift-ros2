@@ -1,7 +1,6 @@
 // MagneticField.swift
 // sensor_msgs/msg/MagneticField
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/MagneticField

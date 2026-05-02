@@ -1,7 +1,6 @@
 // Joy.swift
 // sensor_msgs/msg/Joy
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/Joy

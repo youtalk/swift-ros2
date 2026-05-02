@@ -1,7 +1,6 @@
 // StdMsgs.swift
 // std_msgs basic types
 
-import Foundation
 import SwiftROS2CDR
 
 /// std_msgs/msg/String

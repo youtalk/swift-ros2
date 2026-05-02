@@ -1,7 +1,6 @@
 // FluidPressure.swift
 // sensor_msgs/msg/FluidPressure
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/FluidPressure

@@ -32,4 +32,42 @@ public struct DDSWireCodec: Sendable {
         guard let hash = typeHash, !hash.isEmpty else { return nil }
         return "typehash=\(hash);"
     }
+
+    /// Names emitted for a DDS service: paired request / reply topics + DDS type names.
+    public struct ServiceTopicNames: Sendable, Equatable {
+        public let requestTopic: String
+        public let replyTopic: String
+        public let requestTypeName: String
+        public let replyTypeName: String
+
+        public init(
+            requestTopic: String,
+            replyTopic: String,
+            requestTypeName: String,
+            replyTypeName: String
+        ) {
+            self.requestTopic = requestTopic
+            self.replyTopic = replyTopic
+            self.requestTypeName = requestTypeName
+            self.replyTypeName = replyTypeName
+        }
+    }
+
+    /// Build the DDS topic / type name quadruple for a service.
+    ///
+    /// rmw_cyclonedds_cpp pairs each service with two topics:
+    /// - `rq/<service>Request` (client → server)
+    /// - `rr/<service>Reply`   (server → client)
+    public func serviceTopicNames(
+        serviceName: String,
+        serviceTypeName: String
+    ) -> ServiceTopicNames {
+        let cleanService = TypeNameConverter.stripLeadingSlash(serviceName)
+        return ServiceTopicNames(
+            requestTopic: "rq/\(cleanService)Request",
+            replyTopic: "rr/\(cleanService)Reply",
+            requestTypeName: TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName),
+            replyTypeName: TypeNameConverter.toDDSServiceResponseTypeName(serviceTypeName)
+        )
+    }
 }

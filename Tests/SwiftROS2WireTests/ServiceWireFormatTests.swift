@@ -167,4 +167,38 @@ final class ServiceWireFormatTests: XCTestCase {
         XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceServer.rawValue, "SS")
         XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceClient.rawValue, "SC")
     }
+
+    // MARK: - DDS service topic names
+
+    func testDDSServiceTopicNames() {
+        let codec = DDSWireCodec()
+        let names = codec.serviceTopicNames(
+            serviceName: "/add_two_ints",
+            serviceTypeName: "example_interfaces/srv/AddTwoInts"
+        )
+        XCTAssertEqual(names.requestTopic, "rq/add_two_intsRequest")
+        XCTAssertEqual(names.replyTopic, "rr/add_two_intsReply")
+        XCTAssertEqual(names.requestTypeName, "example_interfaces::srv::dds_::AddTwoInts_Request_")
+        XCTAssertEqual(names.replyTypeName, "example_interfaces::srv::dds_::AddTwoInts_Response_")
+    }
+
+    func testDDSServiceTopicNamesNoLeadingSlash() {
+        let codec = DDSWireCodec()
+        let names = codec.serviceTopicNames(
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger"
+        )
+        XCTAssertEqual(names.requestTopic, "rq/triggerRequest")
+        XCTAssertEqual(names.replyTopic, "rr/triggerReply")
+    }
+
+    func testDDSServiceTopicNamesNamespacedService() {
+        let codec = DDSWireCodec()
+        let names = codec.serviceTopicNames(
+            serviceName: "/ios/trigger",
+            serviceTypeName: "std_srvs/srv/Trigger"
+        )
+        XCTAssertEqual(names.requestTopic, "rq/ios/triggerRequest")
+        XCTAssertEqual(names.replyTopic, "rr/ios/triggerReply")
+    }
 }

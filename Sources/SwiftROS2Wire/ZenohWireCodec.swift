@@ -67,6 +67,44 @@ public struct ZenohWireCodec: WireCodec {
         }
     }
 
+    // MARK: - Service Liveliness Token
+
+    /// Liveliness-token entity kind for Service entities.
+    ///
+    /// Parallels rmw_zenoh_cpp's per-entity-kind tags (`MP` = message publisher,
+    /// `SS` = service server, `SC` = service client). Pub/Sub is hard-coded to
+    /// `MP` in `makeLivelinessToken`; services pass one of these values to
+    /// ``makeServiceLivelinessToken(entityKind:domainId:sessionId:nodeId:entityId:namespace:nodeName:serviceName:serviceTypeName:requestTypeHash:qos:)``.
+    public enum ServiceEntityKind: String, Sendable {
+        case serviceServer = "SS"
+        case serviceClient = "SC"
+    }
+
+    /// Generate a Service-shaped liveliness token (`SS` / `SC`).
+    ///
+    /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/<SS|SC>/%/%/<node_name>/<mangled_service_path>/<dds_request_type>/<request_hash>/<qos>`
+    public func makeServiceLivelinessToken(
+        entityKind: ServiceEntityKind,
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        entityId: String,
+        namespace: String,
+        nodeName: String,
+        serviceName: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        qos: QoSPolicy
+    ) -> String {
+        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: serviceName)
+        let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
+        let hashComponent = distro.formatTypeHash(requestTypeHash)
+        let qosKeyExpr = qos.toKeyExpr()
+
+        return
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRequestTypeName)/\(hashComponent)/\(qosKeyExpr)"
+    }
+
     // MARK: - Liveliness Token
 
     /// Generate liveliness token for ROS 2 discovery

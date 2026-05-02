@@ -94,4 +94,77 @@ final class ServiceWireFormatTests: XCTestCase {
             "0/add_two_ints/example_interfaces::srv::dds_::AddTwoInts_Request_"
         )
     }
+
+    // MARK: - Zenoh service liveliness tokens
+
+    func testJazzyServiceServerLiveliness() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
+        let token = codec.makeServiceLivelinessToken(
+            entityKind: .serviceServer,
+            domainId: 0,
+            sessionId: "AABB",
+            nodeId: "1",
+            entityId: "2",
+            namespace: "/ios",
+            nodeName: "node",
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aaa",
+            qos: .servicesDefault
+        )
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/0/AABB/1/2/SS/%/%/node/%ios%trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa/\(qosSuffix)"
+        )
+    }
+
+    func testJazzyServiceClientLiveliness() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
+        let token = codec.makeServiceLivelinessToken(
+            entityKind: .serviceClient,
+            domainId: 0,
+            sessionId: "AABB",
+            nodeId: "1",
+            entityId: "3",
+            namespace: "",
+            nodeName: "node",
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aaa",
+            qos: .servicesDefault
+        )
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/0/AABB/1/3/SC/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa/\(qosSuffix)"
+        )
+    }
+
+    func testHumbleServiceServerLiveliness() {
+        let codec = ZenohWireCodec(distro: .humble)
+        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
+        let token = codec.makeServiceLivelinessToken(
+            entityKind: .serviceServer,
+            domainId: 0,
+            sessionId: "AABB",
+            nodeId: "1",
+            entityId: "2",
+            namespace: "",
+            nodeName: "node",
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            qos: .servicesDefault
+        )
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/0/AABB/1/2/SS/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/TypeHashNotSupported/\(qosSuffix)"
+        )
+    }
+
+    func testServiceEntityKindRawValues() {
+        XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceServer.rawValue, "SS")
+        XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceClient.rawValue, "SC")
+    }
 }

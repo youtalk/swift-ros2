@@ -25,6 +25,9 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
             []
     private(set) var destroyedReaders = 0
 
+    // Publication-match override (per topic). Used to drive `waitForService`.
+    private var matchedTopics: Set<String> = []
+
     func createSession(domainId: Int32, discoveryConfig: DDSBridgeDiscoveryConfig) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -137,6 +140,21 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return writes.last(where: { $0.topic == topic })?.data
+    }
+
+    /// Mark the given DDS topic as having matched subscribers. Affects what
+    /// `isPublicationMatched(writer:)` returns for any writer on that topic.
+    func markPublicationsMatched(topic: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        matchedTopics.insert(topic)
+    }
+
+    func isPublicationMatched(writer: any DDSWriterHandle) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let mock = writer as? MockDDSWriterHandle else { return false }
+        return matchedTopics.contains(mock.topic)
     }
 
     // MARK: - private helpers

@@ -41,4 +41,93 @@ final class DDSServiceTransportTests: XCTestCase {
         XCTAssertEqual(parsedBody, Data([0x00, 0x01, 0x00, 0x00, 0xCC]))
         try server.close()
     }
+
+    func testClientWritesPrefixedRequestAndAwaitsReply() async throws {
+        let client = MockDDSClient()
+        let session = DDSTransportSession(client: client)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+
+        let svc = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            responseTypeHash: nil,
+            qos: .sensorData
+        )
+
+        client.markPublicationsMatched(topic: "rq/echoRequest")
+
+        let userRequest = Data([0x00, 0x01, 0x00, 0x00, 0xDE])
+        async let response: Data = svc.call(requestCDR: userRequest, timeout: .seconds(1))
+
+        let writtenWire = try await client.awaitWrite(topic: "rq/echoRequest", timeout: .seconds(1))
+        let bytes = try XCTUnwrap(writtenWire)
+        let (id, parsedReq) = try SampleIdentityPrefix.decode(wirePayload: bytes)
+        XCTAssertEqual(parsedReq, userRequest)
+        XCTAssertEqual(id.writerGuid.count, 16)
+        XCTAssertEqual(id.sequenceNumber, 1)
+
+        let userReply = Data([0x00, 0x01, 0x00, 0x00, 0xEE])
+        let replyWire = SampleIdentityPrefix.encode(requestId: id, userCDR: userReply)
+        try await client.deliverToReader(topic: "rr/echoReply", wire: replyWire, timestamp: 0)
+
+        let body = try await response
+        XCTAssertEqual(body, userReply)
+        try svc.close()
+    }
+
+    func testClientTimesOut() async throws {
+        let client = MockDDSClient()
+        let session = DDSTransportSession(client: client)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        let svc = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            responseTypeHash: nil,
+            qos: .sensorData
+        )
+        client.markPublicationsMatched(topic: "rq/echoRequest")
+
+        do {
+            _ = try await svc.call(
+                requestCDR: Data([0x00, 0x01, 0x00, 0x00]),
+                timeout: .milliseconds(50)
+            )
+            XCTFail("should have timed out")
+        } catch TransportError.requestTimeout {
+            // expected
+        }
+        try svc.close()
+    }
+
+    func testClientCancellationPropagates() async throws {
+        let client = MockDDSClient()
+        let session = DDSTransportSession(client: client)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        let svc = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            responseTypeHash: nil,
+            qos: .sensorData
+        )
+        client.markPublicationsMatched(topic: "rq/echoRequest")
+
+        let task = Task {
+            try await svc.call(
+                requestCDR: Data([0x00, 0x01, 0x00, 0x00]),
+                timeout: .seconds(60)
+            )
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("should have been cancelled")
+        } catch TransportError.requestCancelled {
+            // expected
+        }
+        try svc.close()
+    }
 }

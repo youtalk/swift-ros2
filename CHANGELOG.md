@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-01
+
 ### Added
-- DocC catalog under the `SwiftROS2` umbrella with getting-started articles and a wire-format reference.
-- `CHANGELOG.md` and `MIGRATION.md`.
+- DocC catalog under the `SwiftROS2` umbrella with getting-started articles (Zenoh, DDS) and a wire-format reference.
+- `CHANGELOG.md` and `MIGRATION.md` (the latter with the 0.7 → 1.0 candidate change list).
 - `Scripts/check-docc-coverage.sh` enforcing `///` comments on every public declaration.
 - `docs-build` CI job running `swift package generate-documentation` on every PR.
-- Per-target line-coverage gate in CI (`Scripts/coverage-gate.sh`).
+- Per-target line-coverage gate in CI (`Scripts/coverage-gate.sh`, thresholds in `Scripts/coverage-thresholds.txt`).
 - Internal helpers `AttachmentBuilder` and `TransportQoSMapper` (extracted from transport sessions).
 - Unit tests for `Node`, `Publisher`, `Subscription`, and `QoSProfile` via mock session.
 - Unit tests for `EntityManager`, `GIDManager`, `TransportConfig`, and transport session via mock Zenoh / DDS clients.
@@ -22,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ZenohTransportSession` and `DDSTransportSession` split into focused files.
 
 ### Notes
-- No public API changes. The unreleased line preserves the 0.6.x surface.
+- No public API changes. The 0.7.0 line preserves the 0.6.x surface.
 
 ## [0.6.1] - 2026-04-28
 

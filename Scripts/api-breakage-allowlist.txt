@@ -10,3 +10,5 @@ API breakage: func TransportSession.createServiceServer(name:serviceTypeName:req
 API breakage: func TransportSession.createServiceClient(name:serviceTypeName:requestTypeHash:responseTypeHash:qos:) has been added as a protocol requirement
 API breakage: enumelement TransportError.requestTimeout has been added as a new enum case
 API breakage: enumelement TransportError.requestCancelled has been added as a new enum case
+API breakage: enumelement TransportError.serviceHandlerFailed has been added as a new enum case
+API breakage: enumelement ZenohError.queryReplyError has been added as a new enum case

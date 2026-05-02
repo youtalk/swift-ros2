@@ -304,7 +304,7 @@ if !isWindowsBuild && !isAndroidBuild {
         ),
         .testTarget(
             name: "SwiftROS2DDSTests",
-            dependencies: ["SwiftROS2DDS"],
+            dependencies: ["SwiftROS2DDS", "SwiftROS2Transport"],
             path: "Tests/SwiftROS2DDSTests"
         ),
         .testTarget(

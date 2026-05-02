@@ -15,7 +15,7 @@ jobs:
     name: swift-format lint
     runs-on: ubuntu-latest
     container:
-      image: swift:6.0-jammy
+      image: swift:6.3-jammy
     steps:
       - uses: actions/checkout@v4
       - name: swift-format version
@@ -26,13 +26,13 @@ jobs:
   build-macos:
     name: Build & Test (macOS)
     needs: [swift-format]
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_16.2.app
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - name: Swift version
         run: swift --version
       - name: Build
@@ -74,14 +74,14 @@ jobs:
   api-diagnose:
     name: API stability vs 0.6.1
     needs: [swift-format]
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0  # full history so the 0.6.1 tag is reachable
       - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_16.2.app
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - name: Swift version
         run: swift --version
       - name: Diagnose API breaking changes
@@ -90,7 +90,7 @@ jobs:
   docs-build:
     name: DocC build
     needs: [swift-format]
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       SWIFT_ROS2_DOCS_BUILD: "1"
     steps:
@@ -98,7 +98,7 @@ jobs:
         with:
           submodules: recursive
       - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_16.2.app
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - name: Generate DocC
         run: swift package generate-documentation --target SwiftROS2
       - name: Check DocC coverage
@@ -165,9 +165,9 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
           sudo apt-get install -y ros-${{ matrix.ros_distro }}-cyclonedds
-      - name: Install Swift 6.0.2
+      - name: Install Swift 6.3.1
         run: |
-          curl -sSL "https://download.swift.org/swift-6.0.2-release/${{ matrix.swift_platform_path }}/swift-6.0.2-RELEASE/swift-6.0.2-RELEASE-${{ matrix.swift_tarball_suffix }}.tar.gz" \
+          curl -sSL "https://download.swift.org/swift-6.3.1-release/${{ matrix.swift_platform_path }}/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-${{ matrix.swift_tarball_suffix }}.tar.gz" \
             -o /tmp/swift.tar.gz
           sudo mkdir -p /opt/swift
           sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
@@ -194,12 +194,13 @@ jobs:
     name: Build & Test (Windows x86_64, Zenoh only)
     needs: [swift-format]
     runs-on: windows-latest
-    # Pin Swift 6.3.1 here (not 6.0.2 like macOS + Linux) because 6.0.2's
-    # Windows SDK shim assumes older Windows Kits headers than the current
-    # windows-latest runner image ships — it fails with "could not build
-    # module 'ucrt'". 6.3.1 bundles up-to-date shims and works out of the
-    # box. The rest of the matrix stays on 6.0.2: macOS is pinned to
-    # Xcode 16.2 (Swift 6.0.x) and Linux downloads 6.0.2 directly.
+    # The whole matrix is on Swift 6.3.1: macOS uses Xcode 26.4.1 (Swift
+    # 6.3.1), Linux downloads the 6.3.1 toolchain directly, and Android
+    # uses the 6.3.1 SDK. Windows historically required a newer Swift
+    # than the rest because 6.0.x's Windows SDK shim assumes older
+    # Windows Kits headers than the current windows-latest runner image
+    # ships (failing with "could not build module 'ucrt'") — that
+    # divergence is gone now that everyone's on 6.3.1.
     steps:
       - uses: actions/checkout@v4
         with:

@@ -364,8 +364,17 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
         // `requestTimeout` when the deadline elapses. We keep a handle so we can
         // cancel it when the reply arrives first.
         let pendingTable = self.pending
+        // If the sleep is cancelled (because the reply arrived first or the
+        // parent Task was cancelled), `Task.sleep` throws CancellationError and
+        // we exit *without* resolving the pending entry — otherwise we race
+        // with the reply / cancel paths and may surface `requestTimeout`
+        // instead of the actual outcome.
         let timeoutTask = Task { [pendingTable] in
-            try? await Task.sleep(for: timeout)
+            do {
+                try await Task.sleep(for: timeout)
+            } catch {
+                return
+            }
             await pendingTable.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
         }
 

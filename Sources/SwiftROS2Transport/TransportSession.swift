@@ -41,9 +41,12 @@ public protocol TransportSession: AnyObject, Sendable {
     /// Create a Service Server.
     ///
     /// `serviceTypeName` is the ROS-format service type name (e.g.
-    /// `std_srvs/srv/Trigger`). The transport derives the DDS-format
-    /// `<pkg>::srv::dds_::<Type>_Request_` / `_Response_` topic / type names
-    /// internally via `TypeNameConverter`.
+    /// `std_srvs/srv/Trigger`). Each transport derives the wire-level naming
+    /// from this: DDS uses `DDSWireCodec.serviceTopicNames` to build the
+    /// `rq/<service>Request` / `rr/<service>Reply` topic pair plus
+    /// `<pkg>::srv::dds_::<Type>_Request_` / `_Response_` type names; Zenoh
+    /// uses `ZenohWireCodec.makeServiceKeyExpr` to build the queryable key
+    /// expression. Callers do not need to pre-derive any of this.
     func createServiceServer(
         name: String,
         serviceTypeName: String,
@@ -56,9 +59,10 @@ public protocol TransportSession: AnyObject, Sendable {
     /// Create a Service Client.
     ///
     /// `serviceTypeName` is the ROS-format service type name (e.g.
-    /// `std_srvs/srv/Trigger`). The transport derives the DDS-format
-    /// `<pkg>::srv::dds_::<Type>_Request_` / `_Response_` topic / type names
-    /// internally via `TypeNameConverter`.
+    /// `std_srvs/srv/Trigger`). Each transport derives the wire-level naming
+    /// from this: DDS uses `DDSWireCodec.serviceTopicNames`; Zenoh uses
+    /// `ZenohWireCodec.makeServiceKeyExpr`. Callers do not need to pre-derive
+    /// any of it.
     func createServiceClient(
         name: String,
         serviceTypeName: String,

@@ -1,7 +1,6 @@
 // Illuminance.swift
 // sensor_msgs/msg/Illuminance
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/Illuminance

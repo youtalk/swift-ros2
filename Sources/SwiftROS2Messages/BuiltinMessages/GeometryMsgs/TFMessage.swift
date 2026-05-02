@@ -1,7 +1,6 @@
 // TFMessage.swift
 // tf2_msgs/msg/TFMessage
 
-import Foundation
 import SwiftROS2CDR
 
 /// tf2_msgs/msg/TFMessage

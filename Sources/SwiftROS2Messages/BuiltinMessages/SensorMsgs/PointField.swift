@@ -1,7 +1,6 @@
 // PointField.swift
 // sensor_msgs/msg/PointField
 
-import Foundation
 import SwiftROS2CDR
 
 /// PointField data types

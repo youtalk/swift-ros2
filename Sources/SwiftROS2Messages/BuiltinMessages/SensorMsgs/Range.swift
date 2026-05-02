@@ -1,7 +1,6 @@
 // Range.swift
 // sensor_msgs/msg/Range
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/Range

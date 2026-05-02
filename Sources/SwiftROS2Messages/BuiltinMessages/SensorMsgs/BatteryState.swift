@@ -1,7 +1,6 @@
 // BatteryState.swift
 // sensor_msgs/msg/BatteryState
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/BatteryState

@@ -1,7 +1,6 @@
 // NavSatFix.swift
 // sensor_msgs/msg/NavSatFix
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/msg/NavSatStatus

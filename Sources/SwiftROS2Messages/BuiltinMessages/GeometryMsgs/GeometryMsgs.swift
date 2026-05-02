@@ -1,7 +1,6 @@
 // GeometryMsgs.swift
 // geometry_msgs stamped types
 
-import Foundation
 import SwiftROS2CDR
 
 /// geometry_msgs/msg/TwistStamped

@@ -1,7 +1,6 @@
 // RegionOfInterest.swift
 // sensor_msgs/RegionOfInterest
 
-import Foundation
 import SwiftROS2CDR
 
 /// sensor_msgs/RegionOfInterest

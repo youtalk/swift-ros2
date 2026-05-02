@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <pthread.h>
 
 #ifdef __APPLE__
   #include <os/log.h>
@@ -49,14 +50,27 @@ struct zenoh_liveliness_token_t {
     z_owned_liveliness_token_t token;
 };
 
+// Forward declarations for the linked-list cross-references between
+// zenoh_query_t and zenoh_queryable_t.
+struct zenoh_queryable_t;
+
+struct zenoh_query_t {
+    z_owned_query_t query;
+    struct zenoh_queryable_t* owner;  // queryable that produced this query (for unlink)
+    struct zenoh_query_t* next;       // singly-linked list of outstanding queries
+    struct zenoh_query_t* prev;
+};
+
 struct zenoh_queryable_t {
     z_owned_queryable_t queryable;
     zenoh_queryable_callback_t callback;
     void* context;
-};
-
-struct zenoh_query_t {
-    z_owned_query_t query;
+    // Outstanding queries that the Swift side hasn't replied to yet. The
+    // C bridge owns them; on undeclare, we walk this list and drop+free
+    // every entry so a Swift handler that returns without replying does
+    // not leak bridge state.
+    struct zenoh_query_t* outstanding_head;
+    pthread_mutex_t outstanding_lock;
 };
 
 typedef struct {
@@ -563,6 +577,40 @@ zenoh_result_t zenoh_undeclare_liveliness_token(zenoh_session_t* session,
 // Queryable (Service Server side)
 // ============================================================================
 
+// Link a query into the queryable's outstanding-list head. Caller must NOT
+// hold the lock.
+static void zenoh_queryable_link_query(zenoh_queryable_t* qbl, zenoh_query_t* q) {
+    pthread_mutex_lock(&qbl->outstanding_lock);
+    q->owner = qbl;
+    q->prev = NULL;
+    q->next = qbl->outstanding_head;
+    if (qbl->outstanding_head) {
+        qbl->outstanding_head->prev = q;
+    }
+    qbl->outstanding_head = q;
+    pthread_mutex_unlock(&qbl->outstanding_lock);
+}
+
+// Unlink a query from its owner's outstanding-list. Caller must NOT hold
+// the lock. Safe to call at most once per query (no-op if already unlinked).
+static void zenoh_queryable_unlink_query(zenoh_query_t* q) {
+    if (!q->owner) return;
+    zenoh_queryable_t* qbl = q->owner;
+    pthread_mutex_lock(&qbl->outstanding_lock);
+    if (q->prev) {
+        q->prev->next = q->next;
+    } else if (qbl->outstanding_head == q) {
+        qbl->outstanding_head = q->next;
+    }
+    if (q->next) {
+        q->next->prev = q->prev;
+    }
+    q->prev = NULL;
+    q->next = NULL;
+    q->owner = NULL;
+    pthread_mutex_unlock(&qbl->outstanding_lock);
+}
+
 // Internal closure handler that translates a loaned query into a cloned,
 // owned query handle and dispatches to the user-supplied callback.
 static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
@@ -576,11 +624,16 @@ static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
     if (!q) {
         return;
     }
+    q->owner = NULL;
+    q->next = NULL;
+    q->prev = NULL;
 
     if (z_query_clone(&q->query, query) < 0) {
         free(q);
         return;
     }
+
+    zenoh_queryable_link_query(qbl, q);
 
     // Extract keyexpr as a null-terminated string.
     const z_loaned_keyexpr_t* keyexpr = z_query_keyexpr(query);
@@ -649,6 +702,8 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
 
     qbl->callback = callback;
     qbl->context = context;
+    qbl->outstanding_head = NULL;
+    pthread_mutex_init(&qbl->outstanding_lock, NULL);
 
     // Create a view keyexpr from the string.
     z_view_keyexpr_t view_ke;
@@ -666,6 +721,7 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
 
     if (z_declare_queryable(z_loan(session->session), &qbl->queryable,
                             z_loan(view_ke), z_move(closure), &options) < 0) {
+        pthread_mutex_destroy(&qbl->outstanding_lock);
         free(qbl);
         return -1;
     }
@@ -684,6 +740,21 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
 
     z_undeclare_queryable(z_move(qbl->queryable));
 
+    // Drop and free any outstanding queries the Swift handler abandoned
+    // without replying. After undeclare, no new queries can arrive on this
+    // queryable, so a single drain is sufficient.
+    pthread_mutex_lock(&qbl->outstanding_lock);
+    zenoh_query_t* q = qbl->outstanding_head;
+    qbl->outstanding_head = NULL;
+    pthread_mutex_unlock(&qbl->outstanding_lock);
+    while (q) {
+        zenoh_query_t* next = q->next;
+        z_drop(z_move(q->query));
+        free(q);
+        q = next;
+    }
+
+    pthread_mutex_destroy(&qbl->outstanding_lock);
     free(qbl);
     *queryable = NULL;
 
@@ -702,6 +773,7 @@ zenoh_result_t zenoh_query_reply(zenoh_query_t* query,
     z_owned_bytes_t payload_bytes;
     if (z_bytes_from_buf(&payload_bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
         // Drop the query on error so the caller does not double-free.
+        zenoh_queryable_unlink_query(query);
         z_drop(z_move(query->query));
         free(query);
         return -1;
@@ -714,6 +786,7 @@ zenoh_result_t zenoh_query_reply(zenoh_query_t* query,
     if (attachment && attachment_len > 0) {
         if (z_bytes_from_buf(&attachment_bytes, (uint8_t*)attachment, attachment_len, NULL, NULL) < 0) {
             z_drop(z_move(payload_bytes));
+            zenoh_queryable_unlink_query(query);
             z_drop(z_move(query->query));
             free(query);
             return -1;
@@ -725,6 +798,7 @@ zenoh_result_t zenoh_query_reply(zenoh_query_t* query,
     const z_loaned_keyexpr_t* keyexpr = z_query_keyexpr(loaned);
     int result = z_query_reply(loaned, keyexpr, z_move(payload_bytes), &options);
 
+    zenoh_queryable_unlink_query(query);
     z_drop(z_move(query->query));
     free(query);
 
@@ -740,6 +814,7 @@ zenoh_result_t zenoh_query_reply_err(zenoh_query_t* query,
 
     z_owned_bytes_t payload_bytes;
     if (z_bytes_from_buf(&payload_bytes, (uint8_t*)message_utf8, len, NULL, NULL) < 0) {
+        zenoh_queryable_unlink_query(query);
         z_drop(z_move(query->query));
         free(query);
         return -1;
@@ -751,6 +826,7 @@ zenoh_result_t zenoh_query_reply_err(zenoh_query_t* query,
     const z_loaned_query_t* loaned = z_loan(query->query);
     int result = z_query_reply_err(loaned, z_move(payload_bytes), &options);
 
+    zenoh_queryable_unlink_query(query);
     z_drop(z_move(query->query));
     free(query);
 

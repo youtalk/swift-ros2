@@ -161,6 +161,7 @@ public class ZenohClient: ZenohClientProtocol {
     private var declaredKeyExprs: [DeclaredKeyExpr] = []
     private var subscribers: [ZenohSubscriber] = []
     private var livelinessTokens: [LivelinessToken] = []
+    private var queryables: [ZenohQueryable] = []
     private let resourceLock = NSLock()
 
     // Internal access for nested types
@@ -219,13 +220,16 @@ public class ZenohClient: ZenohClientProtocol {
         // scope at the end of this method.
         let tokensToClose: [LivelinessToken]
         let subscribersToClose: [ZenohSubscriber]
+        let queryablesToClose: [ZenohQueryable]
         let keyExprsToRelease: [DeclaredKeyExpr]
         resourceLock.lock()
         tokensToClose = livelinessTokens
         subscribersToClose = subscribers
+        queryablesToClose = queryables
         keyExprsToRelease = declaredKeyExprs
         livelinessTokens.removeAll()
         subscribers.removeAll()
+        queryables.removeAll()
         declaredKeyExprs.removeAll()
         resourceLock.unlock()
 
@@ -237,6 +241,11 @@ public class ZenohClient: ZenohClientProtocol {
         // Clean up subscribers
         for subscriber in subscribersToClose {
             try? subscriber.close()
+        }
+
+        // Clean up queryables
+        for queryable in queryablesToClose {
+            try? queryable.close()
         }
 
         // keyExprsToRelease is intentionally kept alive until method exit.
@@ -806,7 +815,11 @@ extension ZenohClient {
             throw ZenohError.internalError("Failed to declare queryable: error code \(result)")
         }
 
-        return ZenohQueryable(handle: queryableHandle, session: self, contextBox: contextBox)
+        let queryable = ZenohQueryable(handle: queryableHandle, session: self, contextBox: contextBox)
+        resourceLock.lock()
+        queryables.append(queryable)
+        resourceLock.unlock()
+        return queryable
     }
 
     // MARK: - Get
@@ -851,6 +864,13 @@ extension ZenohClient {
             // closure, which includes the failure path of z_get. Releasing
             // here would double-free the box, so we leave it to the C drop
             // hook. Instead surface the error to Swift.
+            if result == ZENOH_ERROR_SESSION_CLOSED {
+                // Mirror put / putDeclared: clear the session pointer so
+                // higher layers see `sessionDisconnected` and can transition
+                // to the unhealthy / reconnect path.
+                session = nil
+                throw ZenohError.sessionDisconnected("Router connection lost")
+            }
             throw ZenohError.internalError("zenoh_get failed: error code \(result)")
         }
     }

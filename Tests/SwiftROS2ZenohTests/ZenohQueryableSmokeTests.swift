@@ -9,9 +9,8 @@ import XCTest
 /// is unset.
 final class ZenohQueryableSmokeTests: XCTestCase {
     private var skipReason: String? {
-        ProcessInfo.processInfo.environment["LINUX_IP"] == nil
-            ? "LINUX_IP unset; skipping live zenoh router test"
-            : nil
+        let linuxIP = ProcessInfo.processInfo.environment["LINUX_IP"] ?? ""
+        return linuxIP.isEmpty ? "LINUX_IP unset or empty; skipping live zenoh router test" : nil
     }
 
     func testDeclareReplyUndeclare() async throws {

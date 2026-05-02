@@ -299,6 +299,14 @@ if canBuildDDS {
         // separators regardless of how `CYCLONEDDS_DIR` was exported.
         let normalizedDir = dir.replacingOccurrences(of: "\\", with: "/")
         ddsBridgeCSettings.append(.unsafeFlags(["-I\(normalizedDir)/include"]))
+        // CycloneDDS's `dds/ddsrt/misc.h` defines `DDSRT_WARNING_MSVC_OFF(x)`
+        // as `__pragma(warning(disable: ## x))`. The `##` token-paste
+        // glues `:` and the warning number into `:4146`, which MSVC
+        // accepts but clang rejects with `error: pasting formed ':4146',
+        // an invalid preprocessing token [-Winvalid-token-paste]`.
+        // Swift on Windows ships clang.exe, so the headers refuse to
+        // parse without this suppression.
+        ddsBridgeCSettings.append(.unsafeFlags(["-Wno-invalid-token-paste"]))
         ddsBridgeLinkerSettings.append(.unsafeFlags(["-L\(normalizedDir)/lib"]))
         ddsBridgeLinkerSettings.append(.linkedLibrary("ddsc"))
     }

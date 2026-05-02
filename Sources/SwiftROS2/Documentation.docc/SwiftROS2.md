@@ -10,7 +10,7 @@ aarch64), Windows (x86_64), and Android (arm64-v8a, x86_64). It speaks two
 transports natively:
 
 - **Zenoh** — interoperates with `rmw_zenoh_cpp`. Ships on every supported platform.
-- **DDS** — interoperates with `rmw_cyclonedds_cpp`. Apple platforms + Linux only.
+- **DDS** — interoperates with `rmw_cyclonedds_cpp`. Apple platforms, Linux, and Windows (Android still pending).
 
 ## Topics
 

@@ -27,6 +27,8 @@ public final class ROS2Node: @unchecked Sendable {
 
     private var publishers: [AnyObject] = []
     private var subscriptions: [AnyObject] = []
+    private var services: [AnyObject] = []
+    private var clients: [AnyObject] = []
     private let lock = NSLock()
 
     init(
@@ -113,11 +115,101 @@ public final class ROS2Node: @unchecked Sendable {
         return subscription
     }
 
+    // MARK: - Service
+
+    /// Create a service server for a specific ``ROS2ServiceType``.
+    ///
+    /// The handler closure receives a typed request and returns a typed
+    /// response. Throwing from the handler surfaces to the caller as a
+    /// ``ServiceError/handlerFailed(_:)`` (Zenoh) or as a dropped reply
+    /// (DDS) — see the swift-ros2 docs for the per-transport contract.
+    public func createService<S: ROS2ServiceType>(
+        _ serviceType: S.Type,
+        name: String,
+        qos: QoSProfile = .servicesDefault,
+        handler: @escaping @Sendable (S.Request) async throws -> S.Response
+    ) async throws -> ROS2Service<S> {
+        let fullName = buildFullTopic(name)
+        let typeInfo = S.typeInfo
+        let transportQoS = qos.toTransportQoS()
+        let supportsHash = context.distro.supportsTypeHash
+        let isLegacy = context.distro.isLegacySchema
+        let requestHash = supportsHash ? typeInfo.requestTypeHash : nil
+        let responseHash = supportsHash ? typeInfo.responseTypeHash : nil
+
+        // Wrap the typed user handler in a CDR-bytes handler the transport
+        // can call without knowing about S.Request / S.Response.
+        let cdrHandler: @Sendable (Data) async throws -> Data = { reqData in
+            let decoder: CDRDecoder
+            do {
+                decoder = try CDRDecoder(data: reqData, isLegacySchema: isLegacy)
+            } catch {
+                throw ServiceError.requestEncodingFailed(error.localizedDescription)
+            }
+            let typedRequest: S.Request
+            do {
+                typedRequest = try S.Request(from: decoder)
+            } catch {
+                throw ServiceError.requestEncodingFailed(error.localizedDescription)
+            }
+            let typedResponse = try await handler(typedRequest)
+            let encoder = CDREncoder(isLegacySchema: isLegacy)
+            do {
+                try typedResponse.encode(to: encoder)
+            } catch {
+                throw ServiceError.responseDecodingFailed(error.localizedDescription)
+            }
+            return encoder.getData()
+        }
+
+        let transportSvc = try session.createServiceServer(
+            name: fullName,
+            serviceTypeName: typeInfo.serviceName,
+            requestTypeHash: requestHash,
+            responseTypeHash: responseHash,
+            qos: transportQoS,
+            handler: cdrHandler
+        )
+
+        let service = ROS2Service<S>(transport: transportSvc)
+        appendService(service)
+        return service
+    }
+
+    /// Create a service client for a specific ``ROS2ServiceType``.
+    public func createClient<S: ROS2ServiceType>(
+        _ serviceType: S.Type,
+        name: String,
+        qos: QoSProfile = .servicesDefault
+    ) async throws -> ROS2Client<S> {
+        let fullName = buildFullTopic(name)
+        let typeInfo = S.typeInfo
+        let transportQoS = qos.toTransportQoS()
+        let supportsHash = context.distro.supportsTypeHash
+        let requestHash = supportsHash ? typeInfo.requestTypeHash : nil
+        let responseHash = supportsHash ? typeInfo.responseTypeHash : nil
+
+        let transportClient = try session.createServiceClient(
+            name: fullName,
+            serviceTypeName: typeInfo.serviceName,
+            requestTypeHash: requestHash,
+            responseTypeHash: responseHash,
+            qos: transportQoS
+        )
+
+        let client = ROS2Client<S>(
+            transport: transportClient,
+            isLegacySchema: context.distro.isLegacySchema
+        )
+        appendClient(client)
+        return client
+    }
+
     // MARK: - Lifecycle
 
     /// Destroy this node and release all resources
     public func destroy() async {
-        let (pubs, subs) = takeAllEntities()
+        let (pubs, subs, svcs, clis) = takeAllEntities()
         for pub in pubs {
             if let p = pub as? PublisherCloseable {
                 try? p.closePublisher()
@@ -126,6 +218,16 @@ public final class ROS2Node: @unchecked Sendable {
         for sub in subs {
             if let s = sub as? SubscriptionCloseable {
                 try? s.closeSubscription()
+            }
+        }
+        for svc in svcs {
+            if let s = svc as? ServiceCloseable {
+                try? s.closeService()
+            }
+        }
+        for cli in clis {
+            if let c = cli as? ClientCloseable {
+                try? c.closeClient()
             }
         }
     }
@@ -144,14 +246,30 @@ public final class ROS2Node: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func takeAllEntities() -> ([AnyObject], [AnyObject]) {
+    private func appendService(_ service: AnyObject) {
+        lock.lock()
+        services.append(service)
+        lock.unlock()
+    }
+
+    private func appendClient(_ client: AnyObject) {
+        lock.lock()
+        clients.append(client)
+        lock.unlock()
+    }
+
+    private func takeAllEntities() -> ([AnyObject], [AnyObject], [AnyObject], [AnyObject]) {
         lock.lock()
         let pubs = publishers
         let subs = subscriptions
+        let svcs = services
+        let clis = clients
         publishers.removeAll()
         subscriptions.removeAll()
+        services.removeAll()
+        clients.removeAll()
         lock.unlock()
-        return (pubs, subs)
+        return (pubs, subs, svcs, clis)
     }
 
     // MARK: - Helpers

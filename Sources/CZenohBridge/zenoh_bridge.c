@@ -10,7 +10,28 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <pthread.h>
+
+// Portable mutex shim. Windows does not ship <pthread.h>; the rest of the
+// supported platforms (Apple, Linux, Android Bionic) all do. The C bridge
+// only needs a non-recursive mutex for the queryable outstanding-query
+// list, so we map the small surface to either pthread or Win32
+// CRITICAL_SECTION.
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+typedef CRITICAL_SECTION zenoh_mutex_t;
+#  define zenoh_mutex_init(m)    InitializeCriticalSection(m)
+#  define zenoh_mutex_destroy(m) DeleteCriticalSection(m)
+#  define zenoh_mutex_lock(m)    EnterCriticalSection(m)
+#  define zenoh_mutex_unlock(m)  LeaveCriticalSection(m)
+#else
+#  include <pthread.h>
+typedef pthread_mutex_t zenoh_mutex_t;
+#  define zenoh_mutex_init(m)    pthread_mutex_init(m, NULL)
+#  define zenoh_mutex_destroy(m) pthread_mutex_destroy(m)
+#  define zenoh_mutex_lock(m)    pthread_mutex_lock(m)
+#  define zenoh_mutex_unlock(m)  pthread_mutex_unlock(m)
+#endif
 
 #ifdef __APPLE__
   #include <os/log.h>
@@ -70,7 +91,7 @@ struct zenoh_queryable_t {
     // every entry so a Swift handler that returns without replying does
     // not leak bridge state.
     struct zenoh_query_t* outstanding_head;
-    pthread_mutex_t outstanding_lock;
+    zenoh_mutex_t outstanding_lock;
 };
 
 typedef struct {
@@ -580,7 +601,7 @@ zenoh_result_t zenoh_undeclare_liveliness_token(zenoh_session_t* session,
 // Link a query into the queryable's outstanding-list head. Caller must NOT
 // hold the lock.
 static void zenoh_queryable_link_query(zenoh_queryable_t* qbl, zenoh_query_t* q) {
-    pthread_mutex_lock(&qbl->outstanding_lock);
+    zenoh_mutex_lock(&qbl->outstanding_lock);
     q->owner = qbl;
     q->prev = NULL;
     q->next = qbl->outstanding_head;
@@ -588,7 +609,7 @@ static void zenoh_queryable_link_query(zenoh_queryable_t* qbl, zenoh_query_t* q)
         qbl->outstanding_head->prev = q;
     }
     qbl->outstanding_head = q;
-    pthread_mutex_unlock(&qbl->outstanding_lock);
+    zenoh_mutex_unlock(&qbl->outstanding_lock);
 }
 
 // Unlink a query from its owner's outstanding-list. Caller must NOT hold
@@ -596,7 +617,7 @@ static void zenoh_queryable_link_query(zenoh_queryable_t* qbl, zenoh_query_t* q)
 static void zenoh_queryable_unlink_query(zenoh_query_t* q) {
     if (!q->owner) return;
     zenoh_queryable_t* qbl = q->owner;
-    pthread_mutex_lock(&qbl->outstanding_lock);
+    zenoh_mutex_lock(&qbl->outstanding_lock);
     if (q->prev) {
         q->prev->next = q->next;
     } else if (qbl->outstanding_head == q) {
@@ -608,7 +629,7 @@ static void zenoh_queryable_unlink_query(zenoh_query_t* q) {
     q->prev = NULL;
     q->next = NULL;
     q->owner = NULL;
-    pthread_mutex_unlock(&qbl->outstanding_lock);
+    zenoh_mutex_unlock(&qbl->outstanding_lock);
 }
 
 // Internal closure handler that translates a loaned query into a cloned,
@@ -703,7 +724,7 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
     qbl->callback = callback;
     qbl->context = context;
     qbl->outstanding_head = NULL;
-    pthread_mutex_init(&qbl->outstanding_lock, NULL);
+    zenoh_mutex_init(&qbl->outstanding_lock);
 
     // Create a view keyexpr from the string.
     z_view_keyexpr_t view_ke;
@@ -721,7 +742,7 @@ zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
 
     if (z_declare_queryable(z_loan(session->session), &qbl->queryable,
                             z_loan(view_ke), z_move(closure), &options) < 0) {
-        pthread_mutex_destroy(&qbl->outstanding_lock);
+        zenoh_mutex_destroy(&qbl->outstanding_lock);
         free(qbl);
         return -1;
     }
@@ -743,10 +764,10 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
     // Drop and free any outstanding queries the Swift handler abandoned
     // without replying. After undeclare, no new queries can arrive on this
     // queryable, so a single drain is sufficient.
-    pthread_mutex_lock(&qbl->outstanding_lock);
+    zenoh_mutex_lock(&qbl->outstanding_lock);
     zenoh_query_t* q = qbl->outstanding_head;
     qbl->outstanding_head = NULL;
-    pthread_mutex_unlock(&qbl->outstanding_lock);
+    zenoh_mutex_unlock(&qbl->outstanding_lock);
     while (q) {
         zenoh_query_t* next = q->next;
         z_drop(z_move(q->query));
@@ -754,7 +775,7 @@ zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
         q = next;
     }
 
-    pthread_mutex_destroy(&qbl->outstanding_lock);
+    zenoh_mutex_destroy(&qbl->outstanding_lock);
     free(qbl);
     *queryable = NULL;
 

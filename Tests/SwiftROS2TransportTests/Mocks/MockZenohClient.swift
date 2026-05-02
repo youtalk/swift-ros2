@@ -1,5 +1,4 @@
 import Foundation
-
 import SwiftROS2Transport
 
 /// In-memory ZenohClientProtocol used by ZenohTransportSession unit tests.

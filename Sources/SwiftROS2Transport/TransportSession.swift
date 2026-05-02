@@ -196,6 +196,7 @@ public enum TransportError: Error, LocalizedError {
     case unsupportedFeature(String)
     case requestTimeout(Duration)
     case requestCancelled
+    case serviceHandlerFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -213,6 +214,7 @@ public enum TransportError: Error, LocalizedError {
         case .unsupportedFeature(let f): return "Unsupported feature: \(f)"
         case .requestTimeout(let d): return "Service request timed out after \(d)"
         case .requestCancelled: return "Service request was cancelled"
+        case .serviceHandlerFailed(let msg): return "Service handler failed: \(msg)"
         }
     }
 

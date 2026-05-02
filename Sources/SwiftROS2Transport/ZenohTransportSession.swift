@@ -17,6 +17,8 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
     let client: any ZenohClientProtocol
     var config: TransportConfig?
     var publishers: [String: ZenohTransportPublisher] = [:]
+    var serviceServers: [ZenohTransportServiceServerImpl] = []
+    var serviceClients: [ZenohTransportServiceClientImpl] = []
     let publishersLock = NSLock()
     let entityManager: EntityManager
     let gidManager: GIDManager
@@ -85,6 +87,16 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         let pubs = takeAllPublishers()
         for pub in pubs {
             try? pub.close()
+        }
+
+        let servers = takeAllServiceServers()
+        for server in servers {
+            try? server.close()
+        }
+
+        let clients = takeAllServiceClients()
+        for serviceClient in clients {
+            try? serviceClient.close()
         }
 
         do {

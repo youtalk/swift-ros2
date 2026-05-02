@@ -771,7 +771,7 @@ private func getReplyBridge(
 
     if isError {
         let message = String(data: payloadData, encoding: .utf8) ?? "<non-UTF8 error payload>"
-        getContext.handler(.failure(.internalError("query reply error: \(message)")))
+        getContext.handler(.failure(.queryReplyError(message)))
     } else {
         let sample = ZenohSample(keyExpr: keyExprString, payload: payloadData, attachment: attachmentData)
         getContext.handler(.success(sample))

@@ -296,6 +296,16 @@ if !isWindowsBuild && !isAndroidBuild {
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/Listener"
         ),
+        .executableTarget(
+            name: "srv-server",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/SrvServer"
+        ),
+        .executableTarget(
+            name: "srv-client",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/SrvClient"
+        ),
 
         .testTarget(
             name: "SwiftROS2Tests",

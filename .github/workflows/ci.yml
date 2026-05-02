@@ -91,6 +91,8 @@ jobs:
     name: DocC build
     needs: [swift-format]
     runs-on: macos-15
+    env:
+      SWIFT_ROS2_DOCS_BUILD: "1"
     steps:
       - uses: actions/checkout@v4
         with:

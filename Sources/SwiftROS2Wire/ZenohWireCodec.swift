@@ -41,6 +41,86 @@ public struct ZenohWireCodec: WireCodec {
         }
     }
 
+    /// Generate the Zenoh service key expression
+    ///
+    /// Format: `<domain>/<namespace>/<service_name>/<dds_request_type_name>/<request_type_hash>`
+    ///
+    /// - The DDS request type name uses `<pkg>::srv::dds_::<Type>_Request_` form.
+    /// - On Humble, the trailing segment is `TypeHashNotSupported`.
+    /// - On Jazzy+ with no hash, the trailing segment is omitted (matching Pub/Sub).
+    /// - A leading slash on `serviceName` is stripped so callers can pass either
+    ///   `/trigger` or `trigger` without producing a `//` segment.
+    public func makeServiceKeyExpr(
+        domainId: Int,
+        namespace: String,
+        serviceName: String,
+        serviceTypeName: String,
+        requestTypeHash: String?
+    ) -> String {
+        let cleanNamespace = TypeNameConverter.stripLeadingSlash(namespace)
+        let cleanServiceName = TypeNameConverter.stripLeadingSlash(serviceName)
+        let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
+        let hashComponent = distro.formatTypeHash(requestTypeHash)
+        let svcPath = cleanNamespace.isEmpty ? cleanServiceName : "\(cleanNamespace)/\(cleanServiceName)"
+
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return "\(domainId)/\(svcPath)/\(ddsRequestTypeName)"
+        } else {
+            return "\(domainId)/\(svcPath)/\(ddsRequestTypeName)/\(hashComponent)"
+        }
+    }
+
+    // MARK: - Service Liveliness Token
+
+    /// Liveliness-token entity kind for Service entities.
+    ///
+    /// Parallels rmw_zenoh_cpp's per-entity-kind tags (`MP` = message publisher,
+    /// `SS` = service server, `SC` = service client). Pub/Sub is hard-coded to
+    /// `MP` in `makeLivelinessToken`; services pass one of these values to
+    /// ``makeServiceLivelinessToken(entityKind:domainId:sessionId:nodeId:entityId:namespace:nodeName:serviceName:serviceTypeName:requestTypeHash:qos:)``.
+    public enum ServiceEntityKind: String, Sendable {
+        case serviceServer = "SS"
+        case serviceClient = "SC"
+    }
+
+    /// Generate a Service-shaped liveliness token (`SS` / `SC`).
+    ///
+    /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/<SS|SC>/%/%/<node_name>/<mangled_service_path>/<dds_request_type>/<request_hash>/<qos>`
+    ///
+    /// - On Humble, the hash segment is `TypeHashNotSupported`.
+    /// - On Jazzy+ with no hash, the hash segment is omitted (parallel to
+    ///   ``makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:requestTypeHash:)``)
+    ///   so the token never contains a `//` segment.
+    /// - `serviceName` may carry a leading slash; ``TypeNameConverter/mangleTopicPath(namespace:topic:)``
+    ///   normalizes it.
+    public func makeServiceLivelinessToken(
+        entityKind: ServiceEntityKind,
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        entityId: String,
+        namespace: String,
+        nodeName: String,
+        serviceName: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        qos: QoSPolicy
+    ) -> String {
+        let cleanServiceName = TypeNameConverter.stripLeadingSlash(serviceName)
+        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: cleanServiceName)
+        let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
+        let hashComponent = distro.formatTypeHash(requestTypeHash)
+        let qosKeyExpr = qos.toKeyExpr()
+        let prefix =
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRequestTypeName)"
+
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return "\(prefix)/\(qosKeyExpr)"
+        } else {
+            return "\(prefix)/\(hashComponent)/\(qosKeyExpr)"
+        }
+    }
+
     // MARK: - Liveliness Token
 
     /// Generate liveliness token for ROS 2 discovery

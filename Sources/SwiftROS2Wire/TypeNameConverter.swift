@@ -35,4 +35,26 @@ public enum TypeNameConverter {
         }
         return fullPath.replacingOccurrences(of: "/", with: "%")
     }
+
+    /// Convert a ROS service type name to the DDS request type name.
+    ///
+    /// "example_interfaces/srv/AddTwoInts" -> "example_interfaces::srv::dds_::AddTwoInts_Request_"
+    public static func toDDSServiceRequestTypeName(_ serviceTypeName: String) -> String {
+        toDDSServiceSuffixedTypeName(serviceTypeName, suffix: "Request")
+    }
+
+    /// Convert a ROS service type name to the DDS response type name.
+    ///
+    /// "example_interfaces/srv/AddTwoInts" -> "example_interfaces::srv::dds_::AddTwoInts_Response_"
+    public static func toDDSServiceResponseTypeName(_ serviceTypeName: String) -> String {
+        toDDSServiceSuffixedTypeName(serviceTypeName, suffix: "Response")
+    }
+
+    private static func toDDSServiceSuffixedTypeName(_ serviceTypeName: String, suffix: String) -> String {
+        let parts = serviceTypeName.split(separator: "/", maxSplits: .max, omittingEmptySubsequences: true)
+        guard parts.count == 3 else {
+            return serviceTypeName.replacingOccurrences(of: "/", with: "::") + "_\(suffix)_"
+        }
+        return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_\(suffix)_"
+    }
 }

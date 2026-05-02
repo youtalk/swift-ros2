@@ -235,26 +235,8 @@ jobs:
           ls "$CYCLONEDDS_DIR/include/dds/dds.h"
           ls "$CYCLONEDDS_DIR/lib/ddsc.lib"
           ls "$CYCLONEDDS_DIR/bin/ddsc.dll"
-      # Diagnostic — `swift package describe` runs the manifest once
-      # and prints the resolved target list. On Windows the DDS arm
-      # depends on `CYCLONEDDS_DIR`; this step verifies the env var
-      # actually reaches the manifest evaluator (and that CDDSBridge
-      # / SwiftROS2DDS land in the graph) before the build step.
-      - name: Describe package
-        shell: bash
-        run: swift package describe --type text 2>&1 | tee describe.txt
       - name: Build
-        shell: bash
-        run: swift build -v 2>&1 | tee build-log.txt
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build-log
-          path: |
-            build-log.txt
-            describe.txt
-          if-no-files-found: ignore
+        run: swift build
       - name: Test
         run: swift test --parallel
 

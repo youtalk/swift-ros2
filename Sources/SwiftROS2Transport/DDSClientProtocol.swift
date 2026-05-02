@@ -165,4 +165,21 @@ public protocol DDSClientProtocol: AnyObject {
 
     /// Destroy a reader. Blocks until any in-flight handler invocation completes.
     func destroyReader(_ reader: any DDSReaderHandle)
+
+    /// Whether the given writer currently has any matched subscribers.
+    ///
+    /// Used by service clients (`waitForService`) to detect server availability.
+    /// Conformers that wrap a real DDS bridge should return whatever
+    /// `dds_get_publication_matched_status` reports; transports that cannot
+    /// determine match state cheaply may keep the default behavior, which
+    /// optimistically returns `true` so existing conformers continue to compile
+    /// without changes.
+    func isPublicationMatched(writer: any DDSWriterHandle) -> Bool
+}
+
+extension DDSClientProtocol {
+    /// Default: optimistically report the publication as matched. Concrete
+    /// conformers (e.g. CycloneDDS-backed bridges) should override this with
+    /// `dds_get_publication_matched_status`.
+    public func isPublicationMatched(writer: any DDSWriterHandle) -> Bool { true }
 }

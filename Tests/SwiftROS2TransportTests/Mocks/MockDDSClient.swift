@@ -25,6 +25,9 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
             []
     private(set) var destroyedReaders = 0
 
+    // Publication-match override (per topic). Used to drive `waitForService`.
+    private var matchedTopics: Set<String> = []
+
     func createSession(domainId: Int32, discoveryConfig: DDSBridgeDiscoveryConfig) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -108,6 +111,66 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         for handler in handlers {
             handler(data, timestamp)
         }
+    }
+
+    /// Plan-spec alias for `deliver(toTopic:data:timestamp:)`. Async to mirror
+    /// real-network callers; the underlying delivery is synchronous.
+    func deliverToReader(topic: String, wire: Data, timestamp: UInt64) async throws {
+        deliver(toTopic: topic, data: wire, timestamp: timestamp)
+    }
+
+    /// Wait up to `timeout` for the next `writeRawCDR` to land on `topic`,
+    /// then return its bytes. Polls a short interval (5ms) so tests stay
+    /// responsive without hot-spinning. Returns `nil` only if the timeout
+    /// elapsed without any new write.
+    func awaitWrite(topic: String, timeout: Duration) async throws -> Data? {
+        let initialCount = countWrites(topic: topic)
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if let bytes = lastWriteAfter(topic: topic, baseline: initialCount) {
+                return bytes
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return lastWriteAfter(topic: topic, baseline: initialCount)
+    }
+
+    /// Last write recorded on `topic`, or `nil` if no writes happened.
+    func lastWritten(topic: String) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return writes.last(where: { $0.topic == topic })?.data
+    }
+
+    /// Mark the given DDS topic as having matched subscribers. Affects what
+    /// `isPublicationMatched(writer:)` returns for any writer on that topic.
+    func markPublicationsMatched(topic: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        matchedTopics.insert(topic)
+    }
+
+    func isPublicationMatched(writer: any DDSWriterHandle) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let mock = writer as? MockDDSWriterHandle else { return false }
+        return matchedTopics.contains(mock.topic)
+    }
+
+    // MARK: - private helpers
+
+    private func countWrites(topic: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return writes.reduce(into: 0) { acc, w in if w.topic == topic { acc += 1 } }
+    }
+
+    private func lastWriteAfter(topic: String, baseline: Int) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        let matching = writes.filter { $0.topic == topic }
+        guard matching.count > baseline else { return nil }
+        return matching.last?.data
     }
 }
 

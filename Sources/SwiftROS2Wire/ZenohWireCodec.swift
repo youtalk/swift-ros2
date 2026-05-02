@@ -48,6 +48,8 @@ public struct ZenohWireCodec: WireCodec {
     /// - The DDS request type name uses `<pkg>::srv::dds_::<Type>_Request_` form.
     /// - On Humble, the trailing segment is `TypeHashNotSupported`.
     /// - On Jazzy+ with no hash, the trailing segment is omitted (matching Pub/Sub).
+    /// - A leading slash on `serviceName` is stripped so callers can pass either
+    ///   `/trigger` or `trigger` without producing a `//` segment.
     public func makeServiceKeyExpr(
         domainId: Int,
         namespace: String,
@@ -56,9 +58,10 @@ public struct ZenohWireCodec: WireCodec {
         requestTypeHash: String?
     ) -> String {
         let cleanNamespace = TypeNameConverter.stripLeadingSlash(namespace)
+        let cleanServiceName = TypeNameConverter.stripLeadingSlash(serviceName)
         let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
         let hashComponent = distro.formatTypeHash(requestTypeHash)
-        let svcPath = cleanNamespace.isEmpty ? serviceName : "\(cleanNamespace)/\(serviceName)"
+        let svcPath = cleanNamespace.isEmpty ? cleanServiceName : "\(cleanNamespace)/\(cleanServiceName)"
 
         if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
             return "\(domainId)/\(svcPath)/\(ddsRequestTypeName)"
@@ -83,6 +86,13 @@ public struct ZenohWireCodec: WireCodec {
     /// Generate a Service-shaped liveliness token (`SS` / `SC`).
     ///
     /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/<SS|SC>/%/%/<node_name>/<mangled_service_path>/<dds_request_type>/<request_hash>/<qos>`
+    ///
+    /// - On Humble, the hash segment is `TypeHashNotSupported`.
+    /// - On Jazzy+ with no hash, the hash segment is omitted (parallel to
+    ///   ``makeServiceKeyExpr(domainId:namespace:serviceName:serviceTypeName:requestTypeHash:)``)
+    ///   so the token never contains a `//` segment.
+    /// - `serviceName` may carry a leading slash; ``TypeNameConverter/mangleTopicPath(namespace:topic:)``
+    ///   normalizes it.
     public func makeServiceLivelinessToken(
         entityKind: ServiceEntityKind,
         domainId: Int,
@@ -96,13 +106,19 @@ public struct ZenohWireCodec: WireCodec {
         requestTypeHash: String?,
         qos: QoSPolicy
     ) -> String {
-        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: serviceName)
+        let cleanServiceName = TypeNameConverter.stripLeadingSlash(serviceName)
+        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: cleanServiceName)
         let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
         let hashComponent = distro.formatTypeHash(requestTypeHash)
         let qosKeyExpr = qos.toKeyExpr()
+        let prefix =
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRequestTypeName)"
 
-        return
-            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRequestTypeName)/\(hashComponent)/\(qosKeyExpr)"
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return "\(prefix)/\(qosKeyExpr)"
+        } else {
+            return "\(prefix)/\(hashComponent)/\(qosKeyExpr)"
+        }
     }
 
     // MARK: - Liveliness Token

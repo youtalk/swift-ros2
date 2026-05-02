@@ -95,6 +95,50 @@ final class ServiceWireFormatTests: XCTestCase {
         )
     }
 
+    func testServiceKeyExpressionStripsLeadingSlashFromServiceName() {
+        // Callers may pass either "/trigger" or "trigger" (the umbrella API
+        // tends to produce fully-qualified names). The leading slash must be
+        // normalized away — otherwise the key expression contains a "//"
+        // segment that Zenoh rejects.
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let withSlash = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "",
+            serviceName: "/trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aaa"
+        )
+        let withoutSlash = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "",
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aaa"
+        )
+        XCTAssertEqual(withSlash, withoutSlash)
+        XCTAssertFalse(withSlash.contains("//"))
+        XCTAssertEqual(
+            withSlash,
+            "0/trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa"
+        )
+    }
+
+    func testServiceKeyExpressionStripsLeadingSlashAndKeepsNamespace() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "/ios",
+            serviceName: "/trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aaa"
+        )
+        XCTAssertFalse(key.contains("//"))
+        XCTAssertEqual(
+            key,
+            "0/ios/trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa"
+        )
+    }
+
     // MARK: - Zenoh service liveliness tokens
 
     func testJazzyServiceServerLiveliness() {
@@ -166,6 +210,58 @@ final class ServiceWireFormatTests: XCTestCase {
     func testServiceEntityKindRawValues() {
         XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceServer.rawValue, "SS")
         XCTAssertEqual(ZenohWireCodec.ServiceEntityKind.serviceClient.rawValue, "SC")
+    }
+
+    func testJazzyServiceLivelinessOmitsEmptyHashSegment() {
+        // On Jazzy+ with no type hash supplied, the hash segment must be
+        // omitted — interpolating an empty string would produce "//" in the
+        // token, which is an invalid key expression. Behavior parallels
+        // makeServiceKeyExpr.
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
+        let token = codec.makeServiceLivelinessToken(
+            entityKind: .serviceServer,
+            domainId: 0,
+            sessionId: "AABB",
+            nodeId: "1",
+            entityId: "2",
+            namespace: "",
+            nodeName: "node",
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            qos: .servicesDefault
+        )
+        // Strip the protocol prefix before checking for "//", since the spec-
+        // defined "/%/%/" template legitimately contains adjacent separators.
+        let bodyAfterPrefix = String(token.dropFirst("@ros2_lv/0/AABB/1/2/SS/%/%/".count))
+        XCTAssertFalse(bodyAfterPrefix.contains("//"), "token body unexpectedly contained '//': \(token)")
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/0/AABB/1/2/SS/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/\(qosSuffix)"
+        )
+    }
+
+    func testServiceLivelinessStripsLeadingSlashFromServiceName() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let qosSuffix = QoSPolicy.servicesDefault.toKeyExpr()
+        let withSlash = codec.makeServiceLivelinessToken(
+            entityKind: .serviceClient,
+            domainId: 0,
+            sessionId: "AABB",
+            nodeId: "1",
+            entityId: "3",
+            namespace: "",
+            nodeName: "node",
+            serviceName: "/trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aaa",
+            qos: .servicesDefault
+        )
+        XCTAssertEqual(
+            withSlash,
+            "@ros2_lv/0/AABB/1/3/SC/%/%/node/%trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa/\(qosSuffix)"
+        )
     }
 
     // MARK: - DDS service topic names

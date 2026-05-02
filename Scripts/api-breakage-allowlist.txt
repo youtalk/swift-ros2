@@ -1,0 +1,12 @@
+# API breakages intentionally introduced post-0.6.1 (pre-1.0).
+#
+# Each line is matched verbatim against the diagnostic message emitted by
+# `swift package diagnose-api-breaking-changes`. Append new entries as
+# breakages land; remove entries once a release tag is cut whose baseline
+# already includes them.
+#
+# 0.7.0: ROS 2 Services landing — see CHANGELOG ## [0.7.0] (2026-05-01).
+API breakage: func TransportSession.createServiceServer(name:serviceTypeName:requestTypeHash:responseTypeHash:qos:handler:) has been added as a protocol requirement
+API breakage: func TransportSession.createServiceClient(name:serviceTypeName:requestTypeHash:responseTypeHash:qos:) has been added as a protocol requirement
+API breakage: enumelement TransportError.requestTimeout has been added as a new enum case
+API breakage: enumelement TransportError.requestCancelled has been added as a new enum case

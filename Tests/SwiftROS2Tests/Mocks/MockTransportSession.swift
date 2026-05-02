@@ -1,5 +1,4 @@
 import Foundation
-
 import SwiftROS2Transport
 
 /// In-memory TransportSession used by SwiftROS2 umbrella unit tests.
@@ -167,6 +166,27 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         )
         synchronized { _subscribers.append(sub) }
         return sub
+    }
+
+    func createServiceServer(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS,
+        handler: @escaping @Sendable (Data) async throws -> Data
+    ) throws -> any TransportService {
+        throw TransportError.unsupportedFeature("MockTransportSession service server (override per test)")
+    }
+
+    func createServiceClient(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS
+    ) throws -> any TransportClient {
+        throw TransportError.unsupportedFeature("MockTransportSession service client (override per test)")
     }
 }
 

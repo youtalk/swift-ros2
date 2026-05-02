@@ -37,6 +37,39 @@ public protocol TransportSession: AnyObject, Sendable {
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any TransportSubscriber
+
+    /// Create a Service Server.
+    ///
+    /// `serviceTypeName` is the ROS-format service type name (e.g.
+    /// `std_srvs/srv/Trigger`). Each transport derives the wire-level naming
+    /// from this: DDS uses `DDSWireCodec.serviceTopicNames` to build the
+    /// `rq/<service>Request` / `rr/<service>Reply` topic pair plus
+    /// `<pkg>::srv::dds_::<Type>_Request_` / `_Response_` type names; Zenoh
+    /// uses `ZenohWireCodec.makeServiceKeyExpr` to build the queryable key
+    /// expression. Callers do not need to pre-derive any of this.
+    func createServiceServer(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS,
+        handler: @escaping @Sendable (Data) async throws -> Data
+    ) throws -> any TransportService
+
+    /// Create a Service Client.
+    ///
+    /// `serviceTypeName` is the ROS-format service type name (e.g.
+    /// `std_srvs/srv/Trigger`). Each transport derives the wire-level naming
+    /// from this: DDS uses `DDSWireCodec.serviceTopicNames`; Zenoh uses
+    /// `ZenohWireCodec.makeServiceKeyExpr`. Callers do not need to pre-derive
+    /// any of it.
+    func createServiceClient(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS
+    ) throws -> any TransportClient
 }
 
 // MARK: - Transport Publisher Protocol
@@ -61,6 +94,34 @@ public protocol TransportPublisher: Sendable {
 public protocol TransportSubscriber: Sendable {
     var topic: String { get }
     var isActive: Bool { get }
+    func close() throws
+}
+
+// MARK: - Transport Service / Client (Service Server / Service Client)
+
+/// An active Service Server handle.
+///
+/// The handler closure passed at creation time receives raw CDR request bytes
+/// and is expected to return raw CDR response bytes. The transport layer is
+/// untyped on purpose — `ROS2Service<S>` on top encodes / decodes typed values.
+public protocol TransportService: Sendable {
+    var name: String { get }
+    var isActive: Bool { get }
+    func close() throws
+}
+
+/// An active Service Client handle.
+///
+/// `call` operates on raw CDR. The `ROS2Client<S>` layer encodes the typed
+/// request, invokes this method, and decodes the typed response.
+public protocol TransportClient: Sendable {
+    var name: String { get }
+    var isActive: Bool { get }
+    func waitForService(timeout: Duration) async throws
+    /// Send pre-encoded CDR request, await pre-encoded CDR response.
+    /// Throws `TransportError.requestTimeout` on deadline,
+    /// `TransportError.requestCancelled` on parent-Task cancellation.
+    func call(requestCDR: Data, timeout: Duration) async throws -> Data
     func close() throws
 }
 
@@ -133,6 +194,8 @@ public enum TransportError: Error, LocalizedError {
     case sessionClosed
     case invalidConfiguration(String)
     case unsupportedFeature(String)
+    case requestTimeout(Duration)
+    case requestCancelled
 
     public var errorDescription: String? {
         switch self {
@@ -148,6 +211,8 @@ public enum TransportError: Error, LocalizedError {
         case .sessionClosed: return "Session is closed"
         case .invalidConfiguration(let msg): return "Invalid configuration: \(msg)"
         case .unsupportedFeature(let f): return "Unsupported feature: \(f)"
+        case .requestTimeout(let d): return "Service request timed out after \(d)"
+        case .requestCancelled: return "Service request was cancelled"
         }
     }
 

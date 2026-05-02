@@ -238,7 +238,11 @@ final class DDSTransportServiceServerImpl: TransportService, @unchecked Sendable
             client: client, writer: replyWriterSnapshot(), topic: replyTopic, name: name,
             handler: handler
         )
-        Task { [captured, parsedId, userRequestCDR] in
+        // Detached so the user handler runs on the global executor regardless
+        // of the DDS reader thread's task-local context. Linux x86_64 / aarch64
+        // under `swift test --parallel` had unstructured `Task { ... }`
+        // starving here; detached scheduling clears the issue.
+        Task.detached(priority: .userInitiated) { [captured, parsedId, userRequestCDR] in
             do {
                 let userReplyCDR = try await captured.handler(userRequestCDR)
                 let wire = SampleIdentityPrefix.encode(requestId: parsedId, userCDR: userReplyCDR)

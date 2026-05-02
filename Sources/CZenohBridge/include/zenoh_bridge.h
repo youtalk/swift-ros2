@@ -177,6 +177,128 @@ zenoh_result_t zenoh_undeclare_liveliness_token(zenoh_session_t* session,
                                                 zenoh_liveliness_token_t** token);
 
 // ============================================================================
+// Queryable (Service Server side)
+// ============================================================================
+
+typedef struct zenoh_queryable_t zenoh_queryable_t;
+typedef struct zenoh_query_t zenoh_query_t;
+
+/// Callback invoked when a query is received on a declared queryable.
+/// The query handle is owned by the bridge and remains valid until the
+/// Swift side calls `zenoh_query_reply` or `zenoh_query_reply_err`, both of
+/// which consume it. If neither is called before the queryable is undeclared,
+/// the bridge drops the cloned query when the queryable is freed.
+/// @param query Owned query handle (consumed by the first reply call)
+/// @param keyexpr_str The key expression the query was issued against
+/// @param payload Pointer to the query payload (NULL if empty)
+/// @param payload_len Length of the query payload (0 if empty)
+/// @param attachment Pointer to the query attachment (NULL if not present)
+/// @param attachment_len Length of the attachment (0 if not present)
+/// @param context User-provided context pointer
+typedef void (*zenoh_queryable_callback_t)(zenoh_query_t* query,
+                                            const char* keyexpr_str,
+                                            const uint8_t* payload,
+                                            size_t payload_len,
+                                            const uint8_t* attachment,
+                                            size_t attachment_len,
+                                            void* context);
+
+/// Declares a queryable on the given key expression
+/// @param session The zenoh session
+/// @param keyexpr_str The key expression to expose as a queryable
+/// @param callback Callback invoked once per incoming query
+/// @param context User context pointer passed to the callback
+/// @param out_queryable Output parameter for the queryable handle
+/// @return 0 on success, negative error code otherwise
+zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
+                                       const char* keyexpr_str,
+                                       zenoh_queryable_callback_t callback,
+                                       void* context,
+                                       zenoh_queryable_t** out_queryable);
+
+/// Undeclares and frees a queryable
+/// @param session The zenoh session
+/// @param queryable Queryable handle to undeclare (will be set to NULL)
+/// @return 0 on success, negative error code otherwise
+zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
+                                         zenoh_queryable_t** queryable);
+
+/// Replies to a query with a successful payload and optional attachment.
+/// Consumes the query handle: after this call returns, *query is freed and
+/// the Swift side must drop its pointer.
+/// @param query Query handle (consumed)
+/// @param payload Pointer to the reply payload (may be NULL if payload_len == 0)
+/// @param payload_len Length of the reply payload
+/// @param attachment Optional attachment data (NULL for none)
+/// @param attachment_len Length of the attachment (0 for none)
+/// @return 0 on success, negative error code otherwise
+zenoh_result_t zenoh_query_reply(zenoh_query_t* query,
+                                 const uint8_t* payload,
+                                 size_t payload_len,
+                                 const uint8_t* attachment,
+                                 size_t attachment_len);
+
+/// Replies to a query with an error payload (UTF-8 encoded message).
+/// Consumes the query handle: after this call returns, *query is freed and
+/// the Swift side must drop its pointer.
+/// @param query Query handle (consumed)
+/// @param message_utf8 Pointer to UTF-8 error message bytes (may be NULL if len == 0)
+/// @param len Length of the error message in bytes
+/// @return 0 on success, negative error code otherwise
+zenoh_result_t zenoh_query_reply_err(zenoh_query_t* query,
+                                     const char* message_utf8,
+                                     size_t len);
+
+// ============================================================================
+// Get (Service Client side)
+// ============================================================================
+
+/// Per-reply callback invoked once for each reply received from a get.
+/// `is_error` indicates whether this is an error reply.
+/// @param keyexpr_str The key expression the reply is associated with
+/// @param payload Pointer to the reply payload (NULL if empty)
+/// @param payload_len Length of the reply payload (0 if empty)
+/// @param attachment Pointer to the reply attachment (NULL if not present)
+/// @param attachment_len Length of the attachment (0 if not present)
+/// @param is_error true if this is an error reply, false if it is an OK reply
+/// @param context User-provided context pointer
+typedef void (*zenoh_get_reply_callback_t)(const char* keyexpr_str,
+                                            const uint8_t* payload,
+                                            size_t payload_len,
+                                            const uint8_t* attachment,
+                                            size_t attachment_len,
+                                            bool is_error,
+                                            void* context);
+
+/// Finish callback invoked exactly once after the final reply is delivered
+/// (or the timeout has elapsed). Use this to free any user-side context.
+/// @param context User-provided context pointer
+typedef void (*zenoh_get_finish_callback_t)(void* context);
+
+/// Issues a query against the given key expression
+/// @param session The zenoh session
+/// @param keyexpr_str The key expression to query
+/// @param payload Pointer to the request payload (NULL for none)
+/// @param payload_len Length of the request payload (0 for none)
+/// @param attachment Pointer to the request attachment (NULL for none)
+/// @param attachment_len Length of the attachment (0 for none)
+/// @param timeout_ms Query timeout in milliseconds (0 = library default)
+/// @param reply_callback Callback invoked once per reply
+/// @param finish_callback Callback invoked once after all replies are delivered
+/// @param context User context pointer passed to both callbacks
+/// @return 0 on success, negative error code otherwise
+zenoh_result_t zenoh_get(zenoh_session_t* session,
+                         const char* keyexpr_str,
+                         const uint8_t* payload,
+                         size_t payload_len,
+                         const uint8_t* attachment,
+                         size_t attachment_len,
+                         uint32_t timeout_ms,
+                         zenoh_get_reply_callback_t reply_callback,
+                         zenoh_get_finish_callback_t finish_callback,
+                         void* context);
+
+// ============================================================================
 // Utility functions
 // ============================================================================
 

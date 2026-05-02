@@ -22,6 +22,33 @@ public protocol ZenohLivelinessTokenHandle: AnyObject {
     func close() throws
 }
 
+/// Handle to a declared Zenoh queryable (Service Server side)
+public protocol ZenohQueryableHandle: AnyObject {
+    func close() throws
+}
+
+/// A live in-flight Zenoh query held by the C bridge until reply.
+///
+/// Consumed by the first call to `reply(payload:attachment:)` or
+/// `replyError(message:)`. After consumption further reply calls throw
+/// `ZenohError.invalidParameter`.
+public protocol ZenohQueryHandle: AnyObject, Sendable {
+    /// The key expression the query was issued against.
+    var keyExpr: String { get }
+
+    /// The query payload (empty if the query carried none).
+    var payload: Data { get }
+
+    /// The query attachment (nil if the query carried none).
+    var attachment: Data? { get }
+
+    /// Reply with a successful payload. Consumes the handle.
+    func reply(payload: Data, attachment: Data?) throws
+
+    /// Reply with an error message. Consumes the handle.
+    func replyError(message: String) throws
+}
+
 // MARK: - Zenoh Sample
 
 /// Data received by a Zenoh subscriber
@@ -109,4 +136,49 @@ public protocol ZenohClientProtocol: AnyObject {
 
     /// Declare a liveliness token for ROS 2 discovery
     func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle
+
+    /// Declare a queryable on the given key expression. The handler runs on a
+    /// zenoh-pico-owned thread; do not block. Each query handle is consumed by
+    /// the first `reply(...)` or `replyError(...)` call. If neither is invoked
+    /// before the queryable is closed, the bridge drops the query.
+    func declareQueryable(
+        _ keyExpr: String,
+        handler: @escaping @Sendable (any ZenohQueryHandle) -> Void
+    ) throws -> any ZenohQueryableHandle
+
+    /// Issue a query against the given key expression, awaiting replies via
+    /// `handler`. `onFinish` fires once after the final reply is delivered (or
+    /// the timeout elapses). All callbacks run on a zenoh-pico-owned thread.
+    func get(
+        keyExpr: String,
+        payload: Data?,
+        attachment: Data?,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws
+}
+
+extension ZenohClientProtocol {
+    /// Default stub — implementations that don't yet support queryables can
+    /// fall back to this until they wire in the C bridge.
+    public func declareQueryable(
+        _ keyExpr: String,
+        handler: @escaping @Sendable (any ZenohQueryHandle) -> Void
+    ) throws -> any ZenohQueryableHandle {
+        throw ZenohError.invalidParameter("declareQueryable not implemented")
+    }
+
+    /// Default stub — implementations that don't yet support get queries can
+    /// fall back to this until they wire in the C bridge.
+    public func get(
+        keyExpr: String,
+        payload: Data?,
+        attachment: Data?,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        throw ZenohError.invalidParameter("get not implemented")
+    }
 }

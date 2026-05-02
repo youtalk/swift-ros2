@@ -161,6 +161,7 @@ public class ZenohClient: ZenohClientProtocol {
     private var declaredKeyExprs: [DeclaredKeyExpr] = []
     private var subscribers: [ZenohSubscriber] = []
     private var livelinessTokens: [LivelinessToken] = []
+    private var queryables: [ZenohQueryable] = []
     private let resourceLock = NSLock()
 
     // Internal access for nested types
@@ -219,13 +220,16 @@ public class ZenohClient: ZenohClientProtocol {
         // scope at the end of this method.
         let tokensToClose: [LivelinessToken]
         let subscribersToClose: [ZenohSubscriber]
+        let queryablesToClose: [ZenohQueryable]
         let keyExprsToRelease: [DeclaredKeyExpr]
         resourceLock.lock()
         tokensToClose = livelinessTokens
         subscribersToClose = subscribers
+        queryablesToClose = queryables
         keyExprsToRelease = declaredKeyExprs
         livelinessTokens.removeAll()
         subscribers.removeAll()
+        queryables.removeAll()
         declaredKeyExprs.removeAll()
         resourceLock.unlock()
 
@@ -237,6 +241,11 @@ public class ZenohClient: ZenohClientProtocol {
         // Clean up subscribers
         for subscriber in subscribersToClose {
             try? subscriber.close()
+        }
+
+        // Clean up queryables
+        for queryable in queryablesToClose {
+            try? queryable.close()
         }
 
         // keyExprsToRelease is intentionally kept alive until method exit.
@@ -543,3 +552,340 @@ private func subscriberCallbackBridge(
 extension DeclaredKeyExpr: ZenohKeyExprHandle {}
 extension ZenohSubscriber: ZenohSubscriberHandle {}
 extension LivelinessToken: ZenohLivelinessTokenHandle {}
+
+// MARK: - Queryable / Query / Get (Services)
+
+/// Internal context for passing a Swift queryable handler to the C closure.
+private final class QueryableContext {
+    let handler: @Sendable (any ZenohQueryHandle) -> Void
+
+    init(handler: @escaping @Sendable (any ZenohQueryHandle) -> Void) {
+        self.handler = handler
+    }
+}
+
+/// Internal context for passing Swift get callbacks (per-reply + finish) to
+/// the C closure.
+private final class GetContext {
+    let handler: @Sendable (Result<ZenohSample, ZenohError>) -> Void
+    let onFinish: @Sendable () -> Void
+
+    init(
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) {
+        self.handler = handler
+        self.onFinish = onFinish
+    }
+}
+
+/// Concrete `ZenohQueryHandle` backed by a `zenoh_query_t*`. The bridge frees
+/// the underlying query exactly once: on the first successful reply / replyError
+/// call. After consumption, this wrapper marks itself as consumed so further
+/// reply attempts throw.
+final class QueryHandleImpl: ZenohQueryHandle, @unchecked Sendable {
+    let keyExpr: String
+    let payload: Data
+    let attachment: Data?
+
+    private let lock = NSLock()
+    private var queryHandle: OpaquePointer?
+
+    init(handle: OpaquePointer, keyExpr: String, payload: Data, attachment: Data?) {
+        self.queryHandle = handle
+        self.keyExpr = keyExpr
+        self.payload = payload
+        self.attachment = attachment
+    }
+
+    func reply(payload: Data, attachment: Data?) throws {
+        lock.lock()
+        guard let handle = queryHandle else {
+            lock.unlock()
+            throw ZenohError.invalidParameter("query already replied")
+        }
+        // Mark consumed up-front; the C call frees the handle whether it
+        // succeeds or fails.
+        queryHandle = nil
+        lock.unlock()
+
+        let result = payload.withUnsafeBytes { payloadPtr -> Int8 in
+            let payloadBase = payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            if let attachment = attachment {
+                return attachment.withUnsafeBytes { attPtr in
+                    zenoh_query_reply(
+                        handle,
+                        payloadBase,
+                        payload.count,
+                        attPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        attachment.count
+                    )
+                }
+            } else {
+                return zenoh_query_reply(handle, payloadBase, payload.count, nil, 0)
+            }
+        }
+
+        if result < 0 {
+            throw ZenohError.internalError("zenoh_query_reply failed: error code \(result)")
+        }
+    }
+
+    func replyError(message: String) throws {
+        lock.lock()
+        guard let handle = queryHandle else {
+            lock.unlock()
+            throw ZenohError.invalidParameter("query already replied")
+        }
+        queryHandle = nil
+        lock.unlock()
+
+        let result = message.withCString { ptr -> Int8 in
+            zenoh_query_reply_err(handle, ptr, strlen(ptr))
+        }
+
+        if result < 0 {
+            throw ZenohError.internalError("zenoh_query_reply_err failed: error code \(result)")
+        }
+    }
+}
+
+/// Represents a declared queryable handle. Mirrors `ZenohSubscriber`.
+public final class ZenohQueryable: ZenohQueryableHandle {
+    private var handle: OpaquePointer?
+    private weak var session: ZenohClient?
+    private var contextBox: Unmanaged<QueryableContext>?
+
+    fileprivate init(
+        handle: OpaquePointer,
+        session: ZenohClient,
+        contextBox: Unmanaged<QueryableContext>
+    ) {
+        self.handle = handle
+        self.session = session
+        self.contextBox = contextBox
+    }
+
+    public func close() throws {
+        guard let h = handle else {
+            throw ZenohError.internalError("Queryable already closed")
+        }
+
+        // Always release Swift-side resources, even if the C-side undeclare
+        // fails, so we don't leak the retained context box.
+        defer {
+            handle = nil
+            contextBox?.release()
+            contextBox = nil
+        }
+
+        guard let sess = session, let sessionHandle = sess.sessionHandle else {
+            throw ZenohError.internalError("Session is no longer valid")
+        }
+
+        var mutableHandle: OpaquePointer? = h
+        let result = zenoh_undeclare_queryable(sessionHandle, &mutableHandle)
+        if result < 0 {
+            throw ZenohError.internalError("Failed to undeclare queryable: error code \(result)")
+        }
+    }
+
+    deinit {
+        try? close()
+    }
+}
+
+/// C bridge for the queryable callback. Reconstructs Swift types and calls the
+/// user handler with a `QueryHandleImpl` wrapping the bridge-owned query.
+private func queryableCallbackBridge(
+    query: OpaquePointer?,
+    keyExpr: UnsafePointer<CChar>?,
+    payload: UnsafePointer<UInt8>?,
+    payloadLen: Int,
+    attachment: UnsafePointer<UInt8>?,
+    attachmentLen: Int,
+    context: UnsafeMutableRawPointer?
+) {
+    guard let query = query, let context = context else { return }
+
+    let contextBox = Unmanaged<QueryableContext>.fromOpaque(context)
+    let queryableContext = contextBox.takeUnretainedValue()
+
+    let keyExprString = keyExpr.flatMap { String(cString: $0) } ?? ""
+
+    let payloadData: Data
+    if let payload = payload, payloadLen > 0 {
+        payloadData = Data(bytes: payload, count: payloadLen)
+    } else {
+        payloadData = Data()
+    }
+
+    let attachmentData: Data?
+    if let attachment = attachment, attachmentLen > 0 {
+        attachmentData = Data(bytes: attachment, count: attachmentLen)
+    } else {
+        attachmentData = nil
+    }
+
+    let queryHandle = QueryHandleImpl(
+        handle: query,
+        keyExpr: keyExprString,
+        payload: payloadData,
+        attachment: attachmentData
+    )
+
+    queryableContext.handler(queryHandle)
+}
+
+/// C bridge for per-reply notifications from a get. Builds a `ZenohSample` (or
+/// a `ZenohError` for error replies) and dispatches to the Swift handler.
+private func getReplyBridge(
+    keyExpr: UnsafePointer<CChar>?,
+    payload: UnsafePointer<UInt8>?,
+    payloadLen: Int,
+    attachment: UnsafePointer<UInt8>?,
+    attachmentLen: Int,
+    isError: Bool,
+    context: UnsafeMutableRawPointer?
+) {
+    guard let context = context else { return }
+
+    let contextBox = Unmanaged<GetContext>.fromOpaque(context)
+    let getContext = contextBox.takeUnretainedValue()
+
+    let keyExprString = keyExpr.flatMap { String(cString: $0) } ?? ""
+
+    let payloadData: Data
+    if let payload = payload, payloadLen > 0 {
+        payloadData = Data(bytes: payload, count: payloadLen)
+    } else {
+        payloadData = Data()
+    }
+
+    let attachmentData: Data?
+    if let attachment = attachment, attachmentLen > 0 {
+        attachmentData = Data(bytes: attachment, count: attachmentLen)
+    } else {
+        attachmentData = nil
+    }
+
+    if isError {
+        let message = String(data: payloadData, encoding: .utf8) ?? "<non-UTF8 error payload>"
+        getContext.handler(.failure(.internalError("query reply error: \(message)")))
+    } else {
+        let sample = ZenohSample(keyExpr: keyExprString, payload: payloadData, attachment: attachmentData)
+        getContext.handler(.success(sample))
+    }
+}
+
+/// C bridge for the closure-drop signal. Fires exactly once per get when the
+/// reply closure is dropped (after the final reply or the timeout). Also
+/// frees the retained Swift context box.
+private func getFinishBridge(context: UnsafeMutableRawPointer?) {
+    guard let context = context else { return }
+
+    let contextBox = Unmanaged<GetContext>.fromOpaque(context)
+    let getContext = contextBox.takeUnretainedValue()
+    getContext.onFinish()
+    contextBox.release()
+}
+
+extension ZenohClient {
+    // MARK: - Queryable
+
+    /// Declares a queryable on the given key expression. Mirrors `subscribe`.
+    public func declareQueryable(
+        _ keyExpr: String,
+        handler: @escaping @Sendable (any ZenohQueryHandle) -> Void
+    ) throws -> any ZenohQueryableHandle {
+        guard let sess = sessionHandle else {
+            throw ZenohError.invalidParameter("Session not open")
+        }
+
+        let contextBox = Unmanaged.passRetained(QueryableContext(handler: handler))
+        let context = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        var queryablePtr: OpaquePointer?
+        let result = keyExpr.withCString { keyExprCStr in
+            zenoh_declare_queryable(sess, keyExprCStr, queryableCallbackBridge, context, &queryablePtr)
+        }
+
+        guard result >= 0, let queryableHandle = queryablePtr else {
+            contextBox.release()
+            throw ZenohError.internalError("Failed to declare queryable: error code \(result)")
+        }
+
+        let queryable = ZenohQueryable(handle: queryableHandle, session: self, contextBox: contextBox)
+        resourceLock.lock()
+        queryables.append(queryable)
+        resourceLock.unlock()
+        return queryable
+    }
+
+    // MARK: - Get
+
+    /// Issues a query (Service Client side) against the given key expression.
+    public func get(
+        keyExpr: String,
+        payload: Data?,
+        attachment: Data?,
+        timeoutMs: UInt32,
+        handler: @escaping @Sendable (Result<ZenohSample, ZenohError>) -> Void,
+        onFinish: @escaping @Sendable () -> Void
+    ) throws {
+        guard let sess = sessionHandle else {
+            throw ZenohError.invalidParameter("Session not open")
+        }
+
+        let contextBox = Unmanaged.passRetained(GetContext(handler: handler, onFinish: onFinish))
+        let context = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        let result = keyExpr.withCString { keyExprCStr -> Int8 in
+            withOptionalUnsafeBytes(payload) { payloadPtr, payloadLen in
+                withOptionalUnsafeBytes(attachment) { attachmentPtr, attachmentLen in
+                    zenoh_get(
+                        sess,
+                        keyExprCStr,
+                        payloadPtr,
+                        payloadLen,
+                        attachmentPtr,
+                        attachmentLen,
+                        timeoutMs,
+                        getReplyBridge,
+                        getFinishBridge,
+                        context
+                    )
+                }
+            }
+        }
+
+        if result < 0 {
+            // The bridge calls the finish handler whenever zenoh-pico drops the
+            // closure, which includes the failure path of z_get. Releasing
+            // here would double-free the box, so we leave it to the C drop
+            // hook. Instead surface the error to Swift.
+            if result == ZENOH_ERROR_SESSION_CLOSED {
+                // Mirror put / putDeclared: clear the session pointer so
+                // higher layers see `sessionDisconnected` and can transition
+                // to the unhealthy / reconnect path.
+                session = nil
+                throw ZenohError.sessionDisconnected("Router connection lost")
+            }
+            throw ZenohError.internalError("zenoh_get failed: error code \(result)")
+        }
+    }
+}
+
+/// Helper that runs `body` with `(ptr, count)` for an optional `Data`,
+/// or `(nil, 0)` if the data is nil/empty.
+private func withOptionalUnsafeBytes<R>(
+    _ data: Data?,
+    _ body: (UnsafePointer<UInt8>?, Int) -> R
+) -> R {
+    guard let data = data, !data.isEmpty else {
+        return body(nil, 0)
+    }
+    return data.withUnsafeBytes { raw in
+        body(raw.baseAddress?.assumingMemoryBound(to: UInt8.self), data.count)
+    }
+}

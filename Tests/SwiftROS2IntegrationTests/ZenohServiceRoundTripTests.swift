@@ -42,4 +42,35 @@ final class ZenohServiceRoundTripTests: XCTestCase {
 
         await ctx.shutdown()
     }
+
+    /// Hosts a Trigger service from this Swift process and waits for a
+    /// remote `ros2 service call` to invoke it. This exercises the
+    /// queryable / server side of the Zenoh service implementation that
+    /// the round-trip-from-here test (above) cannot reach.
+    func testTriggerHostOverZenoh() async throws {
+        guard let linuxIP = ProcessInfo.processInfo.environment["LINUX_IP"], !linuxIP.isEmpty else {
+            throw XCTSkip("Set LINUX_IP to run this test (e.g., LINUX_IP=192.168.1.85)")
+        }
+
+        let ctx = try await ROS2Context(
+            transport: .zenoh(locator: "tcp/\(linuxIP):7447", domainId: 0, wireMode: .jazzy),
+            distro: .jazzy
+        )
+        let node = try await ctx.createNode(name: "swift_ros2_it_zenoh_host", namespace: "/test")
+
+        let invoked = expectation(description: "remote ros2 service call invoked the Swift handler")
+        invoked.assertForOverFulfill = false
+        _ = try await node.createService(TriggerSrv.self, name: "swift_zenoh_trigger") { _ in
+            invoked.fulfill()
+            return TriggerSrv.Response(success: true, message: "hi from swift over zenoh")
+        }
+
+        // Run an external `ros2 service call /test/swift_zenoh_trigger
+        // std_srvs/srv/Trigger` against `rmw_zenoh_cpp` while this test is
+        // waiting. CI gates this entire test on LINUX_IP, so the runner
+        // never blocks on the wait when the env var is unset.
+        await fulfillment(of: [invoked], timeout: 60)
+
+        await ctx.shutdown()
+    }
 }

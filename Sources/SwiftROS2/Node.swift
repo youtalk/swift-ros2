@@ -144,20 +144,20 @@ public final class ROS2Node: @unchecked Sendable {
             do {
                 decoder = try CDRDecoder(data: reqData, isLegacySchema: isLegacy)
             } catch {
-                throw ServiceError.requestEncodingFailed(error.localizedDescription)
+                throw ServiceError.requestDecodingFailed(error.localizedDescription)
             }
             let typedRequest: S.Request
             do {
                 typedRequest = try S.Request(from: decoder)
             } catch {
-                throw ServiceError.requestEncodingFailed(error.localizedDescription)
+                throw ServiceError.requestDecodingFailed(error.localizedDescription)
             }
             let typedResponse = try await handler(typedRequest)
             let encoder = CDREncoder(isLegacySchema: isLegacy)
             do {
                 try typedResponse.encode(to: encoder)
             } catch {
-                throw ServiceError.responseDecodingFailed(error.localizedDescription)
+                throw ServiceError.responseEncodingFailed(error.localizedDescription)
             }
             return encoder.getData()
         }

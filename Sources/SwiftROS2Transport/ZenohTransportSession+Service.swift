@@ -236,16 +236,67 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
         self.name = name
     }
 
-    /// Zenoh queryable discovery is effectively immediate via the Zenoh
-    /// admin space; if a stricter wait is needed, callers can use
-    /// `Task.sleep` after construction. This matches what `rmw_zenoh_cpp`
-    /// does in practice.
+    /// Wait until at least one Zenoh queryable is reachable on the service
+    /// key expression. Polls via short-timeout `get`s and resolves on the
+    /// first reply (success or error reply both count — both prove the
+    /// queryable exists). Throws `connectionTimeout` if no reply arrives
+    /// before `timeout` elapses.
     public func waitForService(timeout: Duration) async throws {
         lock.lock()
         let isClosed = closed
         lock.unlock()
         if isClosed {
             throw TransportError.sessionClosed
+        }
+
+        let probeTimeoutMs: UInt32 = 200
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            let remainingMs = ZenohTransportServiceClientImpl.durationToMillis(
+                deadline - ContinuousClock.now
+            )
+            if remainingMs == 0 {
+                break
+            }
+            let attemptMs = min(probeTimeoutMs, remainingMs)
+            let reachable = await probeOnce(timeoutMs: attemptMs)
+            if reachable {
+                return
+            }
+        }
+        throw TransportError.connectionTimeout(
+            TimeInterval(
+                Double(timeout.components.seconds)
+                    + Double(timeout.components.attoseconds) / 1.0e18))
+    }
+
+    /// Issue a single discovery probe; resolve `true` on the first reply,
+    /// `false` if `onFinish` fires without one.
+    private func probeOnce(timeoutMs: UInt32) async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            let resumed = ConcurrencyOnceFlag()
+            do {
+                try client.get(
+                    keyExpr: keyExpr,
+                    payload: nil,
+                    attachment: nil,
+                    timeoutMs: timeoutMs,
+                    handler: { _ in
+                        if resumed.set() {
+                            cont.resume(returning: true)
+                        }
+                    },
+                    onFinish: {
+                        if resumed.set() {
+                            cont.resume(returning: false)
+                        }
+                    }
+                )
+            } catch {
+                if resumed.set() {
+                    cont.resume(returning: false)
+                }
+            }
         }
     }
 
@@ -334,6 +385,21 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
         if total < 0 { return 0 }
         if total > Int64(UInt32.max) { return UInt32.max }
         return UInt32(total)
+    }
+}
+
+/// One-shot flag — `set()` returns true exactly once, false on every later
+/// call. Used to guard CheckedContinuation.resume against being invoked
+/// twice when reply / finish / cancel race.
+private final class ConcurrencyOnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+    func set() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if fired { return false }
+        fired = true
+        return true
     }
 }
 

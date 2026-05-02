@@ -41,6 +41,32 @@ public struct ZenohWireCodec: WireCodec {
         }
     }
 
+    /// Generate the Zenoh service key expression
+    ///
+    /// Format: `<domain>/<namespace>/<service_name>/<dds_request_type_name>/<request_type_hash>`
+    ///
+    /// - The DDS request type name uses `<pkg>::srv::dds_::<Type>_Request_` form.
+    /// - On Humble, the trailing segment is `TypeHashNotSupported`.
+    /// - On Jazzy+ with no hash, the trailing segment is omitted (matching Pub/Sub).
+    public func makeServiceKeyExpr(
+        domainId: Int,
+        namespace: String,
+        serviceName: String,
+        serviceTypeName: String,
+        requestTypeHash: String?
+    ) -> String {
+        let cleanNamespace = TypeNameConverter.stripLeadingSlash(namespace)
+        let ddsRequestTypeName = TypeNameConverter.toDDSServiceRequestTypeName(serviceTypeName)
+        let hashComponent = distro.formatTypeHash(requestTypeHash)
+        let svcPath = cleanNamespace.isEmpty ? serviceName : "\(cleanNamespace)/\(serviceName)"
+
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return "\(domainId)/\(svcPath)/\(ddsRequestTypeName)"
+        } else {
+            return "\(domainId)/\(svcPath)/\(ddsRequestTypeName)/\(hashComponent)"
+        }
+    }
+
     // MARK: - Liveliness Token
 
     /// Generate liveliness token for ROS 2 discovery

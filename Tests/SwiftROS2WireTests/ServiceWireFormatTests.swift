@@ -31,4 +31,67 @@ final class ServiceWireFormatTests: XCTestCase {
             "std_srvs::srv::dds_::Trigger_Response_"
         )
     }
+
+    // MARK: - Zenoh service key expression
+
+    func testJazzyServiceKeyExpression() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "",
+            serviceName: "add_two_ints",
+            serviceTypeName: "example_interfaces/srv/AddTwoInts",
+            requestTypeHash: "RIHS01_abc123"
+        )
+        XCTAssertEqual(
+            key,
+            "0/add_two_ints/example_interfaces::srv::dds_::AddTwoInts_Request_/RIHS01_abc123"
+        )
+    }
+
+    func testJazzyServiceKeyExpressionWithNamespace() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "/ios",
+            serviceName: "trigger",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: "RIHS01_aaa"
+        )
+        XCTAssertEqual(
+            key,
+            "0/ios/trigger/std_srvs::srv::dds_::Trigger_Request_/RIHS01_aaa"
+        )
+    }
+
+    func testHumbleServiceKeyExpression() {
+        let codec = ZenohWireCodec(distro: .humble)
+        let key = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "",
+            serviceName: "add_two_ints",
+            serviceTypeName: "example_interfaces/srv/AddTwoInts",
+            requestTypeHash: nil
+        )
+        XCTAssertEqual(
+            key,
+            "0/add_two_ints/example_interfaces::srv::dds_::AddTwoInts_Request_/TypeHashNotSupported"
+        )
+    }
+
+    func testJazzyServiceKeyExpressionNoTypeHash() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeServiceKeyExpr(
+            domainId: 0,
+            namespace: "",
+            serviceName: "add_two_ints",
+            serviceTypeName: "example_interfaces/srv/AddTwoInts",
+            requestTypeHash: nil
+        )
+        // Jazzy omits trailing segment when hash is empty (parallel to Pub/Sub).
+        XCTAssertEqual(
+            key,
+            "0/add_two_ints/example_interfaces::srv::dds_::AddTwoInts_Request_"
+        )
+    }
 }

@@ -23,10 +23,10 @@ Bringing ROS 2 to a phone, headset, or laptop usually means cross-compiling `rcl
 ## Features
 
 - **Dual transport.** `SwiftROS2Zenoh` talks to `rmw_zenoh_cpp`; `SwiftROS2DDS` talks to `rmw_cyclonedds_cpp`. Switch transports with a single `TransportConfig` change.
-- **No `rcl` dependency.** Wire-level publish / subscribe means no `rcl`, no `rclcpp`, no Python / colcon, no `rmw_*` shim layer — and no transitive build of FastDDS or CycloneDDS from source on the consumer side (Apple targets get xcframeworks; Linux gets a `pkg-config` lookup; Windows / Android stay Zenoh-only for now).
+- **No `rcl` dependency.** Wire-level publish / subscribe means no `rcl`, no `rclcpp`, no Python / colcon, no `rmw_*` shim layer — and no transitive build of FastDDS or CycloneDDS from source on the consumer side (Apple targets get xcframeworks; Linux gets a `pkg-config` lookup; Windows resolves CycloneDDS through `vcpkg`; Android stays Zenoh-only for now).
 - **Swift-native API.** `async`/`await` everywhere, `AsyncStream` subscriptions, `Sendable` conformance, structured concurrency, no opaque pointer juggling above the FFI seam.
 - **Pre-built Apple binaries.** `CZenohPico.xcframework` + `CCycloneDDS.xcframework` are attached to every GitHub Release. `swift build` downloads them in seconds — no CMake, no local bootstrap, no Apple-side codesigning dance.
-- **Source build everywhere else.** Linux, Windows, and Android compile `zenoh-pico` from `vendor/` via SwiftPM directly, each picking the matching backend (`unix` / `windows`). CycloneDDS comes from `pkg-config` on Linux. No vendored prebuilts needed.
+- **Source build everywhere else.** Linux, Windows, and Android compile `zenoh-pico` from `vendor/` via SwiftPM directly, each picking the matching backend (`unix` / `windows`). CycloneDDS comes from `pkg-config` on Linux and `vcpkg` on Windows. No vendored prebuilts needed.
 - **Multi-distro wire format.** Humble, Jazzy, Kilted, Rolling. Select via `ROS2Distro` on `ROS2Context`; Zenoh defaults to Jazzy when unspecified. Schema differences (e.g. `sensor_msgs/Range` gaining `variance` after Humble) are gated automatically through `isLegacySchema`.
 - **23 built-in message types** spanning `sensor_msgs`, `geometry_msgs`, `std_msgs`, `audio_common_msgs`, and `tf2_msgs`. Pure-Swift XCDR v1 encoder + decoder cover both the publish and subscribe paths.
 - **Services** (Server / Client) — `rclcpp` / `rclpy`-shaped API with full Humble / Jazzy / Kilted / Rolling reach over Zenoh and DDS.
@@ -41,7 +41,7 @@ Bringing ROS 2 to a phone, headset, or laptop usually means cross-compiling `rcl
 | Mac Catalyst          | 16.0                                           | `binaryTarget` xcframework                          | Zenoh + DDS    | (covered by `build-macos` Swift compile) | `maccatalyst`                        |
 | visionOS              | 1.0                                            | `binaryTarget` xcframework                          | Zenoh + DDS    | (covered by `build-macos` Swift compile) | `xros` + `xrsimulator`               |
 | Linux                 | Ubuntu 22.04 / 24.04 (x86_64, aarch64)         | `zenoh-pico` source build + `pkg-config` for DDS    | Zenoh + DDS    | `build-linux` (×6: 3 distros × 2 arches)  | n/a (source build)                   |
-| Windows               | Windows 10 / 11 (x86_64)                       | `zenoh-pico` source build (Winsock + Iphlpapi)      | Zenoh only     | `build-windows`                       | n/a (source build)                   |
+| Windows               | Windows 10 / 11 (x86_64)                       | `zenoh-pico` source build (Winsock + Iphlpapi) + `vcpkg` for DDS | Zenoh + DDS    | `build-windows`                       | n/a (source build)                   |
 | Android               | API 28+ (arm64-v8a, x86_64)                    | `zenoh-pico` source build (Bionic, unix backend)    | Zenoh only     | `build-android` (×2 ABIs)             | n/a (source build)                   |
 
 The `build-macos` job runs `swift build` / `swift test` on `macos-15`, which compiles the Swift sources for the macOS host only — that proves the Swift code compiles against the Apple toolchain, but it does *not* drive `xcodebuild` against `iphoneos` / `iphonesimulator` / `maccatalyst` / `xros` / `xrsimulator` destinations. Those non-host Apple slices are built end-to-end only by the [`release-xcframework.yml`](.github/workflows/release-xcframework.yml) workflow at tag time, which produces the `CZenohPico.xcframework` + `CCycloneDDS.xcframework` zips attached to each GitHub release. Per-push runtime validation on iOS / visionOS / Mac Catalyst comes from [Conduit](https://apps.apple.com/app/id6757171237) — the 10K+ developer production user — rather than CI.
@@ -100,23 +100,33 @@ swift test                                    # 69 pass, 2 LINUX_IP-gated skips
 
 ### Windows
 
-Windows ships Zenoh only; the DDS path is currently excluded from the Windows build graph (SwiftPM cannot orchestrate CycloneDDS's `ddsrt` CMake configure-time header generation, and no usable prebuilt path exists yet — see [Roadmap](#roadmap)).
+Windows supports both transports. Zenoh builds `vendor/zenoh-pico` from source (no extra setup); DDS resolves CycloneDDS through [vcpkg](https://vcpkg.io) — install the port once and point `CYCLONEDDS_DIR` at the install tree before `swift build`. Without `CYCLONEDDS_DIR`, the manifest stays Zenoh-only (same shape as 0.5.0–0.7.0).
+
+```powershell
+# One-time CycloneDDS install via vcpkg.
+vcpkg install cyclonedds:x64-windows
+
+# Each shell that runs `swift build` needs CYCLONEDDS_DIR pointed at the
+# vcpkg install tree, plus bin/ on PATH so ddsc.dll resolves at runtime.
+$env:CYCLONEDDS_DIR = "$env:VCPKG_ROOT\installed\x64-windows"
+$env:Path = "$env:CYCLONEDDS_DIR\bin;$env:Path"
+```
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.6.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.8.0"),
 ],
 targets: [
     .target(
         name: "YourApp",
         dependencies: [
-            .product(name: "SwiftROS2Zenoh", package: "swift-ros2"),    // umbrella isn't built on Windows
+            .product(name: "SwiftROS2", package: "swift-ros2"),
         ]
     ),
 ]
 ```
 
-Requires Swift 6.3.1. No `setup.bash` or `PKG_CONFIG_PATH` step — `swift build` handles the `zenoh-pico` source build automatically.
+Requires Swift 6.3.1. No `setup.bash` or `PKG_CONFIG_PATH` step — `swift build` reads `CYCLONEDDS_DIR` and threads `-I<dir>/include` + `-L<dir>/lib` into CDDSBridge directly.
 
 ### Android (cross-compile from macOS or Linux)
 
@@ -149,7 +159,7 @@ import SwiftROS2Zenoh    // the SwiftROS2 umbrella isn't built on Android — sa
 
 ## Quick Start
 
-> **Windows / Android note:** the examples below use the `SwiftROS2` umbrella, which is excluded from those platforms. Use `SwiftROS2Zenoh.ZenohClient` directly for the Zenoh path; the high-level `ROS2Context` / `ROS2Node` wrappers land on Windows and Android when DDS does (see [Roadmap](#roadmap)).
+> **Android note:** the examples below use the `SwiftROS2` umbrella, which is excluded on Android (Windows now ships the umbrella when `CYCLONEDDS_DIR` is set, see above). Use `SwiftROS2Zenoh.ZenohClient` directly on Android; the high-level `ROS2Context` / `ROS2Node` wrappers land there when DDS does (see [Roadmap](#roadmap)).
 
 ### Publish an IMU message over Zenoh
 
@@ -302,7 +312,7 @@ Past releases shipped roughly one breaking platform / transport / API change per
 
 ### Medium-term
 
-- **DDS on Windows / Android** — currently blocked on SwiftPM not orchestrating CycloneDDS's `ddsrt` CMake-configure-time header generation. Likely path: prebuilt `.artifactbundle` distribution for both targets, similar to the Apple xcframeworks but in the SPM artifact-bundle format.
+- **DDS on Android** — currently blocked on SwiftPM not orchestrating CycloneDDS's `ddsrt` CMake-configure-time header generation under the Android NDK toolchain. Likely path: prebuilt `.artifactbundle` distribution for Android, similar to the Apple xcframeworks but in the SPM artifact-bundle format. (DDS on Windows landed in 0.8.0 via the `vcpkg` + `CYCLONEDDS_DIR` approach.)
 - **XCDR2 wire format** — only XCDR v1 is implemented today. XCDR v2 is required for some Rolling-era message types. Additive (new init flag on `CDRDecoder`).
 - **Richer QoS profiles** — `.servicesDefault`, `.parameters`, `.systemDefault` to match `rcl`. Today any non-default QoS knob has to be set by hand on the underlying `TransportConfig`.
 

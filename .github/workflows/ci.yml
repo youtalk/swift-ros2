@@ -191,7 +191,7 @@ jobs:
           swift test --parallel
 
   build-windows:
-    name: Build & Test (Windows x86_64, Zenoh only)
+    name: Build & Test (Windows x86_64, Zenoh + DDS)
     needs: [swift-format]
     runs-on: windows-latest
     # Pin Swift 6.3.1 here (not 6.0.2 like macOS + Linux) because 6.0.2's
@@ -210,6 +210,28 @@ jobs:
           tag: 6.3.1-RELEASE
       - name: Swift version
         run: swift --version
+      # CycloneDDS via vcpkg (parallel to the Linux pkg-config + apt path).
+      # `windows-latest` ships vcpkg pre-installed at $VCPKG_INSTALLATION_ROOT.
+      # `cyclonedds:x64-windows` is dynamic (DLL + import lib) — `bin/`
+      # lands on PATH so ddsc.dll resolves at test runtime, and Package.swift
+      # reads CYCLONEDDS_DIR to wire `-I<dir>/include` + `-L<dir>/lib`
+      # into CDDSBridge. Without this step the manifest falls back to the
+      # 0.5.0–0.7.0 Zenoh-only Windows shape.
+      - name: Install CycloneDDS via vcpkg
+        shell: bash
+        run: |
+          "$VCPKG_INSTALLATION_ROOT/vcpkg.exe" install cyclonedds:x64-windows
+          CYCLONEDDS_PREFIX="$VCPKG_INSTALLATION_ROOT/installed/x64-windows"
+          echo "CYCLONEDDS_DIR=$CYCLONEDDS_PREFIX" >> "$GITHUB_ENV"
+          # Forward-slash path so $GITHUB_PATH appends cleanly on the
+          # bash runner; Windows accepts either separator at lookup time.
+          echo "$CYCLONEDDS_PREFIX/bin" >> "$GITHUB_PATH"
+      - name: Verify CycloneDDS install
+        shell: bash
+        run: |
+          ls "$CYCLONEDDS_DIR/include/dds/dds.h"
+          ls "$CYCLONEDDS_DIR/lib/ddsc.lib"
+          ls "$CYCLONEDDS_DIR/bin/ddsc.dll"
       - name: Build
         run: swift build
       - name: Test

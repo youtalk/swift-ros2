@@ -10,11 +10,16 @@ import PackageDescription
 // build helper.
 //
 // CycloneDDS on Linux resolves through pkg-config; on Apple it ships
-// as a prebuilt xcframework. Windows and Android do not ship DDS —
-// the entire DDS path (cCycloneDDS, CDDSBridge, SwiftROS2DDS, the
-// SwiftROS2 umbrella, and the DDS/umbrella tests) is compiled out on
-// both platforms via the runtime `if !isWindowsBuild && !isAndroidBuild`
-// gate around the targets/products additions further down.
+// as a prebuilt xcframework. On Windows the DDS path opts in through a
+// `CYCLONEDDS_DIR` env var pointing at a vcpkg-installed CycloneDDS
+// tree (`vcpkg install cyclonedds:x64-windows`); the manifest then adds
+// `-I<dir>/include` and `-L<dir>/lib` to CDDSBridge so `#include
+// <dds/dds.h>` and `-lddsc` resolve. Without `CYCLONEDDS_DIR` the
+// Windows build keeps the existing Zenoh-only carve-out. Android does
+// not ship DDS at all — the entire DDS path (cCycloneDDS, CDDSBridge,
+// SwiftROS2DDS, the SwiftROS2 umbrella, and the DDS/umbrella tests) is
+// compiled out via the runtime `if canBuildDDS` gate around the
+// targets/products additions further down.
 //
 // Cross-compilation target detection. Plain `#if os(...)` at manifest
 // scope reflects the HOST, which breaks when cross-compiling from
@@ -53,6 +58,26 @@ let targetOS: String = {
 let isLinuxBuild = targetOS == "linux"
 let isWindowsBuild = targetOS == "windows"
 let isAndroidBuild = targetOS == "android"
+
+// Windows DDS opt-in. When `CYCLONEDDS_DIR` is set on a Windows build,
+// the manifest pulls in the full DDS path (CCycloneDDS / CDDSBridge /
+// SwiftROS2DDS / SwiftROS2 umbrella / examples / DDS tests) and wires
+// `-I<dir>/include` + `-L<dir>/lib` into CDDSBridge so `#include
+// <dds/dds.h>` and the `-lddsc` link emitted by the CCycloneDDS
+// modulemap both resolve against the vcpkg-installed CycloneDDS tree.
+// When unset, the Windows arm stays Zenoh-only — same shape as 0.5.0
+// through 0.7.0.
+let windowsCycloneDDSDir: String? = {
+    guard isWindowsBuild else { return nil }
+    guard let raw = Context.environment["CYCLONEDDS_DIR"] else { return nil }
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}()
+
+// Whether the current target can build the CycloneDDS-based DDS path.
+// Apple (binary xcframework) and Linux (pkg-config) always can; Windows
+// can only when `CYCLONEDDS_DIR` is set; Android never can.
+let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/0.7.0"
 
@@ -223,18 +248,28 @@ var targets: [Target] = [
 ]
 
 // DDS path + the SwiftROS2 umbrella + examples + umbrella-level tests.
-// These are only included on platforms where CycloneDDS is consumable.
-// Windows and Android do not build CycloneDDS from source (SPM cannot
-// orchestrate the ddsrt CMake configure-time header generation), so
-// both platforms import SwiftROS2Zenoh directly instead of the
-// SwiftROS2 umbrella. DDS on Windows / Android is a future track.
-if !isWindowsBuild && !isAndroidBuild {
+// These are only included on platforms where CycloneDDS is consumable
+// (see `canBuildDDS` above): Apple via binary xcframework, Linux via
+// pkg-config, Windows via vcpkg + `CYCLONEDDS_DIR`. Android does not
+// ship DDS — `import SwiftROS2Zenoh` is the supported entry point
+// there. Windows builds without `CYCLONEDDS_DIR` set keep the same
+// Zenoh-only shape as 0.5.0 through 0.7.0.
+if canBuildDDS {
     let cCycloneDDS: Target = {
         if isLinuxBuild {
             return .systemLibrary(
                 name: "CCycloneDDS",
                 path: "Sources/CCycloneDDS",
                 pkgConfig: "CycloneDDS"
+            )
+        } else if isWindowsBuild {
+            // Windows uses the same modulemap + shim.h as Linux, but
+            // header / library search paths come from `CYCLONEDDS_DIR`
+            // (vcpkg) injected onto CDDSBridge below — there is no
+            // pkg-config in the picture.
+            return .systemLibrary(
+                name: "CCycloneDDS",
+                path: "Sources/CCycloneDDS"
             )
         } else {
             return .binaryTarget(
@@ -244,6 +279,22 @@ if !isWindowsBuild && !isAndroidBuild {
             )
         }
     }()
+
+    // CDDSBridge consumes `<dds/...>` headers via `#include` and links
+    // `ddsc` (the link directive lives in CCycloneDDS's modulemap). On
+    // Linux those flags come from pkg-config; on Apple they come from
+    // the xcframework. On Windows there is no automatic injection, so
+    // the manifest threads `-I<vcpkg>/include` and `-L<vcpkg>/lib`
+    // through `cSettings` / `linkerSettings` keyed off `CYCLONEDDS_DIR`.
+    // The unsafeFlags are gated on `isWindowsBuild` at manifest scope
+    // so non-Windows targets see no unsafe flags — that keeps the
+    // package consumable as an external SPM dependency on Apple/Linux.
+    var ddsBridgeCSettings: [CSetting] = [.define("DDS_AVAILABLE", to: "1")]
+    var ddsBridgeLinkerSettings: [LinkerSetting] = []
+    if isWindowsBuild, let dir = windowsCycloneDDSDir {
+        ddsBridgeCSettings.append(.unsafeFlags(["-I", "\(dir)/include"]))
+        ddsBridgeLinkerSettings.append(.unsafeFlags(["-L\(dir)/lib"]))
+    }
 
     products.append(contentsOf: [
         .library(name: "SwiftROS2", targets: ["SwiftROS2"]),
@@ -259,9 +310,8 @@ if !isWindowsBuild && !isAndroidBuild {
             path: "Sources/CDDSBridge",
             sources: ["dds_bridge.c", "raw_cdr_sertype.c", "raw_cdr_regression_bridge.c"],
             publicHeadersPath: "include",
-            cSettings: [
-                .define("DDS_AVAILABLE", to: "1")
-            ]
+            cSettings: ddsBridgeCSettings,
+            linkerSettings: ddsBridgeLinkerSettings
         ),
 
         .target(

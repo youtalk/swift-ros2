@@ -49,6 +49,22 @@ struct zenoh_liveliness_token_t {
     z_owned_liveliness_token_t token;
 };
 
+struct zenoh_queryable_t {
+    z_owned_queryable_t queryable;
+    zenoh_queryable_callback_t callback;
+    void* context;
+};
+
+struct zenoh_query_t {
+    z_owned_query_t query;
+};
+
+typedef struct {
+    zenoh_get_reply_callback_t reply_callback;
+    zenoh_get_finish_callback_t finish_callback;
+    void* context;
+} zenoh_get_callback_state_t;
+
 // ============================================================================
 // Session management
 // ============================================================================
@@ -539,6 +555,371 @@ zenoh_result_t zenoh_undeclare_liveliness_token(zenoh_session_t* session,
 
     free(t);
     *token = NULL;
+
+    return 0;
+}
+
+// ============================================================================
+// Queryable (Service Server side)
+// ============================================================================
+
+// Internal closure handler that translates a loaned query into a cloned,
+// owned query handle and dispatches to the user-supplied callback.
+static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
+    zenoh_queryable_t* qbl = (zenoh_queryable_t*)context;
+    if (!qbl || !qbl->callback) {
+        return;
+    }
+
+    // Allocate the wrapper that will outlive the C closure scope.
+    zenoh_query_t* q = (zenoh_query_t*)malloc(sizeof(zenoh_query_t));
+    if (!q) {
+        return;
+    }
+
+    if (z_query_clone(&q->query, query) < 0) {
+        free(q);
+        return;
+    }
+
+    // Extract keyexpr as a null-terminated string.
+    const z_loaned_keyexpr_t* keyexpr = z_query_keyexpr(query);
+    z_view_string_t keyexpr_str;
+    z_keyexpr_as_view_string(keyexpr, &keyexpr_str);
+    const char* ke_cstr = z_string_data(z_loan(keyexpr_str));
+
+    // Extract payload (may be NULL).
+    const z_loaned_bytes_t* payload_bytes = z_query_payload(query);
+    uint8_t* payload_data = NULL;
+    size_t payload_len = 0;
+    if (payload_bytes) {
+        payload_len = z_bytes_len(payload_bytes);
+        if (payload_len > 0) {
+            payload_data = (uint8_t*)malloc(payload_len);
+            if (!payload_data) {
+                z_drop(z_move(q->query));
+                free(q);
+                return;
+            }
+            z_bytes_reader_t reader = z_bytes_get_reader(payload_bytes);
+            z_bytes_reader_read(&reader, payload_data, payload_len);
+        }
+    }
+
+    // Extract attachment if present.
+    const z_loaned_bytes_t* attachment_bytes = z_query_attachment(query);
+    uint8_t* attachment_data = NULL;
+    size_t attachment_len = 0;
+    if (attachment_bytes) {
+        attachment_len = z_bytes_len(attachment_bytes);
+        if (attachment_len > 0) {
+            attachment_data = (uint8_t*)malloc(attachment_len);
+            if (!attachment_data) {
+                attachment_len = 0;
+            } else {
+                z_bytes_reader_t att_reader = z_bytes_get_reader(attachment_bytes);
+                z_bytes_reader_read(&att_reader, attachment_data, attachment_len);
+            }
+        }
+    }
+
+    // Hand off ownership of `q` to Swift. Swift must call zenoh_query_reply or
+    // zenoh_query_reply_err to consume it; otherwise the bridge frees it on
+    // queryable undeclare via the closure drop_fn.
+    qbl->callback(q, ke_cstr, payload_data, payload_len,
+                  attachment_data, attachment_len, qbl->context);
+
+    if (payload_data) free(payload_data);
+    if (attachment_data) free(attachment_data);
+}
+
+zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
+                                       const char* keyexpr_str,
+                                       zenoh_queryable_callback_t callback,
+                                       void* context,
+                                       zenoh_queryable_t** out_queryable) {
+    if (!session || !keyexpr_str || !callback || !out_queryable) {
+        return -1;
+    }
+
+    zenoh_queryable_t* qbl = (zenoh_queryable_t*)malloc(sizeof(zenoh_queryable_t));
+    if (!qbl) {
+        return -1;
+    }
+
+    qbl->callback = callback;
+    qbl->context = context;
+
+    // Create a view keyexpr from the string.
+    z_view_keyexpr_t view_ke;
+    if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        free(qbl);
+        return -1;
+    }
+
+    // Build the closure with our static handler.
+    z_owned_closure_query_t closure;
+    z_closure(&closure, zenoh_query_handler, NULL, qbl);
+
+    z_queryable_options_t options;
+    z_queryable_options_default(&options);
+
+    if (z_declare_queryable(z_loan(session->session), &qbl->queryable,
+                            z_loan(view_ke), z_move(closure), &options) < 0) {
+        free(qbl);
+        return -1;
+    }
+
+    *out_queryable = qbl;
+    return 0;
+}
+
+zenoh_result_t zenoh_undeclare_queryable(zenoh_session_t* session,
+                                         zenoh_queryable_t** queryable) {
+    if (!session || !queryable || !*queryable) {
+        return -1;
+    }
+
+    zenoh_queryable_t* qbl = *queryable;
+
+    z_undeclare_queryable(z_move(qbl->queryable));
+
+    free(qbl);
+    *queryable = NULL;
+
+    return 0;
+}
+
+zenoh_result_t zenoh_query_reply(zenoh_query_t* query,
+                                 const uint8_t* payload,
+                                 size_t payload_len,
+                                 const uint8_t* attachment,
+                                 size_t attachment_len) {
+    if (!query) {
+        return -1;
+    }
+
+    z_owned_bytes_t payload_bytes;
+    if (z_bytes_from_buf(&payload_bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
+        // Drop the query on error so the caller does not double-free.
+        z_drop(z_move(query->query));
+        free(query);
+        return -1;
+    }
+
+    z_query_reply_options_t options;
+    z_query_reply_options_default(&options);
+
+    z_owned_bytes_t attachment_bytes;
+    if (attachment && attachment_len > 0) {
+        if (z_bytes_from_buf(&attachment_bytes, (uint8_t*)attachment, attachment_len, NULL, NULL) < 0) {
+            z_drop(z_move(payload_bytes));
+            z_drop(z_move(query->query));
+            free(query);
+            return -1;
+        }
+        options.attachment = z_move(attachment_bytes);
+    }
+
+    const z_loaned_query_t* loaned = z_loan(query->query);
+    const z_loaned_keyexpr_t* keyexpr = z_query_keyexpr(loaned);
+    int result = z_query_reply(loaned, keyexpr, z_move(payload_bytes), &options);
+
+    z_drop(z_move(query->query));
+    free(query);
+
+    return (zenoh_result_t)result;
+}
+
+zenoh_result_t zenoh_query_reply_err(zenoh_query_t* query,
+                                     const char* message_utf8,
+                                     size_t len) {
+    if (!query) {
+        return -1;
+    }
+
+    z_owned_bytes_t payload_bytes;
+    if (z_bytes_from_buf(&payload_bytes, (uint8_t*)message_utf8, len, NULL, NULL) < 0) {
+        z_drop(z_move(query->query));
+        free(query);
+        return -1;
+    }
+
+    z_query_reply_err_options_t options;
+    z_query_reply_err_options_default(&options);
+
+    const z_loaned_query_t* loaned = z_loan(query->query);
+    int result = z_query_reply_err(loaned, z_move(payload_bytes), &options);
+
+    z_drop(z_move(query->query));
+    free(query);
+
+    return (zenoh_result_t)result;
+}
+
+// ============================================================================
+// Get (Service Client side)
+// ============================================================================
+
+// Per-reply handler that translates a loaned reply into the user callback.
+static void zenoh_get_reply_handler(z_loaned_reply_t* reply, void* context) {
+    zenoh_get_callback_state_t* state = (zenoh_get_callback_state_t*)context;
+    if (!state || !state->reply_callback) {
+        return;
+    }
+
+    bool is_error = !z_reply_is_ok(reply);
+    const z_loaned_bytes_t* payload_bytes = NULL;
+    const z_loaned_bytes_t* attachment_bytes = NULL;
+    const z_loaned_keyexpr_t* keyexpr = NULL;
+
+    if (is_error) {
+        const z_loaned_reply_err_t* err = z_reply_err(reply);
+        if (err) {
+            payload_bytes = z_reply_err_payload(err);
+        }
+    } else {
+        const z_loaned_sample_t* sample = z_reply_ok(reply);
+        if (sample) {
+            keyexpr = z_sample_keyexpr(sample);
+            payload_bytes = z_sample_payload(sample);
+            attachment_bytes = z_sample_attachment(sample);
+        }
+    }
+
+    // Marshal keyexpr.
+    const char* ke_cstr = "";
+    z_view_string_t keyexpr_str;
+    if (keyexpr) {
+        z_keyexpr_as_view_string(keyexpr, &keyexpr_str);
+        ke_cstr = z_string_data(z_loan(keyexpr_str));
+    }
+
+    // Marshal payload.
+    uint8_t* payload_data = NULL;
+    size_t payload_len = 0;
+    if (payload_bytes) {
+        payload_len = z_bytes_len(payload_bytes);
+        if (payload_len > 0) {
+            payload_data = (uint8_t*)malloc(payload_len);
+            if (!payload_data) {
+                payload_len = 0;
+            } else {
+                z_bytes_reader_t reader = z_bytes_get_reader(payload_bytes);
+                z_bytes_reader_read(&reader, payload_data, payload_len);
+            }
+        }
+    }
+
+    // Marshal attachment.
+    uint8_t* attachment_data = NULL;
+    size_t attachment_len = 0;
+    if (attachment_bytes) {
+        attachment_len = z_bytes_len(attachment_bytes);
+        if (attachment_len > 0) {
+            attachment_data = (uint8_t*)malloc(attachment_len);
+            if (!attachment_data) {
+                attachment_len = 0;
+            } else {
+                z_bytes_reader_t att_reader = z_bytes_get_reader(attachment_bytes);
+                z_bytes_reader_read(&att_reader, attachment_data, attachment_len);
+            }
+        }
+    }
+
+    state->reply_callback(ke_cstr, payload_data, payload_len,
+                          attachment_data, attachment_len, is_error,
+                          state->context);
+
+    if (payload_data) free(payload_data);
+    if (attachment_data) free(attachment_data);
+}
+
+// Drop handler invoked once when the reply closure is dropped (after the
+// final reply or the timeout). Frees the heap-allocated state.
+static void zenoh_get_finish_handler(void* context) {
+    zenoh_get_callback_state_t* state = (zenoh_get_callback_state_t*)context;
+    if (!state) {
+        return;
+    }
+    if (state->finish_callback) {
+        state->finish_callback(state->context);
+    }
+    free(state);
+}
+
+zenoh_result_t zenoh_get(zenoh_session_t* session,
+                         const char* keyexpr_str,
+                         const uint8_t* payload,
+                         size_t payload_len,
+                         const uint8_t* attachment,
+                         size_t attachment_len,
+                         uint32_t timeout_ms,
+                         zenoh_get_reply_callback_t reply_callback,
+                         zenoh_get_finish_callback_t finish_callback,
+                         void* context) {
+    if (!session || !keyexpr_str || !reply_callback) {
+        return -1;
+    }
+
+    if (z_session_is_closed(z_loan(session->session))) {
+        return ZENOH_ERROR_SESSION_CLOSED;
+    }
+
+    z_view_keyexpr_t view_ke;
+    if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        return -1;
+    }
+
+    zenoh_get_callback_state_t* state = (zenoh_get_callback_state_t*)malloc(sizeof(zenoh_get_callback_state_t));
+    if (!state) {
+        return -1;
+    }
+    state->reply_callback = reply_callback;
+    state->finish_callback = finish_callback;
+    state->context = context;
+
+    z_get_options_t options;
+    z_get_options_default(&options);
+    if (timeout_ms > 0) {
+        options.timeout_ms = (uint64_t)timeout_ms;
+    }
+
+    z_owned_bytes_t payload_bytes;
+    bool payload_built = false;
+    if (payload && payload_len > 0) {
+        if (z_bytes_from_buf(&payload_bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
+            free(state);
+            return -1;
+        }
+        options.payload = z_move(payload_bytes);
+        payload_built = true;
+    }
+
+    z_owned_bytes_t attachment_bytes;
+    if (attachment && attachment_len > 0) {
+        if (z_bytes_from_buf(&attachment_bytes, (uint8_t*)attachment, attachment_len, NULL, NULL) < 0) {
+            if (payload_built) {
+                z_drop(z_move(payload_bytes));
+            }
+            free(state);
+            return -1;
+        }
+        options.attachment = z_move(attachment_bytes);
+    }
+
+    z_owned_closure_reply_t closure;
+    z_closure(&closure, zenoh_get_reply_handler, zenoh_get_finish_handler, state);
+
+    int result = z_get(z_loan(session->session), z_loan(view_ke), "",
+                       z_move(closure), &options);
+
+    if (result < 0) {
+        // The closure drop handler already frees `state` even on z_get failure
+        // (zenoh-pico drops the moved closure when it cannot accept it). Do
+        // not double-free here.
+        return (zenoh_result_t)result;
+    }
 
     return 0;
 }

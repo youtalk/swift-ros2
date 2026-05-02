@@ -129,22 +129,22 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         deliver(toTopic: topic, data: wire, timestamp: timestamp)
     }
 
-    /// Wait up to `timeout` for the next `writeRawCDR` to land on `topic`,
-    /// then return its bytes. Resumes eagerly the moment a write arrives —
-    /// `writeRawCDR` resumes any pending waiter — so the test does not pay
-    /// the latency of a poll tick. Returns `nil` only if the timeout
-    /// elapsed without any new write.
+    /// Wait up to `timeout` for a `writeRawCDR` on `topic`. If one has
+    /// already landed by the time this is called, it is returned immediately;
+    /// otherwise the call suspends until the next write arrives or the
+    /// timeout elapses. `writeRawCDR` resumes any pending waiter eagerly, so
+    /// there is no poll latency. Returns `nil` only if the timeout elapsed
+    /// without any write to `topic`.
+    ///
+    /// Tests call this at most once per topic, so "latest write or wait for
+    /// first" semantics match the intent. A baseline-vs-count scheme races
+    /// with eagerly-scheduled writer tasks (the writer can land on another
+    /// thread before the baseline is captured, leaving the waiter blocked
+    /// forever) — see PR fixing the x86_64 jazzy CI flake.
     func awaitWrite(topic: String, timeout: Duration) async throws -> Data? {
-        let initialCount = countWrites(topic: topic)
-
-        // Race a "next-write" continuation against a timeout sleep. Whichever
-        // wins first cancels the other. `waitForNextWrite` takes the baseline
-        // under-lock so a `writeRawCDR` racing with the registration is not
-        // lost. After the race, any still-registered waiter is drained so the
-        // cancelled wait task does not leak its CheckedContinuation.
         return await withTaskGroup(of: Bool.self) { group in
             group.addTask {
-                await self.waitForNextWrite(topic: topic, baseline: initialCount)
+                await self.waitUntilWriteExists(topic: topic)
                 return true
             }
             group.addTask {
@@ -158,18 +158,17 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
             group.cancelAll()
             self.flushWriteWaiters(topic: topic)
             await group.waitForAll()
-            return self.lastWriteAfter(topic: topic, baseline: initialCount)
+            return self.lastWritten(topic: topic)
         }
     }
 
-    /// Suspend until a write past `baseline` has been recorded for `topic`.
-    /// The check + registration happen under `lock`, so a write that lands
+    /// Suspend until at least one write to `topic` has been recorded. The
+    /// check + registration happen under `lock`, so a write that lands
     /// concurrently with the call cannot slip past us.
-    private func waitForNextWrite(topic: String, baseline: Int) async {
+    private func waitUntilWriteExists(topic: String) async {
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             lock.lock()
-            let current = writes.reduce(into: 0) { acc, w in if w.topic == topic { acc += 1 } }
-            if current > baseline {
+            if writes.contains(where: { $0.topic == topic }) {
                 lock.unlock()
                 cont.resume()
                 return
@@ -211,22 +210,6 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         defer { lock.unlock() }
         guard let mock = writer as? MockDDSWriterHandle else { return false }
         return matchedTopics.contains(mock.topic)
-    }
-
-    // MARK: - private helpers
-
-    private func countWrites(topic: String) -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return writes.reduce(into: 0) { acc, w in if w.topic == topic { acc += 1 } }
-    }
-
-    private func lastWriteAfter(topic: String, baseline: Int) -> Data? {
-        lock.lock()
-        defer { lock.unlock() }
-        let matching = writes.filter { $0.topic == topic }
-        guard matching.count > baseline else { return nil }
-        return matching.last?.data
     }
 }
 

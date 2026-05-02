@@ -31,14 +31,10 @@ final class DDSServiceTransportTests: XCTestCase {
 
         try await client.deliverToReader(topic: "rq/echoRequest", wire: wire, timestamp: 1_000)
 
-        // Generous timeout: the server spawns a `Task` to run the user
-        // handler asynchronously, then writes the reply. On heavily-loaded
-        // CI runners (notably Linux aarch64 under `swift test --parallel`,
-        // running alongside the integration tests' real-DDS work) the
-        // cooperative scheduler has been observed to take >10 s to dispatch
-        // that Task. 30 s leaves comfortable headroom; `awaitWrite` itself
-        // returns the moment the write lands.
-        let written = try await client.awaitWrite(topic: "rr/echoReply", timeout: .seconds(30))
+        // The server runs the handler on a `Task.detached` so the reply may
+        // already have landed by the time we ask for it; `awaitWrite` returns
+        // immediately if so, otherwise suspends until the write arrives.
+        let written = try await client.awaitWrite(topic: "rr/echoReply", timeout: .seconds(5))
         let writtenBytes = try XCTUnwrap(written)
 
         XCTAssertEqual(received.value, userCDR)
@@ -65,9 +61,9 @@ final class DDSServiceTransportTests: XCTestCase {
         client.markPublicationsMatched(topic: "rq/echoRequest")
 
         let userRequest = Data([0x00, 0x01, 0x00, 0x00, 0xDE])
-        async let response: Data = svc.call(requestCDR: userRequest, timeout: .seconds(30))
+        async let response: Data = svc.call(requestCDR: userRequest, timeout: .seconds(5))
 
-        let writtenWire = try await client.awaitWrite(topic: "rq/echoRequest", timeout: .seconds(30))
+        let writtenWire = try await client.awaitWrite(topic: "rq/echoRequest", timeout: .seconds(5))
         let bytes = try XCTUnwrap(writtenWire)
         let (id, parsedReq) = try SampleIdentityPrefix.decode(wirePayload: bytes)
         XCTAssertEqual(parsedReq, userRequest)

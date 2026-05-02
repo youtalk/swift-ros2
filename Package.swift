@@ -281,19 +281,26 @@ if canBuildDDS {
     }()
 
     // CDDSBridge consumes `<dds/...>` headers via `#include` and links
-    // `ddsc` (the link directive lives in CCycloneDDS's modulemap). On
-    // Linux those flags come from pkg-config; on Apple they come from
-    // the xcframework. On Windows there is no automatic injection, so
-    // the manifest threads `-I<vcpkg>/include` and `-L<vcpkg>/lib`
-    // through `cSettings` / `linkerSettings` keyed off `CYCLONEDDS_DIR`.
-    // The unsafeFlags are gated on `isWindowsBuild` at manifest scope
-    // so non-Windows targets see no unsafe flags — that keeps the
-    // package consumable as an external SPM dependency on Apple/Linux.
+    // `ddsc`. On Linux those flags come from pkg-config; on Apple they
+    // come from the xcframework. On Windows the manifest threads
+    // `-I<vcpkg>/include` + `-L<vcpkg>/lib` through `cSettings` /
+    // `linkerSettings` keyed off `CYCLONEDDS_DIR`, plus an explicit
+    // `.linkedLibrary("ddsc")` (the modulemap's `link "ddsc"` directive
+    // only fires when something does `import CCycloneDDS` from Swift,
+    // and nobody in this package does — CDDSBridge reaches CycloneDDS
+    // through plain `#include`). The unsafeFlags are gated on
+    // `isWindowsBuild` at manifest scope so non-Windows targets see no
+    // unsafe flags — that keeps the package consumable as an external
+    // SPM dependency on Apple/Linux.
     var ddsBridgeCSettings: [CSetting] = [.define("DDS_AVAILABLE", to: "1")]
     var ddsBridgeLinkerSettings: [LinkerSetting] = []
     if isWindowsBuild, let dir = windowsCycloneDDSDir {
-        ddsBridgeCSettings.append(.unsafeFlags(["-I", "\(dir)/include"]))
-        ddsBridgeLinkerSettings.append(.unsafeFlags(["-L\(dir)/lib"]))
+        // Forward-slash the path so clang on Windows sees uniform
+        // separators regardless of how `CYCLONEDDS_DIR` was exported.
+        let normalizedDir = dir.replacingOccurrences(of: "\\", with: "/")
+        ddsBridgeCSettings.append(.unsafeFlags(["-I\(normalizedDir)/include"]))
+        ddsBridgeLinkerSettings.append(.unsafeFlags(["-L\(normalizedDir)/lib"]))
+        ddsBridgeLinkerSettings.append(.linkedLibrary("ddsc"))
     }
 
     products.append(contentsOf: [

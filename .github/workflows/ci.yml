@@ -221,19 +221,22 @@ jobs:
         shell: bash
         run: |
           "$VCPKG_INSTALLATION_ROOT/vcpkg.exe" install cyclonedds:x64-windows
-          CYCLONEDDS_PREFIX="$VCPKG_INSTALLATION_ROOT/installed/x64-windows"
+          # Forward-slash the path so the value Package.swift reads is
+          # uniform regardless of how Windows runners hand off env vars
+          # to bash. Backslashes survive `>> $GITHUB_ENV`, mixed
+          # separators trip up some tools.
+          CYCLONEDDS_PREFIX="${VCPKG_INSTALLATION_ROOT//\\//}/installed/x64-windows"
           echo "CYCLONEDDS_DIR=$CYCLONEDDS_PREFIX" >> "$GITHUB_ENV"
-          # Forward-slash path so $GITHUB_PATH appends cleanly on the
-          # bash runner; Windows accepts either separator at lookup time.
           echo "$CYCLONEDDS_PREFIX/bin" >> "$GITHUB_PATH"
       - name: Verify CycloneDDS install
         shell: bash
         run: |
+          echo "CYCLONEDDS_DIR=$CYCLONEDDS_DIR"
           ls "$CYCLONEDDS_DIR/include/dds/dds.h"
           ls "$CYCLONEDDS_DIR/lib/ddsc.lib"
           ls "$CYCLONEDDS_DIR/bin/ddsc.dll"
       - name: Build
-        run: swift build
+        run: swift build -v
       - name: Test
         run: swift test --parallel
 

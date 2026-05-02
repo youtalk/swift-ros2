@@ -28,6 +28,11 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     // Publication-match override (per topic). Used to drive `waitForService`.
     private var matchedTopics: Set<String> = []
 
+    // Pending `awaitWrite` callers waiting for the next write to a topic.
+    // Resumed eagerly from `writeRawCDR` so the test does not have to wait
+    // for the next 5 ms poll tick.
+    private var writeWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+
     func createSession(domainId: Int32, discoveryConfig: DDSBridgeDiscoveryConfig) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -68,11 +73,16 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     }
 
     func writeRawCDR(writer: any DDSWriterHandle, data: Data, timestamp: UInt64) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        if let e = writeShouldThrow { throw e }
-        let topic = (writer as? MockDDSWriterHandle)?.topic ?? "<unknown>"
-        writes.append((topic, data, timestamp))
+        let waitersToWake: [CheckedContinuation<Void, Never>]
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            if let e = writeShouldThrow { throw e }
+            let topic = (writer as? MockDDSWriterHandle)?.topic ?? "<unknown>"
+            writes.append((topic, data, timestamp))
+            waitersToWake = writeWaiters.removeValue(forKey: topic) ?? []
+        }
+        for waiter in waitersToWake { waiter.resume() }
     }
 
     func destroyWriter(_ writer: any DDSWriterHandle) {
@@ -120,19 +130,65 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     }
 
     /// Wait up to `timeout` for the next `writeRawCDR` to land on `topic`,
-    /// then return its bytes. Polls a short interval (5ms) so tests stay
-    /// responsive without hot-spinning. Returns `nil` only if the timeout
+    /// then return its bytes. Resumes eagerly the moment a write arrives —
+    /// `writeRawCDR` resumes any pending waiter — so the test does not pay
+    /// the latency of a poll tick. Returns `nil` only if the timeout
     /// elapsed without any new write.
     func awaitWrite(topic: String, timeout: Duration) async throws -> Data? {
         let initialCount = countWrites(topic: topic)
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
-            if let bytes = lastWriteAfter(topic: topic, baseline: initialCount) {
-                return bytes
+
+        // Race a "next-write" continuation against a timeout sleep. Whichever
+        // wins first cancels the other. `waitForNextWrite` takes the baseline
+        // under-lock so a `writeRawCDR` racing with the registration is not
+        // lost. After the race, any still-registered waiter is drained so the
+        // cancelled wait task does not leak its CheckedContinuation.
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await self.waitForNextWrite(topic: topic, baseline: initialCount)
+                return true
             }
-            try await Task.sleep(nanoseconds: 5_000_000)
+            group.addTask {
+                // Cancellation = the write came first. Swallow & exit.
+                do {
+                    try await Task.sleep(for: timeout)
+                } catch {}
+                return false
+            }
+            let _ = await group.next()
+            group.cancelAll()
+            self.flushWriteWaiters(topic: topic)
+            await group.waitForAll()
+            return self.lastWriteAfter(topic: topic, baseline: initialCount)
         }
-        return lastWriteAfter(topic: topic, baseline: initialCount)
+    }
+
+    /// Suspend until a write past `baseline` has been recorded for `topic`.
+    /// The check + registration happen under `lock`, so a write that lands
+    /// concurrently with the call cannot slip past us.
+    private func waitForNextWrite(topic: String, baseline: Int) async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            let current = writes.reduce(into: 0) { acc, w in if w.topic == topic { acc += 1 } }
+            if current > baseline {
+                lock.unlock()
+                cont.resume()
+                return
+            }
+            writeWaiters[topic, default: []].append(cont)
+            lock.unlock()
+        }
+    }
+
+    /// Resume any waiters registered for `topic` without recording a write —
+    /// used to drain stale continuations after a timeout cancels the wait.
+    private func flushWriteWaiters(topic: String) {
+        let drained: [CheckedContinuation<Void, Never>]
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            drained = writeWaiters.removeValue(forKey: topic) ?? []
+        }
+        for waiter in drained { waiter.resume() }
     }
 
     /// Last write recorded on `topic`, or `nil` if no writes happened.

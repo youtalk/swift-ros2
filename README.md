@@ -29,6 +29,7 @@ Bringing ROS 2 to a phone, headset, or laptop usually means cross-compiling `rcl
 - **Source build everywhere else.** Linux, Windows, and Android compile `zenoh-pico` from `vendor/` via SwiftPM directly, each picking the matching backend (`unix` / `windows`). CycloneDDS comes from `pkg-config` on Linux. No vendored prebuilts needed.
 - **Multi-distro wire format.** Humble, Jazzy, Kilted, Rolling. Select via `ROS2Distro` on `ROS2Context`; Zenoh defaults to Jazzy when unspecified. Schema differences (e.g. `sensor_msgs/Range` gaining `variance` after Humble) are gated automatically through `isLegacySchema`.
 - **23 built-in message types** spanning `sensor_msgs`, `geometry_msgs`, `std_msgs`, `audio_common_msgs`, and `tf2_msgs`. Pure-Swift XCDR v1 encoder + decoder cover both the publish and subscribe paths.
+- **Services** (Server / Client) — `rclcpp` / `rclpy`-shaped API with full Humble / Jazzy / Kilted / Rolling reach over Zenoh and DDS.
 - **Production-proven.** Extracted from [Conduit, powered by ROS](https://apps.apple.com/app/id6757171237) — used cumulatively by **10,000+ ROS developers worldwide** and a former **#4 in the App Store's Developer Tools category**. Conduit streams 12 sensor topics from iOS / iPadOS / macOS / visionOS at up to 100 Hz over the same swift-ros2 publish path documented below.
 
 ## Platforms
@@ -188,6 +189,25 @@ for await msg in sub.messages {
     print("accel: \(msg.linearAcceleration)")
 }
 ```
+
+### Services (Server / Client)
+
+`ROS2Service<S>` and `ROS2Client<S>` round-trip a typed request / response over either transport — the same code path works against `rmw_zenoh_cpp` (Zenoh queryables) and `rmw_cyclonedds_cpp` (DDS rq/rr topics). Built-in `std_srvs/srv/Trigger` is the smallest demo:
+
+```swift
+// Server — replies "ok" to every Trigger request.
+let svc = try await node.createService(TriggerSrv.self, name: "/trigger") { _ in
+    TriggerSrv.Response(success: true, message: "ok")
+}
+
+// Client — calls the service and prints the result.
+let cli = try await node.createClient(TriggerSrv.self, name: "/trigger")
+try await cli.waitForService(timeout: .seconds(5))
+let resp = try await cli.call(.init(), timeout: .seconds(5))
+print(resp.success, resp.message)
+```
+
+Failures (timeout, remote handler error, encoding / decoding) surface as `ServiceError` — pattern-match on `.timeout(_)`, `.handlerFailed(_)`, `.serviceUnavailable(_)`, `.taskCancelled`, etc.
 
 ### Runnable examples
 

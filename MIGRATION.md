@@ -4,7 +4,8 @@
 
 | From | To | Breaking changes |
 |---|---|---|
-| 0.6.x | 0.7.x | **None.** The 0.7.x line preserves the 0.6.x public API. |
+| 0.6.0 | 0.6.1 | **One:** the placeholder `ROS2Service` protocol in `SwiftROS2Messages` was renamed to `ROS2ServiceType` so the umbrella's typed Service Server class can take the simpler `ROS2Service<S>` name in 0.7.0. |
+| 0.6.x | 0.7.x | **One** if upgrading from 0.6.0 directly: the rename above. From 0.6.1 → 0.7.x there are no breaking changes — the Services API is purely additive. |
 | 0.7.x | 1.0.0 | Limited to the candidates below, decided after 0.7.0 ships based on a downstream survey. |
 | 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
 
@@ -12,15 +13,32 @@ SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) onc
 
 ---
 
-## 0.x → 0.7 — no breaking changes
+## 0.6.0 → 0.6.1 / 0.7.0 — `ROS2Service` placeholder rename
+
+The 0.6.0 line shipped a placeholder protocol named `ROS2Service` in `SwiftROS2Messages` (with no implementation). To make room for the typed Service Server class `ROS2Service<S>` in `SwiftROS2`, that placeholder was renamed to `ROS2ServiceType` in 0.6.1.
+
+If your code conformed to the old name:
+
+```swift
+// before (0.6.0)
+public enum MySrv: ROS2Service { ... }
+
+// after (0.6.1+)
+public enum MySrv: ROS2ServiceType { ... }
+```
+
+The shape of the protocol is unchanged — same `Request` / `Response` associated types, same `static var typeInfo: ROS2ServiceTypeInfo` requirement. The only thing that moved is the name. Conduit's `BuiltinServices/StdSrvs/Trigger.swift` was already on the new name; downstreams that referenced the placeholder need this one-line rename.
+
+## 0.x → 0.7 — no breaking changes (other than the rename above)
 
 0.7.x adds:
+- **Services** (typed `ROS2Service<S>` / `ROS2Client<S>` over both Zenoh and DDS), `ServiceError`, `ROS2Node.createService` / `createClient`. New, additive — no existing API renamed or removed.
 - DocC catalog and richer `///` comments.
 - Per-target line-coverage gate in CI.
 - `swift package diagnose-api-breaking-changes` on every PR.
-- Internal refactors of the transport sessions.
+- Internal refactors of the transport sessions (now also walk service servers / clients in `close()`).
 
-No public type, function, protocol, or property is renamed, removed, or made `internal`.
+No public type, function, protocol, or property already shipping in 0.6.1 is renamed, removed, or made `internal` in 0.7.x.
 
 ---
 
@@ -93,15 +111,17 @@ No public type, function, protocol, or property is renamed, removed, or made `in
 - **Recommended action:** drop direct references.
 - **Compatibility shim?** None planned.
 
-### Candidate 7 — Service / Action public declarations with no implementation
+### Candidate 7 — Action public declarations with no implementation
 
-- **Targets:** `ROS2ServiceTypeInfo`, `ROS2ActionTypeInfo`, `ROS2Service`, `ROS2Action` in `SwiftROS2Messages`.
+- **Targets:** `ROS2ActionTypeInfo`, `ROS2Action` in `SwiftROS2Messages`.
 - **1.0 plan:** remove (or make `internal`).
-- **Rationale:** placeholders with no implementation. Freezing them would constrain the eventual Service / Action API design.
+- **Rationale:** placeholders with no implementation. Freezing them would constrain the eventual Action API design.
 - **Replacement:** none (the feature is not provided today).
 - **Impact surface:** code that names these types or conforms to them.
 - **Recommended action:** remove any references — they do not do anything yet.
 - **Compatibility shim?** None.
+
+> **Note:** the analogous Service placeholders (`ROS2ServiceTypeInfo`, `ROS2ServiceType`) were retained in 0.7.0 once the typed `ROS2Service<S>` / `ROS2Client<S>` umbrella landed — they are now real, implemented protocols, not placeholders.
 
 ---
 

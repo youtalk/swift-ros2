@@ -315,6 +315,21 @@ if !isWindowsBuild && !isAndroidBuild {
     ])
 }
 
+// Only pull in swift-docc-plugin when actually building documentation
+// (env var `SWIFT_ROS2_DOCS_BUILD=1`). On Swift < 6.1, having the plugin
+// active during `swift package diagnose-api-breaking-changes` clobbers
+// the symbol-graph emission that the diagnose tool relies on, so every
+// type reads as "removed" even when nothing changed. Gating the dep
+// keeps `swift build`, `swift test`, and `diagnose-api-breaking-changes`
+// unaffected; the docs-build CI job and the local docs script set the
+// env var explicitly.
+let isDocsBuild = ProcessInfo.processInfo.environment["SWIFT_ROS2_DOCS_BUILD"] == "1"
+
+let packageDependencies: [Package.Dependency] =
+    isDocsBuild
+    ? [.package(url: "https://github.com/apple/swift-docc-plugin", from: "1.3.0")]
+    : []
+
 let package = Package(
     name: "swift-ros2",
     platforms: [
@@ -324,5 +339,6 @@ let package = Package(
         .visionOS(.v1),
     ],
     products: products,
+    dependencies: packageDependencies,
     targets: targets
 )

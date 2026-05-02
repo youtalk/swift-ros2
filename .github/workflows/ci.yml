@@ -87,6 +87,23 @@ jobs:
       - name: Diagnose API breaking changes
         run: swift package diagnose-api-breaking-changes 0.6.1
 
+  docs-build:
+    name: DocC build
+    needs: [swift-format]
+    runs-on: macos-15
+    env:
+      SWIFT_ROS2_DOCS_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_16.2.app
+      - name: Generate DocC
+        run: swift package generate-documentation --target SwiftROS2
+      - name: Check DocC coverage
+        run: bash Scripts/check-docc-coverage.sh
+
   build-linux:
     name: Build & Test (Ubuntu ${{ matrix.ubuntu_version }} ${{ matrix.arch }} + ROS 2 ${{ matrix.ros_distro }})
     needs: [swift-format]

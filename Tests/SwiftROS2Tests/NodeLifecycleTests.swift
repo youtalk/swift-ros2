@@ -163,4 +163,39 @@ final class NodeLifecycleTests: XCTestCase {
             XCTAssertFalse(pub.isActive)
         }
     }
+
+    func testShutdownClosesAllServicesAndClients() async throws {
+        let session = MockTransportSession()
+        session.installEchoServiceTransport()
+        let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/m:7447"), session: session)
+        let node = try await ctx.createNode(name: "n", namespace: "/ns")
+
+        let service = try await node.createService(TriggerSrv.self, name: "trig") { _ in
+            TriggerSrv.Response(success: true, message: "ok")
+        }
+        let cli = try await node.createClient(TriggerSrv.self, name: "trig")
+        XCTAssertTrue(service.isActive)
+
+        await node.destroy()
+
+        XCTAssertFalse(service.isActive, "service should be closed after node.destroy()")
+        XCTAssertFalse(cli.isActive, "client should be closed after node.destroy()")
+    }
+
+    func testContextShutdownClosesServicesViaNodeDestroy() async throws {
+        let session = MockTransportSession()
+        session.installEchoServiceTransport()
+        let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/m:7447"), session: session)
+        let node = try await ctx.createNode(name: "n", namespace: "/ns")
+
+        let service = try await node.createService(TriggerSrv.self, name: "trig") { _ in
+            TriggerSrv.Response(success: true, message: "ok")
+        }
+        let cli = try await node.createClient(TriggerSrv.self, name: "trig")
+
+        await ctx.shutdown()
+
+        XCTAssertFalse(service.isActive, "service should be closed after ctx.shutdown()")
+        XCTAssertFalse(cli.isActive, "client should be closed after ctx.shutdown()")
+    }
 }

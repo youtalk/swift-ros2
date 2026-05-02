@@ -77,6 +77,10 @@ public enum ZenohError: Error, LocalizedError {
     case invalidParameter(String)
     case internalError(String)
     case sessionDisconnected(String)
+    /// Reply with `is_error == true` from a `get`. Carries the remote error
+    /// payload decoded as UTF-8 so the transport layer can surface it as a
+    /// `serviceHandlerFailed` without parsing prefixed strings.
+    case queryReplyError(String)
 
     public var errorDescription: String? {
         switch self {
@@ -89,6 +93,7 @@ public enum ZenohError: Error, LocalizedError {
         case .invalidParameter(let msg): return "Invalid parameter: \(msg)"
         case .internalError(let msg): return "Internal error: \(msg)"
         case .sessionDisconnected(let msg): return "Session disconnected: \(msg)"
+        case .queryReplyError(let msg): return "Query reply error: \(msg)"
         }
     }
 }

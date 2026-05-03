@@ -50,20 +50,70 @@ public struct ROS2ServiceTypeInfo: Sendable {
     }
 }
 
-/// Type information for a ROS 2 action
+/// Type information for a ROS 2 action.
+///
+/// Carries the action's user-level Goal / Result / Feedback hashes plus the
+/// synthesized wrapper hashes that actually travel on the wire
+/// (`<Action>_SendGoal_Request`, `<Action>_SendGoal_Response`,
+/// `<Action>_GetResult_Request`, `<Action>_GetResult_Response`,
+/// `<Action>_FeedbackMessage`). All hashes are optional — `nil` means
+/// `TypeHashNotSupported` on Jazzy or absent on Humble.
 public struct ROS2ActionTypeInfo: Sendable {
+    /// ROS format action name (e.g., "example_interfaces/action/Fibonacci")
     public let actionName: String
+
     public let goalTypeHash: String?
     public let resultTypeHash: String?
     public let feedbackTypeHash: String?
 
+    public let sendGoalRequestTypeHash: String?
+    public let sendGoalResponseTypeHash: String?
+    public let getResultRequestTypeHash: String?
+    public let getResultResponseTypeHash: String?
+    public let feedbackMessageTypeHash: String?
+
+    /// Legacy 3-hash initializer — kept for ABI/source compatibility with 0.6.x. Synthesized
+    /// wrapper hashes default to `nil`.
     public init(
-        actionName: String, goalTypeHash: String? = nil, resultTypeHash: String? = nil, feedbackTypeHash: String? = nil
+        actionName: String,
+        goalTypeHash: String? = nil,
+        resultTypeHash: String? = nil,
+        feedbackTypeHash: String? = nil
+    ) {
+        self.init(
+            actionName: actionName,
+            goalTypeHash: goalTypeHash,
+            resultTypeHash: resultTypeHash,
+            feedbackTypeHash: feedbackTypeHash,
+            sendGoalRequestTypeHash: nil,
+            sendGoalResponseTypeHash: nil,
+            getResultRequestTypeHash: nil,
+            getResultResponseTypeHash: nil,
+            feedbackMessageTypeHash: nil
+        )
+    }
+
+    /// Full initializer — supply any subset of hashes; unknown ones stay `nil`.
+    public init(
+        actionName: String,
+        goalTypeHash: String?,
+        resultTypeHash: String?,
+        feedbackTypeHash: String?,
+        sendGoalRequestTypeHash: String?,
+        sendGoalResponseTypeHash: String?,
+        getResultRequestTypeHash: String?,
+        getResultResponseTypeHash: String?,
+        feedbackMessageTypeHash: String?
     ) {
         self.actionName = actionName
         self.goalTypeHash = goalTypeHash
         self.resultTypeHash = resultTypeHash
         self.feedbackTypeHash = feedbackTypeHash
+        self.sendGoalRequestTypeHash = sendGoalRequestTypeHash
+        self.sendGoalResponseTypeHash = sendGoalResponseTypeHash
+        self.getResultRequestTypeHash = getResultRequestTypeHash
+        self.getResultResponseTypeHash = getResultResponseTypeHash
+        self.feedbackMessageTypeHash = feedbackMessageTypeHash
     }
 }
 

@@ -248,6 +248,15 @@ public final class CDRDecoder {
         return Data(result)
     }
 
+    /// Read a uint32 sequence length and reject values beyond ``maxSequenceElements``.
+    ///
+    /// Use this when decoding a sequence of complex elements where you walk each element
+    /// yourself (e.g., `[GoalInfo]`), so the same DoS guard applies as for the built-in
+    /// typed-sequence helpers.
+    public func readSequenceCount() throws -> Int {
+        try readBoundedSequenceCount()
+    }
+
     /// Read a uint32 sequence length and reject values beyond `maxSequenceElements`.
     /// Shared by all typed (non-byte) sequences so the cap applies uniformly.
     private func readBoundedSequenceCount() throws -> Int {

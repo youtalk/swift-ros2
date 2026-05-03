@@ -45,6 +45,38 @@ public struct Header: CDRCodable, Sendable, Equatable {
     }
 }
 
+// MARK: - builtin_interfaces/Time
+
+/// ROS 2 `builtin_interfaces/msg/Time` (spec-correct: `int32 sec`, `uint32 nanosec`).
+///
+/// Distinct from ``Header`` (which inlines `UInt32 sec` for legacy reasons).
+public struct BuiltinInterfacesTime: CDRCodable, Sendable, Equatable {
+    public var sec: Int32
+    public var nanosec: UInt32
+
+    public init(sec: Int32 = 0, nanosec: UInt32 = 0) {
+        self.sec = sec
+        self.nanosec = nanosec
+    }
+
+    public static func now() -> BuiltinInterfacesTime {
+        let ti = Date().timeIntervalSince1970
+        let s = Int32(ti)
+        let ns = UInt32((ti - Double(s)) * 1_000_000_000)
+        return BuiltinInterfacesTime(sec: s, nanosec: ns)
+    }
+
+    public func encode(to encoder: CDREncoder) throws {
+        encoder.writeInt32(sec)
+        encoder.writeUInt32(nanosec)
+    }
+
+    public init(from decoder: CDRDecoder) throws {
+        self.sec = try decoder.readInt32()
+        self.nanosec = try decoder.readUInt32()
+    }
+}
+
 // MARK: - geometry_msgs/Vector3
 
 /// A three-dimensional vector corresponding to `geometry_msgs/Vector3`.

@@ -227,7 +227,7 @@ var targets: [Target] = [
     // Pure-Swift and Zenoh-path tests (available on every platform)
     .testTarget(
         name: "SwiftROS2CDRTests",
-        dependencies: ["SwiftROS2CDR"],
+        dependencies: ["SwiftROS2CDR", "SwiftROS2Messages"],
         path: "Tests/SwiftROS2CDRTests"
     ),
     .testTarget(

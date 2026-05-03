@@ -1,0 +1,55 @@
+// Fibonacci.swift
+// example_interfaces/action/Fibonacci
+
+import SwiftROS2CDR
+
+/// ROS 2 `example_interfaces/action/Fibonacci` — canonical demo action.
+///
+/// Compute the Fibonacci sequence up to `order` numbers, streaming
+/// `partial_sequence` as feedback.
+public enum FibonacciAction: ROS2Action {
+    public static let typeInfo = ROS2ActionTypeInfo(
+        actionName: "example_interfaces/action/Fibonacci",
+        goalTypeHash: "RIHS01_226cb437e4355dcd3e914f930382a3b0cc1da81545bd319ed554e95a03255f51",
+        resultTypeHash: "RIHS01_fea81394f25aa4502217953f1a021fb750e79c10bbd43f13dd94632da6569649",
+        feedbackTypeHash: "RIHS01_2b12e37361da6f408d4c85bc24a18de64333f29082f2ca34b5ee33dc4c8b42a9",
+        sendGoalRequestTypeHash: "RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238",
+        sendGoalResponseTypeHash: "RIHS01_d8c07bb3d5b766fe4b43159c9a5222af5214e2fcc29229b991d826166c512be1",
+        getResultRequestTypeHash: "RIHS01_c8a4f5e7d13b81286ee1043e2ecd084281cecf1ff06aaa799464f5f15479f003",
+        getResultResponseTypeHash: "RIHS01_6021dc98ab9b4bbe395e48aa4de81ee5f68eb570f88358affcc648146668b24f",
+        feedbackMessageTypeHash: "RIHS01_c1de71afd52e49a89c53d8262366884185bc0a02f78ce051c4e46b0a7fe59bb2"
+    )
+
+    public struct Goal: CDRCodable, Sendable, Equatable {
+        public var order: Int32
+        public init(order: Int32 = 0) { self.order = order }
+        public func encode(to encoder: CDREncoder) throws {
+            encoder.writeInt32(order)
+        }
+        public init(from decoder: CDRDecoder) throws {
+            self.order = try decoder.readInt32()
+        }
+    }
+
+    public struct Result: CDRCodable, Sendable, Equatable {
+        public var sequence: [Int32]
+        public init(sequence: [Int32] = []) { self.sequence = sequence }
+        public func encode(to encoder: CDREncoder) throws {
+            encoder.writeInt32Sequence(sequence)
+        }
+        public init(from decoder: CDRDecoder) throws {
+            self.sequence = try decoder.readInt32Sequence()
+        }
+    }
+
+    public struct Feedback: CDRCodable, Sendable, Equatable {
+        public var partialSequence: [Int32]
+        public init(partialSequence: [Int32] = []) { self.partialSequence = partialSequence }
+        public func encode(to encoder: CDREncoder) throws {
+            encoder.writeInt32Sequence(partialSequence)
+        }
+        public init(from decoder: CDRDecoder) throws {
+            self.partialSequence = try decoder.readInt32Sequence()
+        }
+    }
+}

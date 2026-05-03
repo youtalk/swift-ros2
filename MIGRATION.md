@@ -6,7 +6,8 @@
 |---|---|---|
 | 0.6.0 | 0.6.1 | **One:** the placeholder `ROS2Service` protocol in `SwiftROS2Messages` was renamed to `ROS2ServiceType` so the umbrella's typed Service Server class can take the simpler `ROS2Service<S>` name in 0.7.0. |
 | 0.6.x | 0.7.x | **One** if upgrading from 0.6.0 directly: the rename above. From 0.6.1 → 0.7.x there are no breaking changes — the Services API is purely additive. |
-| 0.7.x | 1.0.0 | Limited to the candidates below, decided after 0.7.0 ships based on a downstream survey. |
+| 0.7.x | 0.8.0 | **None.** Actions are purely additive — `ROS2Action`, `ROS2ActionServer`, `ROS2ActionClient`, `ActionGoalHandle`, `ActionResult`, `ActionGoalStatus`, `ActionError` are new. `ROS2ActionTypeInfo` gained five optional hash fields with source-compatible defaults (Phase 1). |
+| 0.8.x | 1.0.0 | Limited to the candidates below, decided after 0.8.0 ships based on a downstream survey. |
 | 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
@@ -42,7 +43,44 @@ No public type, function, protocol, or property already shipping in 0.6.1 is ren
 
 ---
 
-## 0.7 → 1.0 — candidate change list
+## 0.7 → 0.8 — Actions
+
+0.8.0 ships the ROS 2 Actions umbrella — six PRs, every one of them additive. No existing public symbol was renamed, removed, or had its shape changed.
+
+### Adding action support to existing code
+
+If you have a Conduit-style app that already calls `node.createPublisher` / `createService`, the action surface follows the same pattern:
+
+```swift
+let server = try await node.createActionServer(
+    FibonacciAction.self,
+    name: "/fibonacci",
+    handler: MyHandler()  // an actor conforming to ActionServerHandler
+)
+
+let client = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
+try await client.waitForActionServer(timeout: .seconds(5))
+let handle = try await client.sendGoal(FibonacciAction.Goal(order: 10))
+let result = try await handle.result()
+```
+
+See the `Actions.md` DocC chapter for the full walk-through.
+
+### `ROS2ActionTypeInfo`
+
+The struct gained five optional `*TypeHash` fields for the synthesized wrapper messages. The existing 3-hash initializer is preserved unchanged; the new 8-hash initializer is a separate entry point. No callers need to change unless they want to opt into wire-correct synthesized hashes.
+
+### Per-role QoS
+
+`QoSProfile.actionDefault` is the new default for `createActionServer` / `createActionClient`. The transport layer applies a `transient_local / depth 1` override on the `_action/status` topic automatically.
+
+### Naming note: `ActionGoalStatus` vs `GoalStatus`
+
+The umbrella exposes ``ActionGoalStatus`` (an `Int8`-backed enum) for the status surface returned by `ActionResult` / `handle.statusUpdates`. The wire-level `GoalStatus` struct (the embedded CDR payload of `GoalStatusArray`) ships in `SwiftROS2Messages` and re-exports through the umbrella, so both names are visible — they are intentionally different shapes for different layers.
+
+---
+
+## 0.8 → 1.0 — candidate change list
 
 > **Status:** the actual 1.0 break list is decided **after 0.7.0 ships**, based on a downstream-consumer survey (Conduit and any other known users). Each candidate below describes what *might* change, why it is being considered, and the recommended action you can take during 0.7.x to avoid surprise.
 

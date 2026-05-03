@@ -70,4 +70,40 @@ final class ActionMsgsCDRTests: XCTestCase {
         XCTAssertEqual(GoalStatusCode.canceled.rawValue, 5)
         XCTAssertEqual(GoalStatusCode.aborted.rawValue, 6)
     }
+
+    func testGoalStatusArrayRoundTrip() throws {
+        let s1 = GoalStatus(
+            goalInfo: GoalInfo(
+                goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0x01, count: 16)),
+                stamp: BuiltinInterfacesTime(sec: 1, nanosec: 0)
+            ),
+            status: GoalStatusCode.accepted.rawValue
+        )
+        let s2 = GoalStatus(
+            goalInfo: GoalInfo(
+                goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0x02, count: 16)),
+                stamp: BuiltinInterfacesTime(sec: 2, nanosec: 0)
+            ),
+            status: GoalStatusCode.succeeded.rawValue
+        )
+        let original = GoalStatusArray(statusList: [s1, s2])
+        let enc = CDREncoder()
+        enc.writeEncapsulationHeader()
+        try original.encode(to: enc)
+        let dec = try CDRDecoder(data: enc.getData())
+        let decoded = try GoalStatusArray(from: dec)
+        XCTAssertEqual(decoded.statusList.count, 2)
+        XCTAssertEqual(decoded.statusList[0].status, GoalStatusCode.accepted.rawValue)
+        XCTAssertEqual(decoded.statusList[1].status, GoalStatusCode.succeeded.rawValue)
+    }
+
+    func testGoalStatusArrayEmpty() throws {
+        let original = GoalStatusArray(statusList: [])
+        let enc = CDREncoder()
+        enc.writeEncapsulationHeader()
+        try original.encode(to: enc)
+        let dec = try CDRDecoder(data: enc.getData())
+        let decoded = try GoalStatusArray(from: dec)
+        XCTAssertEqual(decoded.statusList.count, 0)
+    }
 }

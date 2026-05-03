@@ -4,12 +4,11 @@
 import SwiftROS2CDR
 
 /// ROS 2 `action_msgs/msg/GoalStatus`.
-public struct GoalStatus: ROS2Message, Sendable, Equatable {
-    public static let typeInfo = ROS2MessageTypeInfo(
-        typeName: "action_msgs/msg/GoalStatus",
-        typeHash: "RIHS01_32f4cfd717735d17657e1178f24431c1ce996c878c515230f6c5b3476819dbb9"
-    )
-
+///
+/// Nested CDR payload — embedded inside `GoalStatusArray` (the actual
+/// top-level wire message). Conforms to `CDRCodable` only so it cannot be
+/// advertised through `ROS2Publisher` directly. Same convention as `Header`.
+public struct GoalStatus: CDRCodable, Sendable, Equatable {
     public var goalInfo: GoalInfo
     public var status: Int8
 

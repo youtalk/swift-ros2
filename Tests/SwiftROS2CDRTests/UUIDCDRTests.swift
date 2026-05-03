@@ -35,8 +35,4 @@ final class UUIDCDRTests: XCTestCase {
         let m = UniqueIdentifierUUID(foundationUUID: f)
         XCTAssertEqual(m.foundationUUID, f)
     }
-
-    func testTypeInfo() {
-        XCTAssertEqual(UniqueIdentifierUUID.typeInfo.typeName, "unique_identifier_msgs/msg/UUID")
-    }
 }

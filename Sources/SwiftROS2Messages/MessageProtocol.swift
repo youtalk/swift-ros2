@@ -72,17 +72,38 @@ public struct ROS2ActionTypeInfo: Sendable {
     public let getResultResponseTypeHash: String?
     public let feedbackMessageTypeHash: String?
 
-    /// Full initializer — supply any subset of hashes; unknown ones stay `nil`.
+    /// Legacy 3-hash initializer — kept for ABI/source compatibility with 0.6.x. Synthesized
+    /// wrapper hashes default to `nil`.
     public init(
         actionName: String,
         goalTypeHash: String? = nil,
         resultTypeHash: String? = nil,
-        feedbackTypeHash: String? = nil,
-        sendGoalRequestTypeHash: String? = nil,
-        sendGoalResponseTypeHash: String? = nil,
-        getResultRequestTypeHash: String? = nil,
-        getResultResponseTypeHash: String? = nil,
-        feedbackMessageTypeHash: String? = nil
+        feedbackTypeHash: String? = nil
+    ) {
+        self.init(
+            actionName: actionName,
+            goalTypeHash: goalTypeHash,
+            resultTypeHash: resultTypeHash,
+            feedbackTypeHash: feedbackTypeHash,
+            sendGoalRequestTypeHash: nil,
+            sendGoalResponseTypeHash: nil,
+            getResultRequestTypeHash: nil,
+            getResultResponseTypeHash: nil,
+            feedbackMessageTypeHash: nil
+        )
+    }
+
+    /// Full initializer — supply any subset of hashes; unknown ones stay `nil`.
+    public init(
+        actionName: String,
+        goalTypeHash: String?,
+        resultTypeHash: String?,
+        feedbackTypeHash: String?,
+        sendGoalRequestTypeHash: String?,
+        sendGoalResponseTypeHash: String?,
+        getResultRequestTypeHash: String?,
+        getResultResponseTypeHash: String?,
+        feedbackMessageTypeHash: String?
     ) {
         self.actionName = actionName
         self.goalTypeHash = goalTypeHash

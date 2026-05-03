@@ -8,13 +8,17 @@ import SwiftROS2CDR
 ///
 /// Named `UniqueIdentifierUUID` to avoid clashing with ``Foundation/UUID``.
 /// Use ``foundationUUID`` to bridge.
-public struct UniqueIdentifierUUID: ROS2Message, Sendable, Equatable {
-    public static let typeInfo = ROS2MessageTypeInfo(
-        typeName: "unique_identifier_msgs/msg/UUID",
-        typeHash: "RIHS01_1b8e8aca958cbea28fe6ef60bf6c19b683c97a9ef60bb34752067d0f2f7ab437"
-    )
+///
+/// This is a nested CDR payload — it travels inside `GoalInfo` and the action
+/// wrapper messages, never as a standalone top-level topic. It deliberately
+/// does **not** conform to `ROS2Message` so that `ROS2Publisher` cannot
+/// accept it directly and emit invalid (header-less) CDR. Same convention as
+/// `Header` and `Vector3`.
+public struct UniqueIdentifierUUID: CDRCodable, Sendable, Equatable {
 
-    public var uuid: [UInt8]  // length is invariantly 16
+    /// 16 raw bytes. Settable only via the validating ``init(uuid:)`` /
+    /// ``init(foundationUUID:)``, which keep the 16-byte invariant.
+    public private(set) var uuid: [UInt8]
 
     public init(uuid: [UInt8] = Array(repeating: 0, count: 16)) {
         precondition(uuid.count == 16, "UniqueIdentifierUUID requires 16 bytes")

@@ -3,7 +3,8 @@
 
 import SwiftROS2CDR
 
-/// ROS 2 `action_msgs/msg/GoalStatusArray`.
+/// ROS 2 `action_msgs/msg/GoalStatusArray` — the top-level payload of every
+/// action's `_action/status` topic.
 public struct GoalStatusArray: ROS2Message, Sendable, Equatable {
     public static let typeInfo = ROS2MessageTypeInfo(
         typeName: "action_msgs/msg/GoalStatusArray",
@@ -17,6 +18,7 @@ public struct GoalStatusArray: ROS2Message, Sendable, Equatable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
+        encoder.writeEncapsulationHeader()
         encoder.writeUInt32(UInt32(statusList.count))
         for s in statusList {
             try s.encode(to: encoder)
@@ -24,9 +26,9 @@ public struct GoalStatusArray: ROS2Message, Sendable, Equatable {
     }
 
     public init(from decoder: CDRDecoder) throws {
-        let count = try decoder.readUInt32()
+        let count = try decoder.readSequenceCount()
         var out: [GoalStatus] = []
-        out.reserveCapacity(Int(count))
+        out.reserveCapacity(count)
         for _ in 0..<count {
             out.append(try GoalStatus(from: decoder))
         }

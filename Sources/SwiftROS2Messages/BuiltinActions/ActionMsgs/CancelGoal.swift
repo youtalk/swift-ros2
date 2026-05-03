@@ -60,9 +60,9 @@ public enum CancelGoalSrv: ROS2ServiceType {
 
         public init(from decoder: CDRDecoder) throws {
             self.returnCode = try decoder.readInt8()
-            let count = try decoder.readUInt32()
+            let count = try decoder.readSequenceCount()
             var out: [GoalInfo] = []
-            out.reserveCapacity(Int(count))
+            out.reserveCapacity(count)
             for _ in 0..<count {
                 out.append(try GoalInfo(from: decoder))
             }

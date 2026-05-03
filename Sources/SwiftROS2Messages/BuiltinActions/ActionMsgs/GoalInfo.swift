@@ -4,12 +4,12 @@
 import SwiftROS2CDR
 
 /// ROS 2 `action_msgs/msg/GoalInfo`.
-public struct GoalInfo: ROS2Message, Sendable, Equatable {
-    public static let typeInfo = ROS2MessageTypeInfo(
-        typeName: "action_msgs/msg/GoalInfo",
-        typeHash: "RIHS01_6398fe763154554353930716b225947f93b672f0fb2e49fdd01bb7a7e37933e9"
-    )
-
+///
+/// Nested CDR payload — embedded in `GoalStatus`, `GoalStatusArray`, and
+/// `CancelGoal` request/response. Not a standalone top-level topic, so it
+/// deliberately conforms to `CDRCodable` only and cannot be advertised
+/// through `ROS2Publisher`. Same convention as `Header` and `Vector3`.
+public struct GoalInfo: CDRCodable, Sendable, Equatable {
     public var goalId: UniqueIdentifierUUID
     public var stamp: BuiltinInterfacesTime
 

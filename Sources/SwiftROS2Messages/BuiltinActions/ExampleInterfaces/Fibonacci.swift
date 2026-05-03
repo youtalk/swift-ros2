@@ -38,13 +38,7 @@ public enum FibonacciAction: ROS2Action {
             encoder.writeInt32Sequence(sequence)
         }
         public init(from decoder: CDRDecoder) throws {
-            let n = try decoder.readUInt32()
-            var out: [Int32] = []
-            out.reserveCapacity(Int(n))
-            for _ in 0..<n {
-                out.append(try decoder.readInt32())
-            }
-            self.sequence = out
+            self.sequence = try decoder.readInt32Sequence()
         }
     }
 
@@ -55,13 +49,7 @@ public enum FibonacciAction: ROS2Action {
             encoder.writeInt32Sequence(partialSequence)
         }
         public init(from decoder: CDRDecoder) throws {
-            let n = try decoder.readUInt32()
-            var out: [Int32] = []
-            out.reserveCapacity(Int(n))
-            for _ in 0..<n {
-                out.append(try decoder.readInt32())
-            }
-            self.partialSequence = out
+            self.partialSequence = try decoder.readInt32Sequence()
         }
     }
 }

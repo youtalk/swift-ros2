@@ -87,8 +87,8 @@ final class ActionMsgsCDRTests: XCTestCase {
             status: GoalStatusCode.succeeded.rawValue
         )
         let original = GoalStatusArray(statusList: [s1, s2])
+        // GoalStatusArray is a top-level wire message; encode writes its own encapsulation header.
         let enc = CDREncoder()
-        enc.writeEncapsulationHeader()
         try original.encode(to: enc)
         let dec = try CDRDecoder(data: enc.getData())
         let decoded = try GoalStatusArray(from: dec)
@@ -100,7 +100,6 @@ final class ActionMsgsCDRTests: XCTestCase {
     func testGoalStatusArrayEmpty() throws {
         let original = GoalStatusArray(statusList: [])
         let enc = CDREncoder()
-        enc.writeEncapsulationHeader()
         try original.encode(to: enc)
         let dec = try CDRDecoder(data: enc.getData())
         let decoded = try GoalStatusArray(from: dec)

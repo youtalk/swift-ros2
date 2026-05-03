@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `TransportSession.createActionServer(...)` / `createActionClient(...)` requirements with `unsupportedFeature`-throwing default implementations so Phases 4 / 5 can land in either order.
   - `TransportError`: new `goalRejected`, `goalUnknown`, `actionServerUnavailable` cases.
   - 14 new transport-tests cover the actor's full state machine and the default-impl throws.
+- **ROS 2 Actions — DDS transport (phase 4 of 6, targeting 0.8.0).**
+  - `DDSTransportSession.createActionServer(...)` and `createActionClient(...)` overrides — full server / client over rmw_cyclonedds-style rq/rr/rt topics. Reuses the existing service-pair and pub/sub primitives; no new C-bridge surface.
+  - `DDSTransportActionServerImpl`: 3 service-pair handlers (`send_goal`, `cancel_goal`, `get_result`) + 2 publishers (`feedback`, `status`). Status topic uses `transient_local` depth 1 (matches rclcpp). `publishFeedback(goalId:feedbackCDR:)` and `publishStatus(entries:)` are the server-to-stream entry points.
+  - `DDSTransportActionClientImpl`: 3 service-pair clients + 2 subscribers, with goal_id filtering on the shared `feedback` and `status` topics — each incoming frame is decoded, the goal_id extracted, and the matching `ActionPendingTable` entry yielded.
+  - `ActionFrameDecoder` (internal): pure CDR helpers for the synthesized wrapper frames (encode/decode for `SendGoal{Request,Response}`, `GetResult{Request,Response}`, `FeedbackMessage`, `GoalStatusArray`). 8 round-trip + bounds tests.
+  - `MockDDSClient` (test scope): new `serviceReplyHandler` closure + `deliverRequestSample` / `deliverSubscriberSample` test helpers, lets DDS action tests drive end-to-end flows in-process.
+  - 9 new transport-tests cover server-side dispatch, client-side acceptance / rejection / result / cancel, goal-id filtering, and close-walk lifecycle.
 - **DDS on Windows** — full DDS path (CCycloneDDS, CDDSBridge, SwiftROS2DDS, the SwiftROS2 umbrella, the talker / listener / srv-server / srv-client examples, and the DDS / umbrella tests) now ships on Windows x86_64 when `CYCLONEDDS_DIR` points at a `vcpkg install cyclonedds:x64-windows` tree. Package.swift threads `-I<dir>/include` and `-L<dir>/lib` into CDDSBridge so `#include <dds/dds.h>` and the `-lddsc` link from the CCycloneDDS modulemap resolve against the vcpkg layout. `build-windows` CI now installs the vcpkg port, exports `CYCLONEDDS_DIR`, and runs the full `swift build` + `swift test --parallel`. (#37)
 
 ### Changed

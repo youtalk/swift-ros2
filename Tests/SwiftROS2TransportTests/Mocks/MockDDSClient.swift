@@ -33,6 +33,24 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     // for the next 5 ms poll tick.
     private var writeWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
+    /// Test hook: closure invoked on every `writeRawCDR` to a request-style
+    /// topic (suffix matching is the caller's job). If it returns non-nil
+    /// bytes, the mock synchronously delivers those bytes to readers on the
+    /// matching reply topic — a quick way to wire up service / action
+    /// request-reply round-trips without a real DDS bus.
+    var serviceReplyHandler: (@Sendable (_ requestTopic: String, _ requestData: Data) -> Data?)?
+
+    /// Test helper: per-topic capture of every `writeRawCDR` payload.
+    var writesByTopic: [String: [Data]] {
+        lock.lock()
+        defer { lock.unlock() }
+        var out: [String: [Data]] = [:]
+        for w in writes {
+            out[w.topic, default: []].append(w.data)
+        }
+        return out
+    }
+
     func createSession(domainId: Int32, discoveryConfig: DDSBridgeDiscoveryConfig) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -74,15 +92,37 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
 
     func writeRawCDR(writer: any DDSWriterHandle, data: Data, timestamp: UInt64) throws {
         let waitersToWake: [CheckedContinuation<Void, Never>]
+        let topic: String
+        let replyHandler: (@Sendable (String, Data) -> Data?)?
         do {
             lock.lock()
             defer { lock.unlock() }
             if let e = writeShouldThrow { throw e }
-            let topic = (writer as? MockDDSWriterHandle)?.topic ?? "<unknown>"
+            topic = (writer as? MockDDSWriterHandle)?.topic ?? "<unknown>"
             writes.append((topic, data, timestamp))
             waitersToWake = writeWaiters.removeValue(forKey: topic) ?? []
+            replyHandler = serviceReplyHandler
         }
         for waiter in waitersToWake { waiter.resume() }
+
+        // If a reply handler is registered and the write landed on a request
+        // topic, invoke it and route any returned reply bytes to the matching
+        // reply topic's readers. The reply-topic mapping mirrors what
+        // `DDSWireCodec` produces: `rq/<path>Request` → `rr/<path>Reply`.
+        if let replyHandler, let replyBytes = replyHandler(topic, data),
+            let replyTopic = Self.replyTopic(forRequestTopic: topic)
+        {
+            deliver(toTopic: replyTopic, data: replyBytes, timestamp: 0)
+        }
+    }
+
+    /// Map a `rq/<path>Request` topic to its paired `rr/<path>Reply` topic.
+    /// Used by the in-process service-reply test hook. Returns `nil` if the
+    /// input does not match the expected request-topic shape.
+    private static func replyTopic(forRequestTopic topic: String) -> String? {
+        guard topic.hasPrefix("rq/"), topic.hasSuffix("Request") else { return nil }
+        let body = topic.dropFirst("rq/".count).dropLast("Request".count)
+        return "rr/\(body)Reply"
     }
 
     func destroyWriter(_ writer: any DDSWriterHandle) {
@@ -127,6 +167,21 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     /// real-network callers; the underlying delivery is synchronous.
     func deliverToReader(topic: String, wire: Data, timestamp: UInt64) async throws {
         deliver(toTopic: topic, data: wire, timestamp: timestamp)
+    }
+
+    /// Test helper used by action / service tests: deliver a request-style
+    /// sample (the bytes have already been wrapped by `SampleIdentityPrefix`)
+    /// to readers on the given request topic. Synonym for `deliver` — exists
+    /// to match the action-transport plan vocabulary.
+    func deliverRequestSample(topic: String, data: Data) {
+        deliver(toTopic: topic, data: data, timestamp: 0)
+    }
+
+    /// Test helper used by action tests: deliver a subscriber-style sample
+    /// (e.g. a `_action/feedback` or `_action/status` frame) to readers on
+    /// the given topic.
+    func deliverSubscriberSample(topic: String, data: Data) {
+        deliver(toTopic: topic, data: data, timestamp: 0)
     }
 
     /// Wait up to `timeout` for a `writeRawCDR` on `topic`. If one has

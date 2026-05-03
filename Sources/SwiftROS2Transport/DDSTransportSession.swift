@@ -20,6 +20,8 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
     var subscribers: [DDSTransportSubscriberImpl] = []
     var serviceServers: [DDSTransportServiceServerImpl] = []
     var serviceClients: [DDSTransportServiceClientImpl] = []
+    var actionServers: [DDSTransportActionServerImpl] = []
+    var actionClients: [DDSTransportActionClientImpl] = []
     let lock = NSLock()
     private var _sessionId: String = ""
     var isOpen = false
@@ -97,6 +99,16 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
         let clients = takeAllServiceClients()
         for serviceClient in clients {
             try? serviceClient.close()
+        }
+
+        let aServers = takeAllActionServers()
+        for srv in aServers {
+            try? srv.close()
+        }
+
+        let aClients = takeAllActionClients()
+        for cli in aClients {
+            try? cli.close()
         }
 
         lock.lock()

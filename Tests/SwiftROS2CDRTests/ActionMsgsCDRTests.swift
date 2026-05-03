@@ -43,4 +43,31 @@ final class ActionMsgsCDRTests: XCTestCase {
             )
         )
     }
+
+    func testGoalStatusRoundTrip() throws {
+        let original = GoalStatus(
+            goalInfo: GoalInfo(
+                goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0xFE, count: 16)),
+                stamp: BuiltinInterfacesTime(sec: 9, nanosec: 10)
+            ),
+            status: GoalStatusCode.executing.rawValue
+        )
+        let enc = CDREncoder()
+        enc.writeEncapsulationHeader()
+        try original.encode(to: enc)
+        let dec = try CDRDecoder(data: enc.getData())
+        let decoded = try GoalStatus(from: dec)
+        XCTAssertEqual(decoded.status, GoalStatusCode.executing.rawValue)
+        XCTAssertEqual(decoded.goalInfo.stamp.sec, 9)
+    }
+
+    func testGoalStatusCodeRawValues() {
+        XCTAssertEqual(GoalStatusCode.unknown.rawValue, 0)
+        XCTAssertEqual(GoalStatusCode.accepted.rawValue, 1)
+        XCTAssertEqual(GoalStatusCode.executing.rawValue, 2)
+        XCTAssertEqual(GoalStatusCode.canceling.rawValue, 3)
+        XCTAssertEqual(GoalStatusCode.succeeded.rawValue, 4)
+        XCTAssertEqual(GoalStatusCode.canceled.rawValue, 5)
+        XCTAssertEqual(GoalStatusCode.aborted.rawValue, 6)
+    }
 }

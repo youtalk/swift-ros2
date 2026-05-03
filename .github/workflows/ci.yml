@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  swift-format:
-    name: swift-format lint
+  lint-swift-format:
+    name: Lint (swift-format)
     runs-on: ubuntu-latest
     container:
       image: swift:6.3-jammy
@@ -25,7 +25,7 @@ jobs:
 
   build-macos:
     name: Build & Test (macOS)
-    needs: [swift-format]
+    needs: [lint-swift-format]
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -71,9 +71,9 @@ jobs:
           path: coverage-summary.txt
           if-no-files-found: ignore
 
-  api-diagnose:
-    name: API stability vs 0.6.1
-    needs: [swift-format]
+  check-api-stability:
+    name: Check (API stability vs 0.6.1)
+    needs: [lint-swift-format]
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -87,9 +87,9 @@ jobs:
       - name: Diagnose API breaking changes
         run: bash Scripts/diagnose-api-breaking-changes.sh 0.6.1 Scripts/api-breakage-allowlist.txt
 
-  docs-build:
-    name: DocC build
-    needs: [swift-format]
+  build-docs:
+    name: Build (DocC)
+    needs: [lint-swift-format]
     runs-on: macos-26
     env:
       SWIFT_ROS2_DOCS_BUILD: "1"
@@ -106,7 +106,7 @@ jobs:
 
   build-linux:
     name: Build & Test (Ubuntu ${{ matrix.ubuntu_version }} ${{ matrix.arch }} + ROS 2 ${{ matrix.ros_distro }})
-    needs: [swift-format]
+    needs: [lint-swift-format]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -192,7 +192,7 @@ jobs:
 
   build-windows:
     name: Build & Test (Windows x86_64, Zenoh + DDS)
-    needs: [swift-format]
+    needs: [lint-swift-format]
     runs-on: windows-latest
     # The whole matrix is on Swift 6.3.1: macOS uses Xcode 26.4.1 (Swift
     # 6.3.1), Linux downloads the 6.3.1 toolchain directly, and Android
@@ -243,7 +243,7 @@ jobs:
 
   build-android:
     name: Build (Android ${{ matrix.abi }})
-    needs: [swift-format]
+    needs: [lint-swift-format]
     # Pin explicitly to ubuntu-24.04 — the Swift 6.3.1 tarball downloaded
     # below is the ubuntu24.04 build, so the runner must stay on 24.04.
     # Using ubuntu-latest would break Android CI the day GitHub promotes

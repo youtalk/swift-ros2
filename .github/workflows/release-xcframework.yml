@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build ${{ matrix.framework }}.xcframework
+  build-xcframework:
+    name: Build (${{ matrix.framework }}.xcframework)
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -50,9 +50,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
-    name: Attach to release
-    needs: build
+  publish-xcframeworks:
+    name: Publish (xcframeworks)
+    needs: build-xcframework
     runs-on: ubuntu-24.04
     permissions:
       contents: write

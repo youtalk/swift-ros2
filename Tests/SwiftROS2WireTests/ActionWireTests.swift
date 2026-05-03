@@ -63,4 +63,76 @@ final class ActionWireTests: XCTestCase {
         )
         XCTAssertEqual(name, "weird_pkg.Fibonacci_SendGoal_Request_")
     }
+
+    // MARK: - DDSWireCodec.actionTopicNames
+
+    func testDDSActionTopicNames() {
+        let codec = DDSWireCodec()
+        let names = codec.actionTopicNames(
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci"
+        )
+        XCTAssertEqual(names.sendGoalRequestTopic, "rq/fibonacci/_action/send_goalRequest")
+        XCTAssertEqual(names.sendGoalReplyTopic, "rr/fibonacci/_action/send_goalReply")
+        XCTAssertEqual(names.cancelGoalRequestTopic, "rq/fibonacci/_action/cancel_goalRequest")
+        XCTAssertEqual(names.cancelGoalReplyTopic, "rr/fibonacci/_action/cancel_goalReply")
+        XCTAssertEqual(names.getResultRequestTopic, "rq/fibonacci/_action/get_resultRequest")
+        XCTAssertEqual(names.getResultReplyTopic, "rr/fibonacci/_action/get_resultReply")
+        XCTAssertEqual(names.feedbackTopic, "rt/fibonacci/_action/feedback")
+        XCTAssertEqual(names.statusTopic, "rt/fibonacci/_action/status")
+
+        XCTAssertEqual(
+            names.sendGoalRequestTypeName,
+            "example_interfaces::action::dds_::Fibonacci_SendGoal_Request_")
+        XCTAssertEqual(
+            names.sendGoalReplyTypeName,
+            "example_interfaces::action::dds_::Fibonacci_SendGoal_Response_")
+        XCTAssertEqual(
+            names.cancelGoalRequestTypeName,
+            "action_msgs::srv::dds_::CancelGoal_Request_")
+        XCTAssertEqual(
+            names.cancelGoalReplyTypeName,
+            "action_msgs::srv::dds_::CancelGoal_Response_")
+        XCTAssertEqual(
+            names.getResultRequestTypeName,
+            "example_interfaces::action::dds_::Fibonacci_GetResult_Request_")
+        XCTAssertEqual(
+            names.getResultReplyTypeName,
+            "example_interfaces::action::dds_::Fibonacci_GetResult_Response_")
+        XCTAssertEqual(
+            names.feedbackTypeName,
+            "example_interfaces::action::dds_::Fibonacci_FeedbackMessage_")
+        XCTAssertEqual(
+            names.statusTypeName,
+            "action_msgs::msg::dds_::GoalStatusArray_")
+    }
+
+    func testDDSActionTopicNamesWithNamespace() {
+        let codec = DDSWireCodec()
+        let names = codec.actionTopicNames(
+            namespace: "/ios",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci"
+        )
+        XCTAssertEqual(names.sendGoalRequestTopic, "rq/ios/fibonacci/_action/send_goalRequest")
+        XCTAssertEqual(names.feedbackTopic, "rt/ios/fibonacci/_action/feedback")
+        XCTAssertEqual(names.statusTopic, "rt/ios/fibonacci/_action/status")
+    }
+
+    func testDDSActionTopicNamesStripsLeadingSlashOnAction() {
+        let codec = DDSWireCodec()
+        let withSlash = codec.actionTopicNames(
+            namespace: "",
+            actionName: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci"
+        )
+        let withoutSlash = codec.actionTopicNames(
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci"
+        )
+        XCTAssertEqual(withSlash, withoutSlash)
+        XCTAssertFalse(withSlash.sendGoalRequestTopic.contains("//"))
+    }
 }

@@ -70,4 +70,66 @@ public struct DDSWireCodec: Sendable {
             replyTypeName: TypeNameConverter.toDDSServiceResponseTypeName(serviceTypeName)
         )
     }
+
+    /// Names emitted for a DDS action: 6 rq/rr topics + 2 rt topics + their DDS type names.
+    public struct ActionTopicNames: Sendable, Equatable {
+        public let sendGoalRequestTopic: String
+        public let sendGoalReplyTopic: String
+        public let cancelGoalRequestTopic: String
+        public let cancelGoalReplyTopic: String
+        public let getResultRequestTopic: String
+        public let getResultReplyTopic: String
+        public let feedbackTopic: String
+        public let statusTopic: String
+
+        public let sendGoalRequestTypeName: String
+        public let sendGoalReplyTypeName: String
+        public let cancelGoalRequestTypeName: String
+        public let cancelGoalReplyTypeName: String
+        public let getResultRequestTypeName: String
+        public let getResultReplyTypeName: String
+        public let feedbackTypeName: String
+        public let statusTypeName: String
+    }
+
+    /// Build the DDS topic / type name octuple for an action.
+    ///
+    /// `rmw_cyclonedds_cpp` materializes a single ROS 2 action under
+    /// `<ns>/<name>/_action/` as 3 service pairs (`send_goal`, `cancel_goal`,
+    /// `get_result`) plus 2 topics (`feedback`, `status`).
+    public func actionTopicNames(
+        namespace: String,
+        actionName: String,
+        actionTypeName: String
+    ) -> ActionTopicNames {
+        let cleanNS = TypeNameConverter.stripLeadingSlash(namespace)
+        let cleanAction = TypeNameConverter.stripLeadingSlash(actionName)
+        let actionPath = cleanNS.isEmpty ? cleanAction : "\(cleanNS)/\(cleanAction)"
+        let basePath = "\(actionPath)/_action"
+
+        return ActionTopicNames(
+            sendGoalRequestTopic: "rq/\(basePath)/send_goalRequest",
+            sendGoalReplyTopic: "rr/\(basePath)/send_goalReply",
+            cancelGoalRequestTopic: "rq/\(basePath)/cancel_goalRequest",
+            cancelGoalReplyTopic: "rr/\(basePath)/cancel_goalReply",
+            getResultRequestTopic: "rq/\(basePath)/get_resultRequest",
+            getResultReplyTopic: "rr/\(basePath)/get_resultReply",
+            feedbackTopic: "rt/\(basePath)/feedback",
+            statusTopic: "rt/\(basePath)/status",
+
+            sendGoalRequestTypeName: TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "SendGoal", suffix: "Request"),
+            sendGoalReplyTypeName: TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "SendGoal", suffix: "Response"),
+            cancelGoalRequestTypeName: "action_msgs::srv::dds_::CancelGoal_Request_",
+            cancelGoalReplyTypeName: "action_msgs::srv::dds_::CancelGoal_Response_",
+            getResultRequestTypeName: TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "GetResult", suffix: "Request"),
+            getResultReplyTypeName: TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "GetResult", suffix: "Response"),
+            feedbackTypeName: TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "FeedbackMessage", suffix: nil),
+            statusTypeName: "action_msgs::msg::dds_::GoalStatusArray_"
+        )
+    }
 }

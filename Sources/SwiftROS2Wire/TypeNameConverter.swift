@@ -57,4 +57,27 @@ public enum TypeNameConverter {
         }
         return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_\(suffix)_"
     }
+
+    /// Convert a ROS action type name to the DDS type name for one of its synthesized roles.
+    ///
+    /// Examples:
+    /// - `("example_interfaces/action/Fibonacci", role: "SendGoal", suffix: "Request")`
+    ///   → `example_interfaces::action::dds_::Fibonacci_SendGoal_Request_`
+    /// - `("example_interfaces/action/Fibonacci", role: "FeedbackMessage", suffix: nil)`
+    ///   → `example_interfaces::action::dds_::Fibonacci_FeedbackMessage_`
+    ///
+    /// `suffix` is `"Request"` / `"Response"` for the three service roles, and `nil`
+    /// for `FeedbackMessage` (which has no request/response split).
+    public static func toDDSActionRoleTypeName(
+        _ actionTypeName: String,
+        role: String,
+        suffix: String?
+    ) -> String {
+        let parts = actionTypeName.split(separator: "/", maxSplits: .max, omittingEmptySubsequences: true)
+        let suffixSegment = suffix.map { "_\($0)" } ?? ""
+        guard parts.count == 3 else {
+            return actionTypeName.replacingOccurrences(of: "/", with: "::") + "_\(role)\(suffixSegment)_"
+        }
+        return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_\(role)\(suffixSegment)_"
+    }
 }

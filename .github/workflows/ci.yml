@@ -191,7 +191,7 @@ jobs:
           swift test --parallel
 
   build-windows:
-    name: Build & Test (Windows x86_64, Zenoh + DDS)
+    name: Build & Test (Windows x86_64)
     needs: [lint-swift-format]
     runs-on: windows-latest
     # The whole matrix is on Swift 6.3.1: macOS uses Xcode 26.4.1 (Swift

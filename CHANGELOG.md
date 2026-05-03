@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ROS 2 Actions — type-system foundation (phase 1 of 6, targeting 0.8.0).** Pure type-system work; no wire / transport / API changes yet.
+  - `ROS2ActionTypeInfo` extended with synthesized-wrapper hashes (`sendGoalRequestTypeHash`, `sendGoalResponseTypeHash`, `getResultRequestTypeHash`, `getResultResponseTypeHash`, `feedbackMessageTypeHash`). Source-compatible: legacy 3-hash initializer remains valid because all new parameters default to `nil`.
+  - `BuiltinInterfacesTime` (`builtin_interfaces/msg/Time`) — spec-correct `int32 sec`, `uint32 nanosec`. Distinct from `Header` (which keeps its legacy `UInt32 sec`).
+  - Built-in messages for actions: `unique_identifier_msgs/msg/UUID` (with `Foundation.UUID` bridge), `action_msgs/msg/{GoalInfo, GoalStatus, GoalStatusArray}`, `action_msgs/srv/CancelGoal`, plus `GoalStatusCode` and `CancelGoalReturnCode` enums.
+  - Synthesized action-wrapper messages: `ActionSendGoalRequest<Goal>`, `ActionSendGoalResponse`, `ActionGetResultRequest`, `ActionGetResultResponse<Result>`, `ActionFeedbackMessage<Feedback>`. Each wrapper is a top-level wire message and writes its own encapsulation header; per-action `typeName` / `typeHash` is supplied by the action's `ROS2ActionTypeInfo` at publish/subscribe time.
+  - Built-in action: `example_interfaces/action/Fibonacci` for examples and integration tests.
+  - All `RIHS01_*` hashes are recorded from a live ROS 2 Jazzy install — they are not invented. Wire codec, transport, server/client, and umbrella API land in subsequent phases.
 - **DDS on Windows** — full DDS path (CCycloneDDS, CDDSBridge, SwiftROS2DDS, the SwiftROS2 umbrella, the talker / listener / srv-server / srv-client examples, and the DDS / umbrella tests) now ships on Windows x86_64 when `CYCLONEDDS_DIR` points at a `vcpkg install cyclonedds:x64-windows` tree. Package.swift threads `-I<dir>/include` and `-L<dir>/lib` into CDDSBridge so `#include <dds/dds.h>` and the `-lddsc` link from the CCycloneDDS modulemap resolve against the vcpkg layout. `build-windows` CI now installs the vcpkg port, exports `CYCLONEDDS_DIR`, and runs the full `swift build` + `swift test --parallel`. (#37)
 
 ### Changed

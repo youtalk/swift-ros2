@@ -70,6 +70,76 @@ public struct ZenohWireCodec: WireCodec {
         }
     }
 
+    // MARK: - Action Role / Key Expression
+
+    /// The five wire-level roles a ROS 2 action exposes: three services and two topics.
+    ///
+    /// Raw values map directly to the rmw_zenoh path segment after `_action/`.
+    public enum ActionRole: String, Sendable, CaseIterable {
+        case sendGoal = "send_goal"
+        case cancelGoal = "cancel_goal"
+        case getResult = "get_result"
+        case feedback
+        case status
+    }
+
+    /// Generate the Zenoh action key expression for one role.
+    ///
+    /// Format:
+    /// `<domain>/<ns>/<action>/_action/<role>/<dds_role_type>/<role_type_hash>`
+    ///
+    /// `actionTypeName` is the ROS-format action type (e.g.
+    /// `example_interfaces/action/Fibonacci`). `cancel_goal` and `status` use
+    /// fixed types from `action_msgs` regardless of the action — this method
+    /// substitutes them automatically.
+    ///
+    /// Hash handling parallels ``makeKeyExpr`` / ``makeServiceKeyExpr`` —
+    /// Humble emits `TypeHashNotSupported`; Jazzy+ omits the hash segment when
+    /// `roleTypeHash` is `nil`.
+    public func makeActionKeyExpr(
+        role: ActionRole,
+        domainId: Int,
+        namespace: String,
+        actionName: String,
+        actionTypeName: String,
+        roleTypeHash: String?
+    ) -> String {
+        let cleanNS = TypeNameConverter.stripLeadingSlash(namespace)
+        let cleanAction = TypeNameConverter.stripLeadingSlash(actionName)
+        let actionPath = cleanNS.isEmpty ? cleanAction : "\(cleanNS)/\(cleanAction)"
+        let ddsRoleTypeName = ZenohWireCodec.ddsTypeName(forRole: role, actionTypeName: actionTypeName)
+        let hashComponent = distro.formatTypeHash(roleTypeHash)
+        let prefix = "\(domainId)/\(actionPath)/_action/\(role.rawValue)/\(ddsRoleTypeName)"
+
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return prefix
+        } else {
+            return "\(prefix)/\(hashComponent)"
+        }
+    }
+
+    /// Resolve the DDS role type name used in the Zenoh key expression.
+    ///
+    /// `cancel_goal` and `status` use fixed `action_msgs` types; the other three
+    /// roles use per-action synthesized types.
+    static func ddsTypeName(forRole role: ActionRole, actionTypeName: String) -> String {
+        switch role {
+        case .sendGoal:
+            return TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "SendGoal", suffix: "Request")
+        case .getResult:
+            return TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "GetResult", suffix: "Request")
+        case .feedback:
+            return TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "FeedbackMessage", suffix: nil)
+        case .cancelGoal:
+            return TypeNameConverter.cancelGoalRequestDDSTypeName
+        case .status:
+            return TypeNameConverter.goalStatusArrayDDSTypeName
+        }
+    }
+
     // MARK: - Service Liveliness Token
 
     /// Liveliness-token entity kind for Service entities.
@@ -113,6 +183,57 @@ public struct ZenohWireCodec: WireCodec {
         let qosKeyExpr = qos.toKeyExpr()
         let prefix =
             "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRequestTypeName)"
+
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return "\(prefix)/\(qosKeyExpr)"
+        } else {
+            return "\(prefix)/\(hashComponent)/\(qosKeyExpr)"
+        }
+    }
+
+    // MARK: - Action Liveliness Token
+
+    /// Liveliness-token entity-kind tag for Action entities.
+    ///
+    /// Parallels ``ServiceEntityKind`` (`SS` / `SC`). The action server side
+    /// announces `SA` (server-action) and the client side announces `CA`
+    /// (client-action) so discovery can distinguish action endpoints from
+    /// regular service endpoints.
+    public enum ActionEntityKind: String, Sendable {
+        case actionServer = "SA"
+        case actionClient = "CA"
+    }
+
+    /// Generate an Action-shaped liveliness token (`SA` / `CA`).
+    ///
+    /// Format:
+    /// `@ros2_lv/<domain>/<session>/<node>/<entity>/<SA|CA>/%/%/<node_name>/<mangled_action_path>/<dds_send_goal_request_type>/<role_type_hash>/<qos>`
+    ///
+    /// The discovery anchor is the `send_goal` request type (one announcement
+    /// per action) so a peer that sees a single token knows the full action is
+    /// available — the other four roles are guaranteed to be co-declared by
+    /// the action server / client implementation in Phases 4–5.
+    public func makeActionLivelinessToken(
+        entityKind: ActionEntityKind,
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        entityId: String,
+        namespace: String,
+        nodeName: String,
+        actionName: String,
+        actionTypeName: String,
+        roleTypeHash: String?,
+        qos: QoSPolicy
+    ) -> String {
+        let cleanAction = TypeNameConverter.stripLeadingSlash(actionName)
+        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: cleanAction)
+        let ddsRoleTypeName = TypeNameConverter.toDDSActionRoleTypeName(
+            actionTypeName, role: "SendGoal", suffix: "Request")
+        let hashComponent = distro.formatTypeHash(roleTypeHash)
+        let qosKeyExpr = qos.toKeyExpr()
+        let prefix =
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRoleTypeName)"
 
         if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
             return "\(prefix)/\(qosKeyExpr)"

@@ -5,6 +5,19 @@ import Foundation
 
 /// Shared utilities for ROS 2 type and topic name conversion
 public enum TypeNameConverter {
+    /// DDS type name for `action_msgs/srv/CancelGoal_Request` — fixed across
+    /// every action regardless of the per-action `Goal`/`Result`/`Feedback`
+    /// types. Shared by both wire codecs to avoid drift.
+    public static let cancelGoalRequestDDSTypeName = "action_msgs::srv::dds_::CancelGoal_Request_"
+
+    /// DDS type name for `action_msgs/srv/CancelGoal_Response` — fixed across
+    /// every action.
+    public static let cancelGoalResponseDDSTypeName = "action_msgs::srv::dds_::CancelGoal_Response_"
+
+    /// DDS type name for `action_msgs/msg/GoalStatusArray` — the fixed type
+    /// carried on every action's `_action/status` topic.
+    public static let goalStatusArrayDDSTypeName = "action_msgs::msg::dds_::GoalStatusArray_"
+
     /// Strip leading "/" from a namespace
     public static func stripLeadingSlash(_ namespace: String) -> String {
         namespace.hasPrefix("/") ? String(namespace.dropFirst()) : namespace
@@ -56,5 +69,36 @@ public enum TypeNameConverter {
             return serviceTypeName.replacingOccurrences(of: "/", with: "::") + "_\(suffix)_"
         }
         return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_\(suffix)_"
+    }
+
+    /// Convert a ROS action type name to the DDS type name for one of its
+    /// per-action synthesized roles (`SendGoal`, `GetResult`, `FeedbackMessage`).
+    ///
+    /// Does **not** handle `cancel_goal` — that role uses the fixed type
+    /// ``cancelGoalRequestDDSTypeName`` / ``cancelGoalResponseDDSTypeName``
+    /// from `action_msgs/srv/CancelGoal` regardless of the action — nor
+    /// `status`, which uses the fixed ``goalStatusArrayDDSTypeName``. Callers
+    /// should branch on those role tags before reaching for this helper.
+    ///
+    /// Examples:
+    /// - `("example_interfaces/action/Fibonacci", role: "SendGoal", suffix: "Request")`
+    ///   → `example_interfaces::action::dds_::Fibonacci_SendGoal_Request_`
+    /// - `("example_interfaces/action/Fibonacci", role: "FeedbackMessage", suffix: nil)`
+    ///   → `example_interfaces::action::dds_::Fibonacci_FeedbackMessage_`
+    ///
+    /// `suffix` is `"Request"` / `"Response"` for the two per-action service
+    /// roles, and `nil` for `FeedbackMessage` (which has no request/response
+    /// split).
+    public static func toDDSActionRoleTypeName(
+        _ actionTypeName: String,
+        role: String,
+        suffix: String?
+    ) -> String {
+        let parts = actionTypeName.split(separator: "/", maxSplits: .max, omittingEmptySubsequences: true)
+        let suffixSegment = suffix.map { "_\($0)" } ?? ""
+        guard parts.count == 3 else {
+            return actionTypeName.replacingOccurrences(of: "/", with: "::") + "_\(role)\(suffixSegment)_"
+        }
+        return "\(parts[0])::\(parts[1])::dds_::\(parts[2])_\(role)\(suffixSegment)_"
     }
 }

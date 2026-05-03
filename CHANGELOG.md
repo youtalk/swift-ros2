@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ActionFrameDecoder` (internal): pure CDR helpers for the synthesized wrapper frames (encode/decode for `SendGoal{Request,Response}`, `GetResult{Request,Response}`, `FeedbackMessage`, `GoalStatusArray`). 8 round-trip + bounds tests.
   - `MockDDSClient` (test scope): new `serviceReplyHandler` closure + `deliverRequestSample` / `deliverSubscriberSample` test helpers, lets DDS action tests drive end-to-end flows in-process.
   - 9 new transport-tests cover server-side dispatch, client-side acceptance / rejection / result / cancel, goal-id filtering, and close-walk lifecycle.
+- **ROS 2 Actions — Zenoh transport (phase 5 of 6, targeting 0.8.0).**
+  - `ZenohTransportSession.createActionServer(...)` and `createActionClient(...)` overrides — full server / client over Zenoh queryables (3 services), publishers (`feedback`, `status`), and `SA` / `CA` liveliness tokens. Reuses `ActionFrameDecoder` from Phase 4; no new C-bridge surface.
+  - `ZenohTransportActionServerImpl`: 3 queryables for `send_goal` / `cancel_goal` / `get_result`, plus 2 publishers and a single `SA` liveliness anchor on the `send_goal` request type.
+  - `ZenohTransportActionClientImpl`: 3 `get(...)` callers, 2 subscribers with goal-id filtering routed through `ActionPendingTable`, a `CA` liveliness token announcement, and `waitForActionServer` that polls the `send_goal` queryable with a 200ms `get` until any reply lands or `timeout` elapses (throws `TransportError.actionServerUnavailable` on miss).
+  - `MockZenohClient` (test scope): new `getReplyHandler`, `putsByKey`, `declaredLivelinessTokens`, `deliverQuery`, and `deliverSubscriberSample` test helpers.
+  - 8 new transport-tests cover server queryable dispatch, feedback / status publication + liveliness, client send_goal / get_result / status filtering, and `waitForActionServer` timeout.
 - **DDS on Windows** — full DDS path (CCycloneDDS, CDDSBridge, SwiftROS2DDS, the SwiftROS2 umbrella, the talker / listener / srv-server / srv-client examples, and the DDS / umbrella tests) now ships on Windows x86_64 when `CYCLONEDDS_DIR` points at a `vcpkg install cyclonedds:x64-windows` tree. Package.swift threads `-I<dir>/include` and `-L<dir>/lib` into CDDSBridge so `#include <dds/dds.h>` and the `-lddsc` link from the CCycloneDDS modulemap resolve against the vcpkg layout. `build-windows` CI now installs the vcpkg port, exports `CYCLONEDDS_DIR`, and runs the full `swift build` + `swift test --parallel`. (#37)
 
 ### Changed

@@ -15,7 +15,8 @@ final class ActionGoalHandleTests: XCTestCase {
             acceptedAt: BuiltinInterfacesTime(),
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
-            resultProvider: { throw ActionError.clientClosed }
+            isLegacySchema: false,
+            resultProvider: { _ in throw ActionError.clientClosed }
         )
         do {
             try await handle.publishFeedback(
@@ -35,7 +36,8 @@ final class ActionGoalHandleTests: XCTestCase {
             acceptedAt: BuiltinInterfacesTime(),
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
-            resultProvider: { throw ActionError.serverClosed }
+            isLegacySchema: false,
+            resultProvider: { _ in throw ActionError.serverClosed }
         )
         do {
             _ = try await handle.result(timeout: nil)
@@ -53,7 +55,8 @@ final class ActionGoalHandleTests: XCTestCase {
             acceptedAt: BuiltinInterfacesTime(),
             feedbackStream: AsyncStream { _ in },
             statusStream: AsyncStream { _ in },
-            resultProvider: { throw ActionError.serverClosed }
+            isLegacySchema: false,
+            resultProvider: { _ in throw ActionError.serverClosed }
         )
         let initial = await handle.isCancelRequested
         XCTAssertFalse(initial)

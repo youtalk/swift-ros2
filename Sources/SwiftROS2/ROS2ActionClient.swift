@@ -105,12 +105,17 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, ActionC
             stContCap.finish()
         }
 
-        // Result provider — single-shot getResult call.
+        // Result provider — single-shot getResult call. The user's
+        // `result(timeout:)` value is threaded all the way through; `nil`
+        // is "wait forever" and translates to the transport's largest
+        // representable timeout.
         let txn: any TransportActionClient = transport
-        let provider: @Sendable () async throws -> ActionResult<A.Result> = {
+        let provider: @Sendable (Duration?) async throws -> ActionResult<A.Result> = {
+            userTimeout in
             let r: GetResultAck
             do {
-                r = try await txn.getResult(goalId: goalIdBytes, timeout: .seconds(60 * 60))
+                let effective = userTimeout ?? .seconds(Int.max)
+                r = try await txn.getResult(goalId: goalIdBytes, timeout: effective)
             } catch let e as TransportError {
                 if case .requestTimeout = e { throw ActionError.resultTimedOut }
                 throw ActionError.mapping(e)
@@ -145,6 +150,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, ActionC
             acceptedAt: stamp,
             feedbackStream: typedFB,
             statusStream: typedST,
+            isLegacySchema: isLegacySchema,
             resultProvider: provider
         )
         let cancelTransport: any TransportActionClient = transport

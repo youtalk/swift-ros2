@@ -32,13 +32,17 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     public let statusUpdates: AsyncStream<ActionGoalStatus>
 
     private let side: Side
-    private let resultProvider: @Sendable () async throws -> ActionResult<A.Result>
+    /// Threaded the user's `result(timeout:)` value through to the underlying
+    /// transport `getResult` call. `nil` means "wait forever" — the provider
+    /// translates that into the transport's largest representable timeout.
+    private let resultProvider: @Sendable (Duration?) async throws -> ActionResult<A.Result>
 
     // Server-side mutable state (cancel-request flag + feedback publisher).
     private let stateLock = NSLock()
     private var _isCancelRequested: Bool = false
     private var _publishFeedback: (@Sendable (Data) throws -> Void)?
     private var _cancelClosure: (@Sendable (Duration) async throws -> Void)?
+    private let isLegacySchema: Bool
 
     init(
         side: Side,
@@ -46,13 +50,15 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
         acceptedAt: BuiltinInterfacesTime,
         feedbackStream: AsyncStream<A.Feedback>,
         statusStream: AsyncStream<ActionGoalStatus>,
-        resultProvider: @escaping @Sendable () async throws -> ActionResult<A.Result>
+        isLegacySchema: Bool,
+        resultProvider: @escaping @Sendable (Duration?) async throws -> ActionResult<A.Result>
     ) {
         self.side = side
         self.goalId = goalId
         self.acceptedAt = acceptedAt
         self.feedback = feedbackStream
         self.statusUpdates = statusStream
+        self.isLegacySchema = isLegacySchema
         self.resultProvider = resultProvider
     }
 
@@ -93,7 +99,9 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
     /// Throws `ActionError.wrongSide` if called on a client-side handle.
     public func publishFeedback(_ fb: A.Feedback) async throws {
         guard side == .server else { throw ActionError.wrongSide }
-        let encoder = CDREncoder(isLegacySchema: false)
+        // Use the schema choice that the owning context registered with us
+        // — `false` is wrong on Humble where some message shapes differ.
+        let encoder = CDREncoder(isLegacySchema: isLegacySchema)
         do {
             try fb.encode(to: encoder)
         } catch {
@@ -115,15 +123,12 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
 
     /// Client-side: wait for the goal's terminal state and decoded result.
     ///
-    /// `timeout: nil` waits forever. Throws `ActionError.wrongSide` on the server side.
+    /// `timeout: nil` waits forever (the provider passes the transport's
+    /// largest representable timeout downstream). Throws
+    /// `ActionError.wrongSide` on the server side.
     public func result(timeout: Duration? = nil) async throws -> ActionResult<A.Result> {
         guard side == .client else { throw ActionError.wrongSide }
-        if let timeout = timeout {
-            return try await withTimeout(timeout) {
-                try await self.resultProvider()
-            }
-        }
-        return try await resultProvider()
+        return try await resultProvider(timeout)
     }
 
     /// Client-side: cancel just this goal.
@@ -138,19 +143,4 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
         try await canceler(timeout ?? .seconds(5))
     }
 
-    private func withTimeout<T: Sendable>(
-        _ timeout: Duration,
-        _ body: @escaping @Sendable () async throws -> T
-    ) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await body() }
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                throw ActionError.resultTimedOut
-            }
-            let value = try await group.next()!
-            group.cancelAll()
-            return value
-        }
-    }
 }

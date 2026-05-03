@@ -66,6 +66,18 @@ public struct QoSProfile: Sendable, Equatable {
         history: .keepLast(10)
     )
 
+    /// Default QoS for ROS 2 Action services and topics.
+    ///
+    /// Reliable, volatile, keep-last 10 — matches rclcpp's
+    /// `rmw_qos_profile_services_default` for the three service roles. The
+    /// status topic is bumped to `transientLocal` keep-last 1 inside the
+    /// transport layer.
+    public static let actionDefault = QoSProfile(
+        reliability: .reliable,
+        durability: .volatile,
+        history: .keepLast(10)
+    )
+
     /// Default profile
     public static let `default` = sensorData
 

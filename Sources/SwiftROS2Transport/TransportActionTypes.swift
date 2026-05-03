@@ -218,6 +218,38 @@ public protocol TransportActionClient: AnyObject, Sendable {
     func close() throws
 }
 
+// MARK: - PublishesActionFeedback
+
+/// One status array entry on the wire — uuid (16 bytes) + acceptance stamp + status byte.
+///
+/// Public so the umbrella `ROS2ActionServer` can construct snapshots and pass
+/// them through `PublishesActionFeedback.publishStatus(entries:)` without
+/// importing the internal `ActionFrameDecoder`.
+public struct ActionStatusEntry: Sendable, Equatable {
+    public let uuid: [UInt8]
+    public let stampSec: Int32
+    public let stampNanosec: UInt32
+    public let status: Int8
+
+    public init(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32, status: Int8) {
+        self.uuid = uuid
+        self.stampSec = stampSec
+        self.stampNanosec = stampNanosec
+        self.status = status
+    }
+}
+
+/// Internal seam that the umbrella `ROS2ActionServer` uses to publish per-goal
+/// feedback frames and the goal-status array. The DDS / Zenoh server impls
+/// conform to this — the umbrella downcasts `transport as? PublishesActionFeedback`.
+///
+/// Public so cross-module conformance works (Swift's module-private rule means
+/// the conformance must live in the same module that owns the protocol).
+public protocol PublishesActionFeedback: AnyObject {
+    func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws
+    func publishStatus(entries: [ActionStatusEntry]) throws
+}
+
 // MARK: - ActionPendingTable
 
 /// Per-action-client correlation table.

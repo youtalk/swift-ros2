@@ -517,6 +517,17 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
         try client.writeRawCDR(writer: writer, data: frame, timestamp: 0)
     }
 
+    /// Server-side: publish a full status array via the public protocol seam.
+    ///
+    /// The umbrella `ROS2ActionServer` calls this through
+    /// `PublishesActionFeedback`; tests still call the tuple-typed helper above.
+    func publishStatus(entries: [ActionStatusEntry]) throws {
+        let tuples: [ActionFrameDecoder.StatusEntry] = entries.map {
+            (uuid: $0.uuid, stampSec: $0.stampSec, stampNanosec: $0.stampNanosec, status: $0.status)
+        }
+        try publishStatus(entries: tuples)
+    }
+
     private func replyWriterSnapshot(
         _ keyPath: ReferenceWritableKeyPath<DDSTransportActionServerImpl, (any DDSWriterHandle)?>
     ) -> (any DDSWriterHandle)? {
@@ -557,6 +568,8 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
         }
     }
 }
+
+extension DDSTransportActionServerImpl: PublishesActionFeedback {}
 
 // MARK: - DDS Transport Action Client
 

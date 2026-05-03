@@ -135,4 +135,166 @@ final class ActionWireTests: XCTestCase {
         XCTAssertEqual(withSlash, withoutSlash)
         XCTAssertFalse(withSlash.sendGoalRequestTopic.contains("//"))
     }
+
+    // MARK: - ZenohWireCodec.makeActionKeyExpr
+
+    func testJazzyActionSendGoalKey() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeActionKeyExpr(
+            role: .sendGoal,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238"
+        )
+        XCTAssertEqual(
+            key,
+            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238"
+        )
+    }
+
+    func testJazzyActionCancelGoalKey() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeActionKeyExpr(
+            role: .cancelGoal,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_3d3c84653c1f96918086887e1dcb236faec88b81a5b14fd4cf4840065bcdf8af"
+        )
+        // cancel_goal uses the action_msgs/srv/CancelGoal_Request type, NOT the per-action type.
+        XCTAssertEqual(
+            key,
+            "0/fibonacci/_action/cancel_goal/action_msgs::srv::dds_::CancelGoal_Request_/RIHS01_3d3c84653c1f96918086887e1dcb236faec88b81a5b14fd4cf4840065bcdf8af"
+        )
+    }
+
+    func testJazzyActionGetResultKey() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeActionKeyExpr(
+            role: .getResult,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_c8a4f5e7d13b81286ee1043e2ecd084281cecf1ff06aaa799464f5f15479f003"
+        )
+        XCTAssertEqual(
+            key,
+            "0/fibonacci/_action/get_result/example_interfaces::action::dds_::Fibonacci_GetResult_Request_/RIHS01_c8a4f5e7d13b81286ee1043e2ecd084281cecf1ff06aaa799464f5f15479f003"
+        )
+    }
+
+    func testJazzyActionFeedbackKey() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeActionKeyExpr(
+            role: .feedback,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_c1de71afd52e49a89c53d8262366884185bc0a02f78ce051c4e46b0a7fe59bb2"
+        )
+        XCTAssertEqual(
+            key,
+            "0/fibonacci/_action/feedback/example_interfaces::action::dds_::Fibonacci_FeedbackMessage_/RIHS01_c1de71afd52e49a89c53d8262366884185bc0a02f78ce051c4e46b0a7fe59bb2"
+        )
+    }
+
+    func testJazzyActionStatusKey() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeActionKeyExpr(
+            role: .status,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_6c1684b00f177d37438febe6e709fc4e2b0d4248dca4854946f9ed8b30cda83e"
+        )
+        // status uses action_msgs/msg/GoalStatusArray, fixed across all actions.
+        XCTAssertEqual(
+            key,
+            "0/fibonacci/_action/status/action_msgs::msg::dds_::GoalStatusArray_/RIHS01_6c1684b00f177d37438febe6e709fc4e2b0d4248dca4854946f9ed8b30cda83e"
+        )
+    }
+
+    func testJazzyActionKeyWithNamespace() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeActionKeyExpr(
+            role: .sendGoal,
+            domainId: 0,
+            namespace: "/ios",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_aaa"
+        )
+        XCTAssertEqual(
+            key,
+            "0/ios/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_aaa"
+        )
+    }
+
+    func testHumbleActionKeyAppendsTypeHashNotSupported() {
+        let codec = ZenohWireCodec(distro: .humble)
+        let key = codec.makeActionKeyExpr(
+            role: .sendGoal,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: nil
+        )
+        XCTAssertEqual(
+            key,
+            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/TypeHashNotSupported"
+        )
+    }
+
+    func testJazzyActionKeyOmitsEmptyHashSegment() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let key = codec.makeActionKeyExpr(
+            role: .sendGoal,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: nil
+        )
+        XCTAssertEqual(
+            key,
+            "0/fibonacci/_action/send_goal/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_"
+        )
+    }
+
+    func testActionKeyStripsLeadingSlashFromActionName() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let withSlash = codec.makeActionKeyExpr(
+            role: .feedback,
+            domainId: 0,
+            namespace: "",
+            actionName: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_aaa"
+        )
+        let withoutSlash = codec.makeActionKeyExpr(
+            role: .feedback,
+            domainId: 0,
+            namespace: "",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_aaa"
+        )
+        XCTAssertEqual(withSlash, withoutSlash)
+        XCTAssertFalse(withSlash.contains("//"))
+    }
+
+    func testActionRoleRawValues() {
+        XCTAssertEqual(ZenohWireCodec.ActionRole.sendGoal.rawValue, "send_goal")
+        XCTAssertEqual(ZenohWireCodec.ActionRole.cancelGoal.rawValue, "cancel_goal")
+        XCTAssertEqual(ZenohWireCodec.ActionRole.getResult.rawValue, "get_result")
+        XCTAssertEqual(ZenohWireCodec.ActionRole.feedback.rawValue, "feedback")
+        XCTAssertEqual(ZenohWireCodec.ActionRole.status.rawValue, "status")
+    }
 }

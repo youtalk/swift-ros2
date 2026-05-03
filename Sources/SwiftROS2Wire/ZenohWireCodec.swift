@@ -70,6 +70,76 @@ public struct ZenohWireCodec: WireCodec {
         }
     }
 
+    // MARK: - Action Role / Key Expression
+
+    /// The five wire-level roles a ROS 2 action exposes: three services and two topics.
+    ///
+    /// Raw values map directly to the rmw_zenoh path segment after `_action/`.
+    public enum ActionRole: String, Sendable, CaseIterable {
+        case sendGoal = "send_goal"
+        case cancelGoal = "cancel_goal"
+        case getResult = "get_result"
+        case feedback
+        case status
+    }
+
+    /// Generate the Zenoh action key expression for one role.
+    ///
+    /// Format:
+    /// `<domain>/<ns>/<action>/_action/<role>/<dds_role_type>/<role_type_hash>`
+    ///
+    /// `actionTypeName` is the ROS-format action type (e.g.
+    /// `example_interfaces/action/Fibonacci`). `cancel_goal` and `status` use
+    /// fixed types from `action_msgs` regardless of the action — this method
+    /// substitutes them automatically.
+    ///
+    /// Hash handling parallels ``makeKeyExpr`` / ``makeServiceKeyExpr`` —
+    /// Humble emits `TypeHashNotSupported`; Jazzy+ omits the hash segment when
+    /// `roleTypeHash` is `nil`.
+    public func makeActionKeyExpr(
+        role: ActionRole,
+        domainId: Int,
+        namespace: String,
+        actionName: String,
+        actionTypeName: String,
+        roleTypeHash: String?
+    ) -> String {
+        let cleanNS = TypeNameConverter.stripLeadingSlash(namespace)
+        let cleanAction = TypeNameConverter.stripLeadingSlash(actionName)
+        let actionPath = cleanNS.isEmpty ? cleanAction : "\(cleanNS)/\(cleanAction)"
+        let ddsRoleTypeName = ZenohWireCodec.ddsTypeName(forRole: role, actionTypeName: actionTypeName)
+        let hashComponent = distro.formatTypeHash(roleTypeHash)
+        let prefix = "\(domainId)/\(actionPath)/_action/\(role.rawValue)/\(ddsRoleTypeName)"
+
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return prefix
+        } else {
+            return "\(prefix)/\(hashComponent)"
+        }
+    }
+
+    /// Resolve the DDS role type name used in the Zenoh key expression.
+    ///
+    /// `cancel_goal` and `status` use fixed `action_msgs` types; the other three
+    /// roles use per-action synthesized types.
+    static func ddsTypeName(forRole role: ActionRole, actionTypeName: String) -> String {
+        switch role {
+        case .sendGoal:
+            return TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "SendGoal", suffix: "Request")
+        case .getResult:
+            return TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "GetResult", suffix: "Request")
+        case .feedback:
+            return TypeNameConverter.toDDSActionRoleTypeName(
+                actionTypeName, role: "FeedbackMessage", suffix: nil)
+        case .cancelGoal:
+            return "action_msgs::srv::dds_::CancelGoal_Request_"
+        case .status:
+            return "action_msgs::msg::dds_::GoalStatusArray_"
+        }
+    }
+
     // MARK: - Service Liveliness Token
 
     /// Liveliness-token entity kind for Service entities.

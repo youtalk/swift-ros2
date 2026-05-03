@@ -70,6 +70,60 @@ public protocol TransportSession: AnyObject, Sendable {
         responseTypeHash: String?,
         qos: TransportQoS
     ) throws -> any TransportClient
+
+    /// Create an Action Server.
+    ///
+    /// `actionTypeName` is the ROS-format action type (e.g.
+    /// `example_interfaces/action/Fibonacci`). The transport derives all 5
+    /// wire-level role names from this via `DDSWireCodec.actionTopicNames(...)`
+    /// or `ZenohWireCodec.makeActionKeyExpr(...)`. `roleTypeHashes` carries the
+    /// per-role hashes the umbrella API extracted from `ROS2ActionTypeInfo`.
+    ///
+    /// Default implementation throws `TransportError.unsupportedFeature` —
+    /// only `DDSTransportSession` (Phase 4) and `ZenohTransportSession`
+    /// (Phase 5) override it.
+    func createActionServer(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS,
+        handlers: TransportActionServerHandlers
+    ) throws -> any TransportActionServer
+
+    /// Create an Action Client.
+    ///
+    /// Default implementation throws `TransportError.unsupportedFeature` —
+    /// only `DDSTransportSession` (Phase 4) and `ZenohTransportSession`
+    /// (Phase 5) override it.
+    func createActionClient(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS
+    ) throws -> any TransportActionClient
+}
+
+extension TransportSession {
+    /// Default — concrete sessions override in Phases 4 / 5.
+    public func createActionServer(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS,
+        handlers: TransportActionServerHandlers
+    ) throws -> any TransportActionServer {
+        throw TransportError.unsupportedFeature("createActionServer (transport: \(transportType))")
+    }
+
+    /// Default — concrete sessions override in Phases 4 / 5.
+    public func createActionClient(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS
+    ) throws -> any TransportActionClient {
+        throw TransportError.unsupportedFeature("createActionClient (transport: \(transportType))")
+    }
 }
 
 // MARK: - Transport Publisher Protocol

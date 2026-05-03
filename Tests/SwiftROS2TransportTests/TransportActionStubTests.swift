@@ -74,4 +74,98 @@ final class TransportActionStubTests: XCTestCase {
         XCTAssertEqual(ack.goalsCanceling.count, 1)
         XCTAssertEqual(ack.goalsCanceling[0].uuid.count, 16)
     }
+
+    // MARK: - TransportSession default impl throws unsupportedFeature
+
+    func testDefaultCreateActionServerThrowsUnsupported() async throws {
+        let session: any TransportSession = StubSessionForActionDefaults()
+        let qos = TransportQoS.default
+        let hashes = ActionRoleTypeHashes(
+            sendGoalRequest: nil, sendGoalResponse: nil,
+            cancelGoalRequest: nil, cancelGoalResponse: nil,
+            getResultRequest: nil, getResultResponse: nil,
+            feedbackMessage: nil, statusArray: nil
+        )
+        let handlers = TransportActionServerHandlers(
+            onSendGoal: { _, _ in (true, 0, 0) },
+            onCancelGoal: { _ in Data() },
+            onGetResult: { _ in GetResultAck(status: 4, resultCDR: Data()) }
+        )
+        do {
+            _ = try session.createActionServer(
+                name: "/x",
+                actionTypeName: "ex/action/Foo",
+                roleTypeHashes: hashes,
+                qos: qos,
+                handlers: handlers
+            )
+            XCTFail("expected unsupportedFeature")
+        } catch let err as TransportError {
+            if case .unsupportedFeature = err { return }
+            XCTFail("got \(err) instead of unsupportedFeature")
+        }
+    }
+
+    func testDefaultCreateActionClientThrowsUnsupported() async throws {
+        let session: any TransportSession = StubSessionForActionDefaults()
+        let qos = TransportQoS.default
+        let hashes = ActionRoleTypeHashes(
+            sendGoalRequest: nil, sendGoalResponse: nil,
+            cancelGoalRequest: nil, cancelGoalResponse: nil,
+            getResultRequest: nil, getResultResponse: nil,
+            feedbackMessage: nil, statusArray: nil
+        )
+        do {
+            _ = try session.createActionClient(
+                name: "/x",
+                actionTypeName: "ex/action/Foo",
+                roleTypeHashes: hashes,
+                qos: qos
+            )
+            XCTFail("expected unsupportedFeature")
+        } catch let err as TransportError {
+            if case .unsupportedFeature = err { return }
+            XCTFail("got \(err) instead of unsupportedFeature")
+        }
+    }
+}
+
+// Bare-minimum TransportSession for the default-impl test — overrides only
+// the lifecycle bits the harness needs and inherits the action methods from
+// the protocol extension.
+private final class StubSessionForActionDefaults: TransportSession, @unchecked Sendable {
+    var isConnected: Bool { false }
+    var transportType: TransportType { .zenoh }
+    var sessionId: String { "stub" }
+
+    func open(config: TransportConfig) async throws {}
+    func close() throws {}
+    func checkHealth() -> Bool { false }
+
+    func createPublisher(
+        topic: String, typeName: String, typeHash: String?, qos: TransportQoS
+    ) throws -> any TransportPublisher {
+        throw TransportError.unsupportedFeature("publisher")
+    }
+    func createSubscriber(
+        topic: String, typeName: String, typeHash: String?, qos: TransportQoS,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> any TransportSubscriber {
+        throw TransportError.unsupportedFeature("subscriber")
+    }
+    func createServiceServer(
+        name: String, serviceTypeName: String,
+        requestTypeHash: String?, responseTypeHash: String?,
+        qos: TransportQoS,
+        handler: @escaping @Sendable (Data) async throws -> Data
+    ) throws -> any TransportService {
+        throw TransportError.unsupportedFeature("service server")
+    }
+    func createServiceClient(
+        name: String, serviceTypeName: String,
+        requestTypeHash: String?, responseTypeHash: String?,
+        qos: TransportQoS
+    ) throws -> any TransportClient {
+        throw TransportError.unsupportedFeature("service client")
+    }
 }

@@ -297,4 +297,98 @@ final class ActionWireTests: XCTestCase {
         XCTAssertEqual(ZenohWireCodec.ActionRole.feedback.rawValue, "feedback")
         XCTAssertEqual(ZenohWireCodec.ActionRole.status.rawValue, "status")
     }
+
+    // MARK: - ZenohWireCodec.makeActionLivelinessToken
+
+    func testActionEntityKindRawValues() {
+        XCTAssertEqual(ZenohWireCodec.ActionEntityKind.actionServer.rawValue, "SA")
+        XCTAssertEqual(ZenohWireCodec.ActionEntityKind.actionClient.rawValue, "CA")
+    }
+
+    func testJazzyActionServerLiveliness() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let token = codec.makeActionLivelinessToken(
+            entityKind: .actionServer,
+            domainId: 0,
+            sessionId: "ses",
+            nodeId: "nod",
+            entityId: "ent",
+            namespace: "",
+            nodeName: "fib_node",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238",
+            qos: QoSPolicy.servicesDefault
+        )
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/0/ses/nod/ent/SA/%/%/fib_node/%fibonacci/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_3d088942b413247db536576f0286768c6be8fcd5d0c9a5d544f359fba090a238/\(QoSPolicy.servicesDefault.toKeyExpr())"
+        )
+    }
+
+    func testJazzyActionClientLiveliness() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let token = codec.makeActionLivelinessToken(
+            entityKind: .actionClient,
+            domainId: 0,
+            sessionId: "ses",
+            nodeId: "nod",
+            entityId: "ent",
+            namespace: "/ios",
+            nodeName: "fib_client",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_aaa",
+            qos: QoSPolicy.servicesDefault
+        )
+        XCTAssertEqual(
+            token,
+            "@ros2_lv/0/ses/nod/ent/CA/%/%/fib_client/%ios%fibonacci/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/RIHS01_aaa/\(QoSPolicy.servicesDefault.toKeyExpr())"
+        )
+    }
+
+    func testHumbleActionLivelinessUsesPlaceholder() {
+        let codec = ZenohWireCodec(distro: .humble)
+        let token = codec.makeActionLivelinessToken(
+            entityKind: .actionServer,
+            domainId: 0,
+            sessionId: "ses",
+            nodeId: "nod",
+            entityId: "ent",
+            namespace: "",
+            nodeName: "fib_node",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: nil,
+            qos: QoSPolicy.servicesDefault
+        )
+        XCTAssertTrue(
+            token.contains("/example_interfaces::action::dds_::Fibonacci_SendGoal_Request_/TypeHashNotSupported/"),
+            "Humble must include TypeHashNotSupported segment, got: \(token)"
+        )
+    }
+
+    func testJazzyActionLivelinessOmitsEmptyHashSegment() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let token = codec.makeActionLivelinessToken(
+            entityKind: .actionServer,
+            domainId: 0,
+            sessionId: "ses",
+            nodeId: "nod",
+            entityId: "ent",
+            namespace: "",
+            nodeName: "fib_node",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: nil,
+            qos: QoSPolicy.servicesDefault
+        )
+        XCTAssertFalse(
+            token.contains("//"),
+            "no double-slash segment when hash is empty, got: \(token)"
+        )
+        XCTAssertTrue(
+            token.hasSuffix("Fibonacci_SendGoal_Request_/\(QoSPolicy.servicesDefault.toKeyExpr())")
+        )
+    }
 }

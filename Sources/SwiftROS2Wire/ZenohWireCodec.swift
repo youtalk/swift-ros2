@@ -191,6 +191,57 @@ public struct ZenohWireCodec: WireCodec {
         }
     }
 
+    // MARK: - Action Liveliness Token
+
+    /// Liveliness-token entity-kind tag for Action entities.
+    ///
+    /// Parallels ``ServiceEntityKind`` (`SS` / `SC`). The action server side
+    /// announces `SA` (server-action) and the client side announces `CA`
+    /// (client-action) so discovery can distinguish action endpoints from
+    /// regular service endpoints.
+    public enum ActionEntityKind: String, Sendable {
+        case actionServer = "SA"
+        case actionClient = "CA"
+    }
+
+    /// Generate an Action-shaped liveliness token (`SA` / `CA`).
+    ///
+    /// Format:
+    /// `@ros2_lv/<domain>/<session>/<node>/<entity>/<SA|CA>/%/%/<node_name>/<mangled_action_path>/<dds_send_goal_request_type>/<role_type_hash>/<qos>`
+    ///
+    /// The discovery anchor is the `send_goal` request type (one announcement
+    /// per action) so a peer that sees a single token knows the full action is
+    /// available — the other four roles are guaranteed to be co-declared by
+    /// the action server / client implementation in Phases 4–5.
+    public func makeActionLivelinessToken(
+        entityKind: ActionEntityKind,
+        domainId: Int,
+        sessionId: String,
+        nodeId: String,
+        entityId: String,
+        namespace: String,
+        nodeName: String,
+        actionName: String,
+        actionTypeName: String,
+        roleTypeHash: String?,
+        qos: QoSPolicy
+    ) -> String {
+        let cleanAction = TypeNameConverter.stripLeadingSlash(actionName)
+        let mangled = TypeNameConverter.mangleTopicPath(namespace: namespace, topic: cleanAction)
+        let ddsRoleTypeName = TypeNameConverter.toDDSActionRoleTypeName(
+            actionTypeName, role: "SendGoal", suffix: "Request")
+        let hashComponent = distro.formatTypeHash(roleTypeHash)
+        let qosKeyExpr = qos.toKeyExpr()
+        let prefix =
+            "@ros2_lv/\(domainId)/\(sessionId)/\(nodeId)/\(entityId)/\(entityKind.rawValue)/%/%/\(nodeName)/\(mangled)/\(ddsRoleTypeName)"
+
+        if !distro.alwaysIncludeTypeHashInKey && hashComponent.isEmpty {
+            return "\(prefix)/\(qosKeyExpr)"
+        } else {
+            return "\(prefix)/\(hashComponent)/\(qosKeyExpr)"
+        }
+    }
+
     // MARK: - Liveliness Token
 
     /// Generate liveliness token for ROS 2 discovery

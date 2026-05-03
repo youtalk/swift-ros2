@@ -47,35 +47,71 @@ extension DDSTransportSession {
             ))
 
         // Reply writers for the three services.
-        let sendGoalReplyWriter = try client.createRawWriter(
-            topicName: names.sendGoalReplyTopic,
-            typeName: names.sendGoalReplyTypeName,
-            qos: cfg,
-            userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalResponse)
+        // Build all writers + readers under a rollback guard so a partial
+        // failure tears down every entity already created. Without this,
+        // a throw on the last writer would leak the previous four (and a
+        // throw mid-readers would leak readers in addition to the writers).
+        var createdWriters: [any DDSWriterHandle] = []
+        var createdReaders: [any DDSReaderHandle] = []
+
+        func rollbackAndThrow(_ error: Error) throws -> Never {
+            for r in createdReaders { client.destroyReader(r) }
+            for w in createdWriters { client.destroyWriter(w) }
+            if let e = error as? DDSError {
+                throw TransportError.subscriberCreationFailed(e.errorDescription ?? "\(e)")
+            }
+            throw error
+        }
+
+        func makeWriter(
+            topic: String, type: String, qosCfg: DDSBridgeQoSConfig, userData: String?
+        ) throws -> any DDSWriterHandle {
+            do {
+                let w = try client.createRawWriter(
+                    topicName: topic, typeName: type, qos: qosCfg, userData: userData
+                )
+                createdWriters.append(w)
+                return w
+            } catch {
+                try rollbackAndThrow(error)
+            }
+        }
+
+        func makeReader(
+            topic: String, type: String, qosCfg: DDSBridgeQoSConfig, userData: String?,
+            handler: @escaping @Sendable (Data, UInt64) -> Void
+        ) throws -> any DDSReaderHandle {
+            do {
+                let r = try client.createRawReader(
+                    topicName: topic, typeName: type, qos: qosCfg,
+                    userData: userData, handler: handler
+                )
+                createdReaders.append(r)
+                return r
+            } catch {
+                try rollbackAndThrow(error)
+            }
+        }
+
+        let sendGoalReplyWriter = try makeWriter(
+            topic: names.sendGoalReplyTopic, type: names.sendGoalReplyTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalResponse)
         )
-        let cancelGoalReplyWriter = try client.createRawWriter(
-            topicName: names.cancelGoalReplyTopic,
-            typeName: names.cancelGoalReplyTypeName,
-            qos: cfg,
-            userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalResponse)
+        let cancelGoalReplyWriter = try makeWriter(
+            topic: names.cancelGoalReplyTopic, type: names.cancelGoalReplyTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalResponse)
         )
-        let getResultReplyWriter = try client.createRawWriter(
-            topicName: names.getResultReplyTopic,
-            typeName: names.getResultReplyTypeName,
-            qos: cfg,
-            userData: codec.userDataString(typeHash: roleTypeHashes.getResultResponse)
+        let getResultReplyWriter = try makeWriter(
+            topic: names.getResultReplyTopic, type: names.getResultReplyTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.getResultResponse)
         )
-        let feedbackWriter = try client.createRawWriter(
-            topicName: names.feedbackTopic,
-            typeName: names.feedbackTypeName,
-            qos: cfg,
-            userData: codec.userDataString(typeHash: roleTypeHashes.feedbackMessage)
+        let feedbackWriter = try makeWriter(
+            topic: names.feedbackTopic, type: names.feedbackTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.feedbackMessage)
         )
-        let statusWriter = try client.createRawWriter(
-            topicName: names.statusTopic,
-            typeName: names.statusTypeName,
-            qos: statusQoS,
-            userData: codec.userDataString(typeHash: roleTypeHashes.statusArray)
+        let statusWriter = try makeWriter(
+            topic: names.statusTopic, type: names.statusTypeName,
+            qosCfg: statusQoS, userData: codec.userDataString(typeHash: roleTypeHashes.statusArray)
         )
 
         let server = DDSTransportActionServerImpl(
@@ -90,51 +126,24 @@ extension DDSTransportSession {
             statusWriter: statusWriter
         )
 
-        // Request readers for the three services.
-        do {
-            let sendGoalReader = try client.createRawReader(
-                topicName: names.sendGoalRequestTopic,
-                typeName: names.sendGoalRequestTypeName,
-                qos: cfg,
-                userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalRequest),
-                handler: { [weak server] data, _ in
-                    server?.handleSendGoal(data: data)
-                }
-            )
-            let cancelGoalReader = try client.createRawReader(
-                topicName: names.cancelGoalRequestTopic,
-                typeName: names.cancelGoalRequestTypeName,
-                qos: cfg,
-                userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalRequest),
-                handler: { [weak server] data, _ in
-                    server?.handleCancelGoal(data: data)
-                }
-            )
-            let getResultReader = try client.createRawReader(
-                topicName: names.getResultRequestTopic,
-                typeName: names.getResultRequestTypeName,
-                qos: cfg,
-                userData: codec.userDataString(typeHash: roleTypeHashes.getResultRequest),
-                handler: { [weak server] data, _ in
-                    server?.handleGetResult(data: data)
-                }
-            )
-            server.attachReaders(
-                sendGoal: sendGoalReader,
-                cancelGoal: cancelGoalReader,
-                getResult: getResultReader
-            )
-        } catch {
-            client.destroyWriter(sendGoalReplyWriter)
-            client.destroyWriter(cancelGoalReplyWriter)
-            client.destroyWriter(getResultReplyWriter)
-            client.destroyWriter(feedbackWriter)
-            client.destroyWriter(statusWriter)
-            if let e = error as? DDSError {
-                throw TransportError.subscriberCreationFailed(e.errorDescription ?? "\(e)")
-            }
-            throw error
-        }
+        let sendGoalReader = try makeReader(
+            topic: names.sendGoalRequestTopic, type: names.sendGoalRequestTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalRequest),
+            handler: { [weak server] data, _ in server?.handleSendGoal(data: data) }
+        )
+        let cancelGoalReader = try makeReader(
+            topic: names.cancelGoalRequestTopic, type: names.cancelGoalRequestTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalRequest),
+            handler: { [weak server] data, _ in server?.handleCancelGoal(data: data) }
+        )
+        let getResultReader = try makeReader(
+            topic: names.getResultRequestTopic, type: names.getResultRequestTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.getResultRequest),
+            handler: { [weak server] data, _ in server?.handleGetResult(data: data) }
+        )
+        server.attachReaders(
+            sendGoal: sendGoalReader, cancelGoal: cancelGoalReader, getResult: getResultReader
+        )
 
         appendActionServer(server)
         return server
@@ -173,23 +182,62 @@ extension DDSTransportSession {
                 history: .keepLast(1)
             ))
 
-        let sendGoalWriter = try client.createRawWriter(
-            topicName: names.sendGoalRequestTopic,
-            typeName: names.sendGoalRequestTypeName,
-            qos: cfg,
-            userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalRequest)
+        // Same rollback guard as the server path: any partial creation
+        // failure tears down every entity already created so we don't leak
+        // DDS handles or callbacks for an action client that never returned.
+        var createdWriters: [any DDSWriterHandle] = []
+        var createdReaders: [any DDSReaderHandle] = []
+
+        func rollbackAndThrow(_ error: Error) throws -> Never {
+            for r in createdReaders { client.destroyReader(r) }
+            for w in createdWriters { client.destroyWriter(w) }
+            if let e = error as? DDSError {
+                throw TransportError.subscriberCreationFailed(e.errorDescription ?? "\(e)")
+            }
+            throw error
+        }
+
+        func makeWriter(
+            topic: String, type: String, qosCfg: DDSBridgeQoSConfig, userData: String?
+        ) throws -> any DDSWriterHandle {
+            do {
+                let w = try client.createRawWriter(
+                    topicName: topic, typeName: type, qos: qosCfg, userData: userData
+                )
+                createdWriters.append(w)
+                return w
+            } catch {
+                try rollbackAndThrow(error)
+            }
+        }
+
+        func makeReader(
+            topic: String, type: String, qosCfg: DDSBridgeQoSConfig, userData: String?,
+            handler: @escaping @Sendable (Data, UInt64) -> Void
+        ) throws -> any DDSReaderHandle {
+            do {
+                let r = try client.createRawReader(
+                    topicName: topic, typeName: type, qos: qosCfg,
+                    userData: userData, handler: handler
+                )
+                createdReaders.append(r)
+                return r
+            } catch {
+                try rollbackAndThrow(error)
+            }
+        }
+
+        let sendGoalWriter = try makeWriter(
+            topic: names.sendGoalRequestTopic, type: names.sendGoalRequestTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalRequest)
         )
-        let cancelGoalWriter = try client.createRawWriter(
-            topicName: names.cancelGoalRequestTopic,
-            typeName: names.cancelGoalRequestTypeName,
-            qos: cfg,
-            userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalRequest)
+        let cancelGoalWriter = try makeWriter(
+            topic: names.cancelGoalRequestTopic, type: names.cancelGoalRequestTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalRequest)
         )
-        let getResultWriter = try client.createRawWriter(
-            topicName: names.getResultRequestTopic,
-            typeName: names.getResultRequestTypeName,
-            qos: cfg,
-            userData: codec.userDataString(typeHash: roleTypeHashes.getResultRequest)
+        let getResultWriter = try makeWriter(
+            topic: names.getResultRequestTopic, type: names.getResultRequestTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.getResultRequest)
         )
 
         let writerGuid = GIDManager().getOrCreateGid()
@@ -203,68 +251,38 @@ extension DDSTransportSession {
             getResultWriter: getResultWriter
         )
 
-        do {
-            let sendGoalReplyReader = try client.createRawReader(
-                topicName: names.sendGoalReplyTopic,
-                typeName: names.sendGoalReplyTypeName,
-                qos: cfg,
-                userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalResponse),
-                handler: { [weak cli] data, _ in
-                    cli?.handleSendGoalReply(data: data)
-                }
-            )
-            let cancelGoalReplyReader = try client.createRawReader(
-                topicName: names.cancelGoalReplyTopic,
-                typeName: names.cancelGoalReplyTypeName,
-                qos: cfg,
-                userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalResponse),
-                handler: { [weak cli] data, _ in
-                    cli?.handleCancelGoalReply(data: data)
-                }
-            )
-            let getResultReplyReader = try client.createRawReader(
-                topicName: names.getResultReplyTopic,
-                typeName: names.getResultReplyTypeName,
-                qos: cfg,
-                userData: codec.userDataString(typeHash: roleTypeHashes.getResultResponse),
-                handler: { [weak cli] data, _ in
-                    cli?.handleGetResultReply(data: data)
-                }
-            )
-            let feedbackReader = try client.createRawReader(
-                topicName: names.feedbackTopic,
-                typeName: names.feedbackTypeName,
-                qos: cfg,
-                userData: codec.userDataString(typeHash: roleTypeHashes.feedbackMessage),
-                handler: { [weak cli] data, _ in
-                    cli?.handleFeedbackSample(data: data)
-                }
-            )
-            let statusReader = try client.createRawReader(
-                topicName: names.statusTopic,
-                typeName: names.statusTypeName,
-                qos: statusQoS,
-                userData: codec.userDataString(typeHash: roleTypeHashes.statusArray),
-                handler: { [weak cli] data, _ in
-                    cli?.handleStatusSample(data: data)
-                }
-            )
-            cli.attachReaders(
-                sendGoalReply: sendGoalReplyReader,
-                cancelGoalReply: cancelGoalReplyReader,
-                getResultReply: getResultReplyReader,
-                feedback: feedbackReader,
-                status: statusReader
-            )
-        } catch {
-            client.destroyWriter(sendGoalWriter)
-            client.destroyWriter(cancelGoalWriter)
-            client.destroyWriter(getResultWriter)
-            if let e = error as? DDSError {
-                throw TransportError.subscriberCreationFailed(e.errorDescription ?? "\(e)")
-            }
-            throw error
-        }
+        let sendGoalReplyReader = try makeReader(
+            topic: names.sendGoalReplyTopic, type: names.sendGoalReplyTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.sendGoalResponse),
+            handler: { [weak cli] data, _ in cli?.handleSendGoalReply(data: data) }
+        )
+        let cancelGoalReplyReader = try makeReader(
+            topic: names.cancelGoalReplyTopic, type: names.cancelGoalReplyTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.cancelGoalResponse),
+            handler: { [weak cli] data, _ in cli?.handleCancelGoalReply(data: data) }
+        )
+        let getResultReplyReader = try makeReader(
+            topic: names.getResultReplyTopic, type: names.getResultReplyTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.getResultResponse),
+            handler: { [weak cli] data, _ in cli?.handleGetResultReply(data: data) }
+        )
+        let feedbackReader = try makeReader(
+            topic: names.feedbackTopic, type: names.feedbackTypeName,
+            qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.feedbackMessage),
+            handler: { [weak cli] data, _ in cli?.handleFeedbackSample(data: data) }
+        )
+        let statusReader = try makeReader(
+            topic: names.statusTopic, type: names.statusTypeName,
+            qosCfg: statusQoS, userData: codec.userDataString(typeHash: roleTypeHashes.statusArray),
+            handler: { [weak cli] data, _ in cli?.handleStatusSample(data: data) }
+        )
+        cli.attachReaders(
+            sendGoalReply: sendGoalReplyReader,
+            cancelGoalReply: cancelGoalReplyReader,
+            getResultReply: getResultReplyReader,
+            feedback: feedbackReader,
+            status: statusReader
+        )
 
         appendActionClient(cli)
         return cli
@@ -371,8 +389,20 @@ final class DDSTransportActionServerImpl: TransportActionServer, @unchecked Send
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
-        return (sendGoalReplyWriter?.isActive ?? false)
-            && (sendGoalReader?.isActive ?? false)
+        // Every wire-level entity must still be live for the server to be
+        // considered active — `isActive == true` should mean the full action
+        // surface (3 services × {request reader, reply writer} + feedback +
+        // status writers) is operational.
+        let writers: [(any DDSWriterHandle)?] = [
+            sendGoalReplyWriter, cancelGoalReplyWriter, getResultReplyWriter,
+            feedbackWriter, statusWriter,
+        ]
+        let readers: [(any DDSReaderHandle)?] = [
+            sendGoalReader, cancelGoalReader, getResultReader,
+        ]
+        for w in writers where !(w?.isActive ?? false) { return false }
+        for r in readers where !(r?.isActive ?? false) { return false }
+        return true
     }
 
     // Test-helper accessors for the topic strings — used by the unit tests.
@@ -564,7 +594,19 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
     var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return !closed
+        if closed { return false }
+        // Mirror the server's stricter check — every wire-level entity must
+        // still be live, otherwise callers get a misleading green light.
+        let writers: [(any DDSWriterHandle)?] = [
+            sendGoalWriter, cancelGoalWriter, getResultWriter,
+        ]
+        let readers: [(any DDSReaderHandle)?] = [
+            sendGoalReplyReader, cancelGoalReplyReader, getResultReplyReader,
+            feedbackReader, statusReader,
+        ]
+        for w in writers where !(w?.isActive ?? false) { return false }
+        for r in readers where !(r?.isActive ?? false) { return false }
+        return true
     }
 
     init(
@@ -602,12 +644,25 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
     }
 
     func waitForActionServer(timeout: Duration) async throws {
+        // Per the protocol contract a client should only see "available" once
+        // the full action surface is reachable on the other side. The DDS
+        // bridge only exposes `isPublicationMatched` (writer-side), so we
+        // check all three request writers — `send_goal`, `cancel_goal`, and
+        // `get_result` — each of which has a paired reader on the server.
+        // The server creates all 5 entities (3 service pairs + feedback +
+        // status writers) atomically inside `createActionServer`, so seeing
+        // matches on every service writer implies the feedback and status
+        // publishers are co-live; the client's feedback / status readers
+        // will pick them up on the next discovery tick.
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
             lock.lock()
-            let writer = closed ? nil : sendGoalWriter
+            let snapshot: [(any DDSWriterHandle)?] =
+                closed ? [] : [sendGoalWriter, cancelGoalWriter, getResultWriter]
             lock.unlock()
-            if let w = writer, client.isPublicationMatched(writer: w) {
+            if !snapshot.isEmpty,
+                snapshot.allSatisfy({ w in w.map { client.isPublicationMatched(writer: $0) } ?? false })
+            {
                 return
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -635,21 +690,45 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         lock.lock()
         let writer = closed ? nil : sendGoalWriter
         lock.unlock()
-        guard let writer = writer else { throw TransportError.sessionClosed }
+        guard let writer = writer else {
+            // Roll back the streams we just registered — otherwise this goal
+            // id sits in `pending` forever and any feedback/status sample
+            // racing in (e.g. on a server still alive on the network) would
+            // be routed to a goal the caller never received a handle for.
+            await pending.cancel(goalId: goalId)
+            throw TransportError.sessionClosed
+        }
 
         let frame = ActionFrameDecoder.encodeSendGoalRequest(goalId: goalId, goalCDR: goalCDR)
         let seq = nextSequence()
         let id = RMWRequestId(writerGuid: writerGuid, sequenceNumber: seq)
         let wire = SampleIdentityPrefix.encode(requestId: id, userCDR: frame)
 
-        let replyCDR = try await callWithTimeout(
-            pending: sendGoalPending,
-            seq: seq,
-            timeout: acceptanceTimeout
-        ) {
-            try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
+        let replyCDR: Data
+        do {
+            replyCDR = try await callWithTimeout(
+                pending: sendGoalPending,
+                seq: seq,
+                timeout: acceptanceTimeout
+            ) {
+                try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
+            }
+        } catch {
+            // Same rationale as the writer-nil path above — the request
+            // never actually completed (timeout / cancel / write failure),
+            // so the goal id has no live handle on the caller side. Drop
+            // the pending entry to avoid the same misrouting hazard.
+            await pending.cancel(goalId: goalId)
+            throw error
         }
-        let resp = try ActionFrameDecoder.decodeSendGoalResponse(from: replyCDR)
+
+        let resp: (accepted: Bool, stampSec: Int32, stampNanosec: UInt32)
+        do {
+            resp = try ActionFrameDecoder.decodeSendGoalResponse(from: replyCDR)
+        } catch {
+            await pending.cancel(goalId: goalId)
+            throw error
+        }
         if !resp.accepted {
             await pending.cancel(goalId: goalId)
         }
@@ -682,6 +761,11 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
             try self.client.writeRawCDR(writer: writer, data: wire, timestamp: 0)
         }
         let (status, resultCDR) = try ActionFrameDecoder.decodeGetResultResponse(from: replyCDR)
+        // Drain the per-goal entry from `pending` — the result has been
+        // delivered to the caller and any future feedback / status samples
+        // for this goal are stale. Without this, every accepted goal leaks
+        // a slot in the pending table for the lifetime of the client.
+        await pending.cancel(goalId: goalId)
         return GetResultAck(status: status, resultCDR: resultCDR)
     }
 

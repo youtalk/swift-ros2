@@ -380,4 +380,105 @@ final class DDSActionTransportTests: XCTestCase {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
     }
+
+    func testClientWaitForActionServerThrowsWhenNoMatch() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        // Default mock never reports a publication match → must time out.
+        let client = try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+        do {
+            try await client.waitForActionServer(timeout: .milliseconds(300))
+            XCTFail("expected actionServerUnavailable")
+        } catch let e as TransportError {
+            if case .actionServerUnavailable = e { return }
+            XCTFail("got \(e) instead of actionServerUnavailable")
+        }
+    }
+
+    func testClientWaitForActionServerSucceedsWhenAllWritersMatch() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let client = try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+        // Mark every request-side writer's topic as matched so the new
+        // all-3-writers wait condition resolves on the first poll.
+        let cli = client as! DDSTransportActionClientImpl
+        mock.markPublicationsMatched(topic: cli.names.sendGoalRequestTopic)
+        mock.markPublicationsMatched(topic: cli.names.cancelGoalRequestTopic)
+        mock.markPublicationsMatched(topic: cli.names.getResultRequestTopic)
+
+        try await client.waitForActionServer(timeout: .seconds(2))  // no throw expected
+    }
+
+    func testClientCancelGoalRoundTrip() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let client = try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+        let goalId = [UInt8](repeating: 0xAA, count: 16)
+
+        // Server replies returnCode=0 with one canceling goal entry.
+        mock.serviceReplyHandler = { topic, prefixed in
+            guard topic.hasSuffix("cancel_goalRequest") else { return nil }
+            let (rid, _) =
+                (try? SampleIdentityPrefix.decode(wirePayload: prefixed))
+                ?? (RMWRequestId(writerGuid: [], sequenceNumber: 0), Data())
+            // [header (4) | code (1) | pad (3) | count (u32) | { uuid[16] | sec | nsec }]
+            var resp = Data([0x00, 0x01, 0x00, 0x00])
+            resp.append(0)  // returnCode = 0
+            resp.append(contentsOf: [0, 0, 0])
+            var count = UInt32(1).littleEndian
+            withUnsafeBytes(of: &count) { resp.append(contentsOf: $0) }
+            resp.append(contentsOf: goalId)
+            var sec = Int32(7).littleEndian
+            var nsec = UInt32(11).littleEndian
+            withUnsafeBytes(of: &sec) { resp.append(contentsOf: $0) }
+            withUnsafeBytes(of: &nsec) { resp.append(contentsOf: $0) }
+            return SampleIdentityPrefix.encode(requestId: rid, userCDR: resp)
+        }
+
+        let ack = try await client.cancelGoal(
+            goalId: goalId,
+            beforeStampSec: nil,
+            beforeStampNanosec: nil,
+            timeout: .seconds(2)
+        )
+        XCTAssertEqual(ack.returnCode, 0)
+        XCTAssertEqual(ack.goalsCanceling.count, 1)
+        XCTAssertEqual(ack.goalsCanceling[0].uuid, goalId)
+        XCTAssertEqual(ack.goalsCanceling[0].stampSec, 7)
+        XCTAssertEqual(ack.goalsCanceling[0].stampNanosec, 11)
+
+        // Confirm the request that went out on the wire carried the goal id.
+        let cancelTopic = (client as! DDSTransportActionClientImpl).names.cancelGoalRequestTopic
+        let writes = mock.writesByTopic[cancelTopic] ?? []
+        XCTAssertEqual(writes.count, 1)
+        let (_, reqCDR) = try SampleIdentityPrefix.decode(wirePayload: writes[0])
+        // Request frame: [header (4) | uuid[16] | sec | nsec]
+        XCTAssertEqual(reqCDR.count, 4 + 16 + 4 + 4)
+        XCTAssertEqual(
+            Array(reqCDR[(reqCDR.startIndex + 4)..<(reqCDR.startIndex + 20)]), goalId)
+    }
 }

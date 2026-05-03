@@ -61,7 +61,11 @@ final class DDSServiceTransportTests: XCTestCase {
         client.markPublicationsMatched(topic: "rq/echoRequest")
 
         let userRequest = Data([0x00, 0x01, 0x00, 0x00, 0xDE])
-        async let response: Data = svc.call(requestCDR: userRequest, timeout: .seconds(5))
+        // svc.call's timeout covers both the outgoing-request write and the
+        // test-driven reply injection below. Keep it well above the
+        // awaitWrite budget so a slow request write cannot time the call out
+        // before this test gets to deliver the reply.
+        async let response: Data = svc.call(requestCDR: userRequest, timeout: .seconds(30))
 
         let writtenWire = try await client.awaitWrite(topic: "rq/echoRequest", timeout: .seconds(5))
         let bytes = try XCTUnwrap(writtenWire)

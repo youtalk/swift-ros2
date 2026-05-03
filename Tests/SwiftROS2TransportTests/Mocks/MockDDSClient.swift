@@ -142,7 +142,12 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
     /// thread before the baseline is captured, leaving the waiter blocked
     /// forever) — see PR fixing the x86_64 jazzy CI flake.
     func awaitWrite(topic: String, timeout: Duration) async throws -> Data? {
-        return await withTaskGroup(of: Bool.self) { group in
+        // Returns true iff the write-watcher arm won the race; only then is
+        // the recorded write within the timeout boundary and safe to return.
+        // If the sleep arm wins first, return nil even if a late write lands
+        // before `lastWritten` runs — otherwise tests would silently pass on
+        // post-deadline writes and the timeout assertion becomes a lie.
+        let writeWon = await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 await self.waitUntilWriteExists(topic: topic)
                 return true
@@ -154,12 +159,13 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
                 } catch {}
                 return false
             }
-            let _ = await group.next()
+            let winner = await group.next() ?? false
             group.cancelAll()
             self.flushWriteWaiters(topic: topic)
             await group.waitForAll()
-            return self.lastWritten(topic: topic)
+            return winner
         }
+        return writeWon ? lastWritten(topic: topic) : nil
     }
 
     /// Suspend until at least one write to `topic` has been recorded. The

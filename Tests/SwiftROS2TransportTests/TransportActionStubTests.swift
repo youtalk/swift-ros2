@@ -68,7 +68,7 @@ final class TransportActionStubTests: XCTestCase {
     }
 
     func testCancelGoalAckCarriesReturnCodeAndList() {
-        let goal0 = (uuid: Array<UInt8>(repeating: 0xAB, count: 16), stampSec: Int32(1), stampNanosec: UInt32(2))
+        let goal0 = (uuid: [UInt8](repeating: 0xAB, count: 16), stampSec: Int32(1), stampNanosec: UInt32(2))
         let ack = CancelGoalAck(returnCode: 0, goalsCanceling: [goal0])
         XCTAssertEqual(ack.returnCode, 0)
         XCTAssertEqual(ack.goalsCanceling.count, 1)

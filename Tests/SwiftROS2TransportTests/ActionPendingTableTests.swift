@@ -171,8 +171,14 @@ final class ActionPendingTableTests: XCTestCase {
 
         await table.failAll(TransportError.sessionClosed)
 
-        do { _ = try await resA; XCTFail("expected throw") } catch {}
-        do { _ = try await resB; XCTFail("expected throw") } catch {}
+        do {
+            _ = try await resA
+            XCTFail("expected throw")
+        } catch {}
+        do {
+            _ = try await resB
+            XCTFail("expected throw")
+        } catch {}
 
         let count = await table.count
         XCTAssertEqual(count, 0)

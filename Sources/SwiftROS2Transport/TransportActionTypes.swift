@@ -132,20 +132,19 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
 public struct TransportActionServerHandlers: Sendable {
     /// Called for each `_action/send_goal` request. Returns `(accepted, stampSec, stampNanosec)`.
     /// Throw to make the server reply with a transport-level error.
-    public let onSendGoal: @Sendable (_ goalId: [UInt8], _ goalCDR: Data) async throws -> (
-        Bool, Int32, UInt32
-    )
+    public let onSendGoal:
+        @Sendable (_ goalId: [UInt8], _ goalCDR: Data) async throws -> (
+            Bool, Int32, UInt32
+        )
 
     /// Called for each `_action/cancel_goal` request. Returns the response CDR
     /// (already encapsulation-prefixed) — the umbrella API encodes it.
-    public let onCancelGoal:
-        @Sendable (_ requestCDR: Data) async throws -> Data
+    public let onCancelGoal: @Sendable (_ requestCDR: Data) async throws -> Data
 
     /// Called for each `_action/get_result` request. Awaits the goal's terminal
     /// state and returns the response CDR. The umbrella API blocks on the
     /// goal Task's completion before encoding.
-    public let onGetResult:
-        @Sendable (_ goalId: [UInt8]) async throws -> GetResultAck
+    public let onGetResult: @Sendable (_ goalId: [UInt8]) async throws -> GetResultAck
 
     public init(
         onSendGoal: @escaping @Sendable ([UInt8], Data) async throws -> (Bool, Int32, UInt32),

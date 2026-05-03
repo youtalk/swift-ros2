@@ -40,6 +40,24 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     /// `nil` payload means "fire only onFinish" (timeout).
     private var getScripts: [(payload: Data?, isError: Bool)] = []
 
+    /// Optional dynamic reply handler for `get`. If set, takes precedence over
+    /// `getScripts` — invoked synchronously per `get` call. Returning non-nil
+    /// fires a successful sample reply; returning nil triggers timeout (only
+    /// `onFinish` fires). Used by the Action transport tests.
+    var getReplyHandler: (@Sendable (_ keyExpr: String, _ payload: Data?) -> Data?)?
+
+    /// Per-key capture of every `put` (string-keyed overload). Mirrors `puts`
+    /// but indexed for fast lookup by key — used by Action transport tests.
+    private(set) var putsByKey: [String: [(payload: Data, attachment: Data?)]] = [:]
+
+    /// Captured liveliness-token key expressions. Alias of
+    /// `livelinessDeclarations` used by the Action transport tests.
+    var declaredLivelinessTokens: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return livelinessDeclarations
+    }
+
     func open(locator: String) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -88,6 +106,9 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         defer { lock.unlock() }
         if let e = putShouldThrow { throw e }
         puts.append((key: keyExpr, payload: payload, attachment: attachment))
+        var bucket = putsByKey[keyExpr] ?? []
+        bucket.append((payload: payload, attachment: attachment))
+        putsByKey[keyExpr] = bucket
     }
 
     func subscribe(keyExpr: String, handler: @escaping (ZenohSample) -> Void) throws -> any ZenohSubscriberHandle {
@@ -131,7 +152,17 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
             throw e
         }
         gets.append((key: keyExpr, payload: payload, attachment: attachment, timeoutMs: timeoutMs))
-        let script: (payload: Data?, isError: Bool)? = getScripts.isEmpty ? nil : getScripts.removeFirst()
+        let script: (payload: Data?, isError: Bool)?
+        // Dynamic handler takes precedence over scripted replies.
+        if let dyn = getReplyHandler {
+            if let replyPayload = dyn(keyExpr, payload) {
+                script = (payload: replyPayload, isError: false)
+            } else {
+                script = (payload: nil, isError: false)
+            }
+        } else {
+            script = getScripts.isEmpty ? nil : getScripts.removeFirst()
+        }
         lock.unlock()
 
         // Fire the scripted reply / finish on a background queue to mirror
@@ -153,6 +184,59 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
                 // payload == nil: timeout — only onFinish fires.
             }
             onFinish()
+        }
+    }
+
+    /// Test helper: deliver a synthetic query to every queryable registered on
+    /// `keyExpr` and collect the resulting `reply(...)` payloads. Each invoked
+    /// handler reads the query asynchronously (the action server fires a Task
+    /// internally), so this helper polls briefly until at least one reply is
+    /// recorded — sufficient for the in-process mock-driven tests.
+    func deliverQuery(keyExpr: String, payload: Data) async throws -> [Data] {
+        let handlers: [@Sendable (any ZenohQueryHandle) -> Void] = {
+            lock.lock()
+            defer { lock.unlock() }
+            return queryableDeclarations.filter { $0.key == keyExpr }.map { $0.handler }
+        }()
+        guard !handlers.isEmpty else { return [] }
+
+        let collector = QueryReplyCollector()
+        for handler in handlers {
+            let q = MockQueryHandle(
+                keyExpr: keyExpr, payload: payload, attachment: nil
+            ) { reply in
+                Task { await collector.append(reply) }
+            }
+            handler(q)
+        }
+        // Poll briefly for the asynchronous Task in the queryable handler to
+        // resolve. 1s upper bound matches the test expectations elsewhere.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while ContinuousClock.now < deadline {
+            let snapshot = await collector.snapshot()
+            if snapshot.count >= handlers.count {
+                return snapshot.compactMap {
+                    if case .success(let p) = $0 { return p } else { return nil }
+                }
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return await collector.snapshot().compactMap {
+            if case .success(let p) = $0 { return p } else { return nil }
+        }
+    }
+
+    /// Test helper: deliver a synthetic subscriber sample to every subscriber
+    /// registered on `keyExpr`.
+    func deliverSubscriberSample(keyExpr: String, payload: Data, attachment: Data?) {
+        let handlers: [(ZenohSample) -> Void] = {
+            lock.lock()
+            defer { lock.unlock() }
+            return subscriptions.filter { $0.key == keyExpr }.map { $0.handler }
+        }()
+        let sample = ZenohSample(keyExpr: keyExpr, payload: payload, attachment: attachment)
+        for handler in handlers {
+            handler(sample)
         }
     }
 
@@ -261,6 +345,21 @@ final class MockQueryableHandle: ZenohQueryableHandle {
         lock.lock()
         defer { lock.unlock() }
         closeCount += 1
+    }
+}
+
+/// Collects asynchronous queryable replies produced by `deliverQuery`. Used
+/// to bridge the queryable handler's `Task { ... query.reply(...) }` shape
+/// back into a polling `await` site.
+actor QueryReplyCollector {
+    private var replies: [MockQueryHandle.Reply] = []
+
+    func append(_ reply: MockQueryHandle.Reply) {
+        replies.append(reply)
+    }
+
+    func snapshot() -> [MockQueryHandle.Reply] {
+        return replies
     }
 }
 

@@ -125,10 +125,10 @@ public struct ActionRoleTypeHashes: Sendable, Equatable {
 
 /// Raw-CDR server-side handler bag the transport needs to dispatch each role.
 ///
-/// All four closures take pre-decoded inputs (a 16-byte goal_id where
-/// applicable, plus the user request CDR) and return raw-CDR outputs. The
-/// umbrella API in Phase 6 wraps the user's typed `ActionServerHandler` into
-/// these closures.
+/// All three closures (`onSendGoal`, `onCancelGoal`, `onGetResult`) take
+/// pre-decoded inputs (a 16-byte goal_id where applicable, plus the user
+/// request CDR) and return raw-CDR outputs. The umbrella API in Phase 6
+/// wraps the user's typed `ActionServerHandler` into these closures.
 public struct TransportActionServerHandlers: Sendable {
     /// Called for each `_action/send_goal` request. Returns `(accepted, stampSec, stampNanosec)`.
     /// Throw to make the server reply with a transport-level error.
@@ -288,10 +288,11 @@ public actor ActionPendingTable {
     }
 
     /// Yield one status update. If `status` is terminal (4, 5, 6), finish the
-    /// feedback + status streams and remove the entry — *unless* a result
-    /// continuation is registered with no terminal value yet (rare race: status
-    /// arrived but get_result hasn't replied yet). Returns true if the goal
-    /// was known.
+    /// feedback + status streams and drop them. The entry itself is removed
+    /// only when no result continuation is still parked — if one is, we
+    /// retain the entry so a subsequent `resolveResult` (or the next call
+    /// here, were it to repeat) still has a slot to resume into. Returns
+    /// true if the goal was known.
     @discardableResult
     public func yieldStatus(goalId: GoalId, status: Int8) -> Bool {
         guard var entry = pending[goalId] else { return false }
@@ -301,6 +302,13 @@ public actor ActionPendingTable {
             entry.status?.finish()
             entry.feedback = nil
             entry.status = nil
+            // If no result continuation is parked and no terminal value
+            // is cached for late registration, the entry is dead — drop it
+            // so the table doesn't accumulate finished goals indefinitely.
+            if entry.result == nil && entry.terminalResult == nil {
+                pending.removeValue(forKey: goalId)
+                return true
+            }
         }
         pending[goalId] = entry
         return true

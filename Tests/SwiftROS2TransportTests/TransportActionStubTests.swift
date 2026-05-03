@@ -32,7 +32,7 @@ final class TransportActionStubTests: XCTestCase {
 
     // MARK: - Ack struct shape
 
-    func testSendGoalAckHoldsAcceptedFlagAndStreams() {
+    func testSendGoalAckHoldsAcceptedFlagAndStreams() async {
         var feedbackCont: AsyncStream<Data>.Continuation!
         let feedback = AsyncStream<Data> { feedbackCont = $0 }
         var statusCont: AsyncStream<ActionStatusUpdate>.Continuation!
@@ -49,16 +49,20 @@ final class TransportActionStubTests: XCTestCase {
         XCTAssertEqual(ack.stampSec, 100)
         XCTAssertEqual(ack.stampNanosec, 200)
 
-        // Streams are usable.
+        // Streams are usable. Yield + finish, then drain inline so failures
+        // surface in this test rather than vanishing into a detached Task.
         feedbackCont.yield(Data([0x42]))
         feedbackCont.finish()
         statusCont.yield(ActionStatusUpdate(status: 1))
         statusCont.finish()
 
-        Task {
-            for await fb in ack.feedback { XCTAssertEqual(fb, Data([0x42])) }
-            for await st in ack.status { XCTAssertEqual(st.status, 1) }
-        }
+        var feedbackSeen: [Data] = []
+        for await fb in ack.feedback { feedbackSeen.append(fb) }
+        XCTAssertEqual(feedbackSeen, [Data([0x42])])
+
+        var statusSeen: [Int8] = []
+        for await st in ack.status { statusSeen.append(st.status) }
+        XCTAssertEqual(statusSeen, [1])
     }
 
     func testGetResultAckCarriesStatusAndCDR() {

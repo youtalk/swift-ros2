@@ -12,3 +12,11 @@ API breakage: enumelement TransportError.requestTimeout has been added as a new 
 API breakage: enumelement TransportError.requestCancelled has been added as a new enum case
 API breakage: enumelement TransportError.serviceHandlerFailed has been added as a new enum case
 API breakage: enumelement ZenohError.queryReplyError has been added as a new enum case
+
+# 0.8.0: ROS 2 Actions landing — phase 3 of 6 added action-shaped TransportError
+# cases. The new TransportSession.createActionServer / createActionClient
+# requirements ship with default implementations that throw
+# `TransportError.unsupportedFeature`, so they do not surface here.
+API breakage: enumelement TransportError.goalRejected has been added as a new enum case
+API breakage: enumelement TransportError.goalUnknown has been added as a new enum case
+API breakage: enumelement TransportError.actionServerUnavailable has been added as a new enum case

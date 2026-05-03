@@ -106,4 +106,49 @@ final class ActionMsgsCDRTests: XCTestCase {
         let decoded = try GoalStatusArray(from: dec)
         XCTAssertEqual(decoded.statusList.count, 0)
     }
+
+    func testCancelGoalRequestRoundTrip() throws {
+        let original = CancelGoalSrv.Request(
+            goalInfo: GoalInfo(
+                goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0x55, count: 16)),
+                stamp: BuiltinInterfacesTime(sec: 100, nanosec: 200)
+            )
+        )
+        let enc = CDREncoder()
+        try original.encode(to: enc)
+        let dec = try CDRDecoder(data: enc.getData())
+        let decoded = try CancelGoalSrv.Request(from: dec)
+        XCTAssertEqual(decoded.goalInfo.stamp.sec, 100)
+    }
+
+    func testCancelGoalResponseRoundTrip() throws {
+        let original = CancelGoalSrv.Response(
+            returnCode: CancelGoalReturnCode.none.rawValue,
+            goalsCanceling: [
+                GoalInfo(
+                    goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0xCC, count: 16)),
+                    stamp: BuiltinInterfacesTime(sec: 1, nanosec: 0)
+                )
+            ]
+        )
+        let enc = CDREncoder()
+        try original.encode(to: enc)
+        let dec = try CDRDecoder(data: enc.getData())
+        let decoded = try CancelGoalSrv.Response(from: dec)
+        XCTAssertEqual(decoded.returnCode, CancelGoalReturnCode.none.rawValue)
+        XCTAssertEqual(decoded.goalsCanceling.count, 1)
+    }
+
+    func testCancelGoalReturnCodeRawValues() {
+        XCTAssertEqual(CancelGoalReturnCode.none.rawValue, 0)
+        XCTAssertEqual(CancelGoalReturnCode.rejected.rawValue, 1)
+        XCTAssertEqual(CancelGoalReturnCode.unknownGoalId.rawValue, 2)
+        XCTAssertEqual(CancelGoalReturnCode.goalTerminated.rawValue, 3)
+    }
+
+    func testCancelGoalSrvTypeInfo() {
+        XCTAssertEqual(CancelGoalSrv.typeInfo.serviceName, "action_msgs/srv/CancelGoal")
+        XCTAssertEqual(CancelGoalSrv.typeInfo.requestTypeName, "action_msgs/srv/CancelGoal_Request")
+        XCTAssertEqual(CancelGoalSrv.typeInfo.responseTypeName, "action_msgs/srv/CancelGoal_Response")
+    }
 }

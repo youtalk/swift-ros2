@@ -239,6 +239,52 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         }
     }
 
+    // MARK: - Action overrides
+
+    /// Optional factory used by `createActionServer` if set. Signature:
+    /// `(name, actionTypeName, roleTypeHashes, qos, handlers) -> any TransportActionServer`.
+    var actionServerFactory:
+        (
+            @Sendable (
+                String, String, ActionRoleTypeHashes, TransportQoS,
+                TransportActionServerHandlers
+            ) -> any TransportActionServer
+        )?
+
+    /// Optional factory used by `createActionClient` if set. Signature:
+    /// `(name, actionTypeName, roleTypeHashes, qos) -> any TransportActionClient`.
+    var actionClientFactory:
+        (
+            @Sendable (
+                String, String, ActionRoleTypeHashes, TransportQoS
+            ) -> any TransportActionClient
+        )?
+
+    func createActionServer(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS,
+        handlers: TransportActionServerHandlers
+    ) throws -> any TransportActionServer {
+        if let f = actionServerFactory {
+            return f(name, actionTypeName, roleTypeHashes, qos, handlers)
+        }
+        throw TransportError.unsupportedFeature("MockTransportSession action server")
+    }
+
+    func createActionClient(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS
+    ) throws -> any TransportActionClient {
+        if let f = actionClientFactory {
+            return f(name, actionTypeName, roleTypeHashes, qos)
+        }
+        throw TransportError.unsupportedFeature("MockTransportSession action client")
+    }
+
     // MARK: - Service test helpers
 
     /// Make subsequent `createServiceServer` / `createServiceClient` calls

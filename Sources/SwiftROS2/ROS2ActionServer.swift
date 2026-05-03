@@ -1,0 +1,387 @@
+// ROS2ActionServer.swift
+// Typed server wrapper around TransportActionServer.
+
+import Foundation
+import SwiftROS2CDR
+import SwiftROS2Messages
+import SwiftROS2Transport
+
+/// Typed action server for a specific `ROS2Action`.
+public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable,
+    ActionServerCloseable
+{
+    private let transport: any TransportActionServer
+    private let handler: H
+    private let isLegacySchema: Bool
+
+    public var name: String { transport.name }
+    public var isActive: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return !closed && transport.isActive
+    }
+
+    // Per-goal state — tracked so cancel + status array publication can find it.
+    private final class GoalEntry {
+        let handle: ActionGoalHandle<H.Action>
+        var task: Task<Void, Never>?
+        var status: ActionGoalStatus
+        var resultCache: GetResultAck?
+        var resultWaiters: [CheckedContinuation<GetResultAck, Error>]
+        var fbCont: AsyncStream<H.Action.Feedback>.Continuation
+        var stCont: AsyncStream<ActionGoalStatus>.Continuation
+
+        init(
+            handle: ActionGoalHandle<H.Action>,
+            status: ActionGoalStatus,
+            fbCont: AsyncStream<H.Action.Feedback>.Continuation,
+            stCont: AsyncStream<ActionGoalStatus>.Continuation
+        ) {
+            self.handle = handle
+            self.status = status
+            self.resultWaiters = []
+            self.fbCont = fbCont
+            self.stCont = stCont
+        }
+    }
+
+    private let stateLock = NSLock()
+    private var goals: [Data: GoalEntry] = [:]  // key: 16-byte goal_id
+    private var closed = false
+
+    init(transport: any TransportActionServer, handler: H, isLegacySchema: Bool) {
+        self.transport = transport
+        self.handler = handler
+        self.isLegacySchema = isLegacySchema
+    }
+
+    /// Cancel the server; closes the underlying transport handle and cancels every running goal.
+    public func cancel() {
+        try? closeActionServer()
+    }
+
+    func closeActionServer() throws {
+        stateLock.lock()
+        guard !closed else {
+            stateLock.unlock()
+            return
+        }
+        closed = true
+        let snapshot = Array(goals.values)
+        goals.removeAll()
+        stateLock.unlock()
+        for entry in snapshot {
+            entry.task?.cancel()
+            for w in entry.resultWaiters {
+                w.resume(throwing: ActionError.serverClosed)
+            }
+            entry.fbCont.finish()
+            entry.stCont.finish()
+        }
+        try? transport.close()
+    }
+
+    // MARK: - Internal — handler bag the umbrella plugs into the transport
+
+    static func makeHandlers(
+        for server: @escaping @Sendable () -> ROS2ActionServer<H>?
+    ) -> TransportActionServerHandlers {
+        return TransportActionServerHandlers(
+            onSendGoal: { goalId, goalCDR in
+                guard let s = server() else { return (false, 0, 0) }
+                return await s.handleSendGoal(goalId: goalId, goalCDR: goalCDR)
+            },
+            onCancelGoal: { reqCDR in
+                guard let s = server() else {
+                    return Self.encodeCancelGoalResponse(returnCode: 1, entries: [])
+                }
+                return await s.handleCancelGoal(requestCDR: reqCDR)
+            },
+            onGetResult: { goalId in
+                guard let s = server() else {
+                    return GetResultAck(
+                        status: ActionGoalStatus.unknown.rawValue, resultCDR: Data()
+                    )
+                }
+                return try await s.handleGetResult(goalId: goalId)
+            }
+        )
+    }
+
+    private func handleSendGoal(goalId: [UInt8], goalCDR: Data) async -> (
+        Bool, Int32, UInt32
+    ) {
+        let typedGoal: H.Action.Goal
+        do {
+            let dec = try CDRDecoder(
+                data: ROS2ActionClient<H.Action>.prependHeaderIfMissing(goalCDR),
+                isLegacySchema: isLegacySchema
+            )
+            typedGoal = try H.Action.Goal(from: dec)
+        } catch {
+            return (false, 0, 0)
+        }
+        let resp = await handler.handleGoal(typedGoal)
+        guard resp == .accept else { return (false, 0, 0) }
+
+        // Build the server-side handle.
+        let now = Date()
+        let secs = now.timeIntervalSince1970
+        let stamp = BuiltinInterfacesTime(
+            sec: Int32(secs),
+            nanosec: UInt32(secs.truncatingRemainder(dividingBy: 1) * 1_000_000_000)
+        )
+        var fbCont: AsyncStream<H.Action.Feedback>.Continuation!
+        let fbStream = AsyncStream<H.Action.Feedback> { fbCont = $0 }
+        var stCont: AsyncStream<ActionGoalStatus>.Continuation!
+        let stStream = AsyncStream<ActionGoalStatus> { stCont = $0 }
+        let goalUUID = Self.uuidFromBytes(goalId)
+        let key = Data(goalId)
+        // Server-side handles never call `result()` — the umbrella server
+        // owns the executing Task directly. The provider just throws
+        // `wrongSide` if anyone reaches for it.
+        let handle = ActionGoalHandle<H.Action>(
+            side: .server,
+            goalId: goalUUID,
+            acceptedAt: stamp,
+            feedbackStream: fbStream,
+            statusStream: stStream,
+            isLegacySchema: isLegacySchema,
+            resultProvider: { _ in throw ActionError.wrongSide }
+        )
+        // Wire publishFeedback through the transport's feedback writer.
+        let transportRef = transport
+        let goalIdCopy = goalId
+        handle._attachPublishFeedback { cdr in
+            guard let serverImpl = transportRef as? PublishesActionFeedback else { return }
+            try serverImpl.publishFeedback(goalId: goalIdCopy, feedbackCDR: cdr)
+        }
+
+        let entry = GoalEntry(
+            handle: handle,
+            status: .accepted,
+            fbCont: fbCont!,
+            stCont: stCont!
+        )
+
+        // Insert the entry into `goals` BEFORE spawning the executing Task.
+        // Otherwise the Task can run immediately, hit `transitionStatus` /
+        // `cacheResult`, find no entry, and silently drop the status / result
+        // updates — which would make `getResult` hang forever for a goal
+        // that actually completed.
+        stateLock.lock()
+        goals[key] = entry
+        stateLock.unlock()
+
+        let task: Task<Void, Never> = Task { [weak self, weak entry] in
+            guard let self else { return }
+            entry?.stCont.yield(.executing)
+            self.transitionStatus(.executing, for: key)
+            do {
+                let result = try await self.handler.execute(handle)
+                let encoder = CDREncoder(isLegacySchema: self.isLegacySchema)
+                try result.encode(to: encoder)
+                self.cacheResult(
+                    GetResultAck(
+                        status: ActionGoalStatus.succeeded.rawValue,
+                        resultCDR: encoder.getData()
+                    ), for: key)
+                self.transitionStatus(.succeeded, for: key)
+                entry?.stCont.yield(.succeeded)
+            } catch is CancellationError {
+                self.cacheResult(
+                    GetResultAck(
+                        status: ActionGoalStatus.canceled.rawValue, resultCDR: Data()
+                    ), for: key)
+                self.transitionStatus(.canceled, for: key)
+                entry?.stCont.yield(.canceled)
+            } catch {
+                self.cacheResult(
+                    GetResultAck(
+                        status: ActionGoalStatus.aborted.rawValue, resultCDR: Data()
+                    ), for: key)
+                self.transitionStatus(.aborted, for: key)
+                entry?.stCont.yield(.aborted)
+            }
+            entry?.fbCont.finish()
+            entry?.stCont.finish()
+        }
+        entry.task = task
+
+        // Eagerly publish the accepted status so a watching client sees it immediately.
+        publishStatusSnapshot()
+
+        return (true, stamp.sec, stamp.nanosec)
+    }
+
+    private func handleCancelGoal(requestCDR: Data) async -> Data {
+        // CancelGoal_Request CDR: header (4) + uuid[16] + sec(4) + nsec(4).
+        // Per `action_msgs/srv/CancelGoal`:
+        //   - `goal_id == 0` and `stamp == 0` → cancel ALL active goals.
+        //   - `goal_id == 0` and `stamp != 0` → cancel every goal accepted
+        //     at-or-before `stamp`.
+        //   - `goal_id != 0` and `stamp == 0` → cancel the specific goal.
+        //   - both set                         → cancel that goal AND every
+        //     other goal accepted at-or-before `stamp`.
+        guard requestCDR.count >= 4 + 16 + 8 else {
+            return Self.encodeCancelGoalResponse(returnCode: 1, entries: [])
+        }
+        let base = requestCDR.startIndex
+        let id = Array(requestCDR[(base + 4)..<(base + 4 + 16)])
+        let stampSec = requestCDR.withUnsafeBytes {
+            $0.load(fromByteOffset: 4 + 16, as: Int32.self).littleEndian
+        }
+        let stampNsec = requestCDR.withUnsafeBytes {
+            $0.load(fromByteOffset: 4 + 16 + 4, as: UInt32.self).littleEndian
+        }
+        let zeroId = id.allSatisfy { $0 == 0 }
+        let zeroStamp = stampSec == 0 && stampNsec == 0
+
+        // Pick the candidate set under the lock, then route every chosen
+        // goal through the user's `handleCancel` outside the lock.
+        stateLock.lock()
+        let candidates: [(key: Data, entry: GoalEntry)] = goals.compactMap { (k, v) in
+            let matchesId = !zeroId && k == Data(id)
+            let matchesStamp =
+                !zeroStamp
+                && (v.handle.acceptedAt.sec < stampSec
+                    || (v.handle.acceptedAt.sec == stampSec
+                        && v.handle.acceptedAt.nanosec <= stampNsec))
+            let matchesAll = zeroId && zeroStamp
+            return (matchesId || matchesStamp || matchesAll) ? (k, v) : nil
+        }
+        stateLock.unlock()
+
+        if candidates.isEmpty {
+            // Lookup-by-id with no match → UNKNOWN_GOAL_ID. Otherwise a
+            // stamp/all sweep with nothing to cancel is REJECTED (no-op).
+            let code: Int8 = (!zeroId && zeroStamp) ? 2 : 1
+            return Self.encodeCancelGoalResponse(returnCode: code, entries: [])
+        }
+
+        var canceling: [(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)] = []
+        for (key, entry) in candidates {
+            let resp = await handler.handleCancel(entry.handle)
+            guard resp == .accept else { continue }
+            await entry.handle._setCancelRequested(true)
+            // Per the action contract, an accepted cancel transitions the
+            // goal to CANCELING immediately; the executing Task observes
+            // `isCancelRequested` (or `Task.isCancelled`) and races to a
+            // terminal state, after which `transitionStatus(.canceled)` /
+            // `.aborted` runs in the goal task.
+            self.transitionStatus(.canceling, for: key)
+            entry.stCont.yield(.canceling)
+            entry.task?.cancel()
+            canceling.append(
+                (
+                    uuid: Array(key),
+                    stampSec: entry.handle.acceptedAt.sec,
+                    stampNanosec: entry.handle.acceptedAt.nanosec
+                ))
+        }
+        // returnCode 0 = NONE (success); 1 = REJECTED (handler rejected
+        // every candidate); UNKNOWN was already handled above.
+        let code: Int8 = canceling.isEmpty ? 1 : 0
+        return Self.encodeCancelGoalResponse(returnCode: code, entries: canceling)
+    }
+
+    private func handleGetResult(goalId: [UInt8]) async throws -> GetResultAck {
+        let key = Data(goalId)
+        stateLock.lock()
+        if let cached = goals[key]?.resultCache {
+            stateLock.unlock()
+            return cached
+        }
+        stateLock.unlock()
+
+        return try await withCheckedThrowingContinuation { cont in
+            stateLock.lock()
+            if let entry = goals[key] {
+                if let cached = entry.resultCache {
+                    stateLock.unlock()
+                    cont.resume(returning: cached)
+                    return
+                }
+                entry.resultWaiters.append(cont)
+                stateLock.unlock()
+            } else {
+                stateLock.unlock()
+                cont.resume(
+                    throwing: ActionError.mapping(
+                        TransportError.unsupportedFeature("unknown goal_id")))
+            }
+        }
+    }
+
+    private func cacheResult(_ ack: GetResultAck, for key: Data) {
+        stateLock.lock()
+        guard let entry = goals[key] else {
+            stateLock.unlock()
+            return
+        }
+        entry.resultCache = ack
+        let waiters = entry.resultWaiters
+        entry.resultWaiters = []
+        stateLock.unlock()
+        for w in waiters {
+            w.resume(returning: ack)
+        }
+    }
+
+    private func transitionStatus(_ s: ActionGoalStatus, for key: Data) {
+        stateLock.lock()
+        if let entry = goals[key] {
+            entry.status = s
+        }
+        stateLock.unlock()
+        publishStatusSnapshot()
+    }
+
+    private func publishStatusSnapshot() {
+        stateLock.lock()
+        let snapshot: [ActionStatusEntry] = goals.map { (key, entry) in
+            ActionStatusEntry(
+                uuid: Array(key),
+                stampSec: entry.handle.acceptedAt.sec,
+                stampNanosec: entry.handle.acceptedAt.nanosec,
+                status: entry.status.rawValue
+            )
+        }
+        stateLock.unlock()
+        guard let serverImpl = transport as? PublishesActionFeedback else { return }
+        try? serverImpl.publishStatus(entries: snapshot)
+    }
+
+    private static func encodeCancelGoalResponse(
+        returnCode: Int8,
+        entries: [(uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32)]
+    ) -> Data {
+        var out = Data([0x00, 0x01, 0x00, 0x00])
+        out.append(UInt8(bitPattern: returnCode))
+        out.append(contentsOf: [0, 0, 0])
+        var count = UInt32(entries.count).littleEndian
+        withUnsafeBytes(of: &count) { out.append(contentsOf: $0) }
+        for e in entries {
+            out.append(contentsOf: e.uuid)
+            var s = e.stampSec.littleEndian
+            var n = e.stampNanosec.littleEndian
+            withUnsafeBytes(of: &s) { out.append(contentsOf: $0) }
+            withUnsafeBytes(of: &n) { out.append(contentsOf: $0) }
+        }
+        return out
+    }
+
+    static func uuidFromBytes(_ b: [UInt8]) -> Foundation.UUID {
+        precondition(b.count == 16)
+        return Foundation.UUID(
+            uuid: (
+                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+            ))
+    }
+}
+
+/// Internal protocol for type-erased action-server cleanup.
+protocol ActionServerCloseable {
+    func closeActionServer() throws
+}

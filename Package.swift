@@ -371,6 +371,16 @@ if canBuildDDS {
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/SrvClient"
         ),
+        .executableTarget(
+            name: "action-server",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/ActionServer"
+        ),
+        .executableTarget(
+            name: "action-client",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/ActionClient"
+        ),
 
         .testTarget(
             name: "SwiftROS2Tests",

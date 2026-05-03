@@ -393,6 +393,14 @@ final class ZenohTransportActionServerImpl: TransportActionServer, @unchecked Se
         try client.put(keyExpr: statusKeyExpr, payload: frame, attachment: nil)
     }
 
+    /// Public-protocol witness called by the umbrella `ROS2ActionServer`.
+    func publishStatus(entries: [ActionStatusEntry]) throws {
+        let tuples: [ActionFrameDecoder.StatusEntry] = entries.map {
+            (uuid: $0.uuid, stampSec: $0.stampSec, stampNanosec: $0.stampNanosec, status: $0.status)
+        }
+        try publishStatus(entries: tuples)
+    }
+
     func close() throws {
         lock.lock()
         guard !closed else {
@@ -770,3 +778,5 @@ private final class ActionGetOnceState: @unchecked Sendable {
         cont.resume(throwing: error)
     }
 }
+
+extension ZenohTransportActionServerImpl: PublishesActionFeedback {}

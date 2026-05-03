@@ -22,6 +22,7 @@ transports natively:
 ### Reference
 
 - <doc:WireFormat>
+- <doc:Actions>
 
 ### Core types
 
@@ -30,3 +31,15 @@ transports natively:
 - ``ROS2Publisher``
 - ``ROS2Subscription``
 - ``QoSProfile``
+
+### Actions
+
+- ``ROS2ActionServer``
+- ``ROS2ActionClient``
+- ``ActionGoalHandle``
+- ``ActionServerHandler``
+- ``ActionResult``
+- ``ActionGoalStatus``
+- ``GoalResponse``
+- ``CancelResponse``
+- ``ActionError``

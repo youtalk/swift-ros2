@@ -29,6 +29,8 @@ public final class ROS2Node: @unchecked Sendable {
     private var subscriptions: [AnyObject] = []
     private var services: [AnyObject] = []
     private var clients: [AnyObject] = []
+    private var actionServers: [AnyObject] = []
+    private var actionClients: [AnyObject] = []
     private let lock = NSLock()
 
     init(
@@ -205,11 +207,89 @@ public final class ROS2Node: @unchecked Sendable {
         return client
     }
 
+    // MARK: - Action
+
+    /// Create an action server for a specific ``ROS2Action``.
+    public func createActionServer<H: ActionServerHandler>(
+        _ actionType: H.Action.Type,
+        name: String,
+        qos: QoSProfile = .actionDefault,
+        handler: H
+    ) async throws -> ROS2ActionServer<H> {
+        let fullName = buildFullTopic(name)
+        let typeInfo = H.Action.typeInfo
+        let transportQoS = qos.toTransportQoS()
+        let supportsHash = context.distro.supportsTypeHash
+        let hashes = ActionRoleTypeHashes(
+            sendGoalRequest: supportsHash ? typeInfo.sendGoalRequestTypeHash : nil,
+            sendGoalResponse: supportsHash ? typeInfo.sendGoalResponseTypeHash : nil,
+            cancelGoalRequest: supportsHash ? CancelGoalSrv.typeInfo.requestTypeHash : nil,
+            cancelGoalResponse: supportsHash ? CancelGoalSrv.typeInfo.responseTypeHash : nil,
+            getResultRequest: supportsHash ? typeInfo.getResultRequestTypeHash : nil,
+            getResultResponse: supportsHash ? typeInfo.getResultResponseTypeHash : nil,
+            feedbackMessage: supportsHash ? typeInfo.feedbackMessageTypeHash : nil,
+            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil
+        )
+
+        let serverHolder = WeakHolder<ROS2ActionServer<H>>()
+        let handlers = ROS2ActionServer<H>.makeHandlers { serverHolder.value }
+        let transportServer = try session.createActionServer(
+            name: fullName,
+            actionTypeName: typeInfo.actionName,
+            roleTypeHashes: hashes,
+            qos: transportQoS,
+            handlers: handlers
+        )
+        let server = ROS2ActionServer<H>(
+            transport: transportServer,
+            handler: handler,
+            isLegacySchema: context.distro.isLegacySchema
+        )
+        serverHolder.value = server
+        appendActionServer(server)
+        return server
+    }
+
+    /// Create an action client for a specific ``ROS2Action``.
+    public func createActionClient<A: ROS2Action>(
+        _ actionType: A.Type,
+        name: String,
+        qos: QoSProfile = .actionDefault
+    ) async throws -> ROS2ActionClient<A> {
+        let fullName = buildFullTopic(name)
+        let typeInfo = A.typeInfo
+        let transportQoS = qos.toTransportQoS()
+        let supportsHash = context.distro.supportsTypeHash
+        let hashes = ActionRoleTypeHashes(
+            sendGoalRequest: supportsHash ? typeInfo.sendGoalRequestTypeHash : nil,
+            sendGoalResponse: supportsHash ? typeInfo.sendGoalResponseTypeHash : nil,
+            cancelGoalRequest: supportsHash ? CancelGoalSrv.typeInfo.requestTypeHash : nil,
+            cancelGoalResponse: supportsHash ? CancelGoalSrv.typeInfo.responseTypeHash : nil,
+            getResultRequest: supportsHash ? typeInfo.getResultRequestTypeHash : nil,
+            getResultResponse: supportsHash ? typeInfo.getResultResponseTypeHash : nil,
+            feedbackMessage: supportsHash ? typeInfo.feedbackMessageTypeHash : nil,
+            statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil
+        )
+
+        let transportClient = try session.createActionClient(
+            name: fullName,
+            actionTypeName: typeInfo.actionName,
+            roleTypeHashes: hashes,
+            qos: transportQoS
+        )
+        let client = ROS2ActionClient<A>(
+            transport: transportClient,
+            isLegacySchema: context.distro.isLegacySchema
+        )
+        appendActionClient(client)
+        return client
+    }
+
     // MARK: - Lifecycle
 
     /// Destroy this node and release all resources
     public func destroy() async {
-        let (pubs, subs, svcs, clis) = takeAllEntities()
+        let (pubs, subs, svcs, clis, aSrvs, aClis) = takeAllEntities()
         for pub in pubs {
             if let p = pub as? PublisherCloseable {
                 try? p.closePublisher()
@@ -228,6 +308,16 @@ public final class ROS2Node: @unchecked Sendable {
         for cli in clis {
             if let c = cli as? ClientCloseable {
                 try? c.closeClient()
+            }
+        }
+        for s in aSrvs {
+            if let s = s as? ActionServerCloseable {
+                try? s.closeActionServer()
+            }
+        }
+        for c in aClis {
+            if let c = c as? ActionClientCloseable {
+                try? c.closeActionClient()
             }
         }
     }
@@ -258,18 +348,36 @@ public final class ROS2Node: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func takeAllEntities() -> ([AnyObject], [AnyObject], [AnyObject], [AnyObject]) {
+    private func appendActionServer(_ server: AnyObject) {
+        lock.lock()
+        actionServers.append(server)
+        lock.unlock()
+    }
+
+    private func appendActionClient(_ client: AnyObject) {
+        lock.lock()
+        actionClients.append(client)
+        lock.unlock()
+    }
+
+    private func takeAllEntities() -> (
+        [AnyObject], [AnyObject], [AnyObject], [AnyObject], [AnyObject], [AnyObject]
+    ) {
         lock.lock()
         let pubs = publishers
         let subs = subscriptions
         let svcs = services
         let clis = clients
+        let aSrvs = actionServers
+        let aClis = actionClients
         publishers.removeAll()
         subscriptions.removeAll()
         services.removeAll()
         clients.removeAll()
+        actionServers.removeAll()
+        actionClients.removeAll()
         lock.unlock()
-        return (pubs, subs, svcs, clis)
+        return (pubs, subs, svcs, clis, aSrvs, aClis)
     }
 
     // MARK: - Helpers

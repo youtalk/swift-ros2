@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+## [0.8.0] - 2026-05-03
+
+### Added
+- **ROS 2 Actions — full server / client.** Six-phase rollout shipping `ROS2Action` type-system foundation, wire codecs, transport protocols, DDS transport, Zenoh transport, and the typed `ROS2ActionServer<H>` / `ROS2ActionClient<A>` umbrella API. Pure Swift Concurrency surface — `async throws` + `AsyncStream` for feedback / status, no callback shims. Built-in `example_interfaces/action/Fibonacci`. Examples: `swift run action-server zenoh` / `swift run action-client zenoh`. DocC chapter under `SwiftROS2/Documentation.docc/Articles/Actions.md`.
+- **ROS 2 Actions — umbrella API + examples (phase 6 of 6).**
+  - `ROS2ActionServer<H>`, `ROS2ActionClient<A>`, `ActionGoalHandle<A>`, `ActionServerHandler` protocol, public enums (`GoalResponse`, `CancelResponse`, `ActionGoalStatus`, `ActionResult`), `ActionError`.
+  - `QoSProfile.actionDefault` — reliable / volatile / keep-last 10 (matches `rmw_qos_profile_services_default`).
+  - `ROS2Node.createActionServer(_:name:qos:handler:)` and `createActionClient(_:name:qos:)`. `ROS2Node.destroy()` now also walks action servers / clients.
+  - `ActionStatusEntry` public struct + `PublishesActionFeedback` public protocol on `SwiftROS2Transport` (the seam the umbrella server uses to publish feedback / status snapshots through the transport without a transport-specific downcast). `DDSTransportActionServerImpl` and `ZenohTransportActionServerImpl` conform.
+  - `action-server` / `action-client` example binaries (Apple / Linux / DDS-on-Windows — gated alongside the umbrella).
+  - LINUX_IP-gated `FibonacciActionTests` integration test.
+  - DocC `Actions.md` chapter; `MIGRATION.md` 0.7 → 0.8 entry.
 - **ROS 2 Actions — type-system foundation (phase 1 of 6, targeting 0.8.0).** Pure type-system work; no wire / transport / API changes yet.
   - `ROS2ActionTypeInfo` extended with synthesized-wrapper hashes (`sendGoalRequestTypeHash`, `sendGoalResponseTypeHash`, `getResultRequestTypeHash`, `getResultResponseTypeHash`, `feedbackMessageTypeHash`). Source- and ABI-compatible: the original 3-hash initializer is preserved as an explicit overload; the 8-hash initializer is a separate entry point.
   - `BuiltinInterfacesTime` (`builtin_interfaces/msg/Time`) — spec-correct `int32 sec`, `uint32 nanosec`. Distinct from `Header` (which keeps its legacy `UInt32 sec`).

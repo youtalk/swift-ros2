@@ -134,9 +134,9 @@ public struct ZenohWireCodec: WireCodec {
             return TypeNameConverter.toDDSActionRoleTypeName(
                 actionTypeName, role: "FeedbackMessage", suffix: nil)
         case .cancelGoal:
-            return "action_msgs::srv::dds_::CancelGoal_Request_"
+            return TypeNameConverter.cancelGoalRequestDDSTypeName
         case .status:
-            return "action_msgs::msg::dds_::GoalStatusArray_"
+            return TypeNameConverter.goalStatusArrayDDSTypeName
         }
     }
 

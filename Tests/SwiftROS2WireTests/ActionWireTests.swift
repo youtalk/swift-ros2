@@ -391,4 +391,37 @@ final class ActionWireTests: XCTestCase {
             token.hasSuffix("Fibonacci_SendGoal_Request_/\(QoSPolicy.servicesDefault.toKeyExpr())")
         )
     }
+
+    func testActionLivelinessStripsLeadingSlashFromActionName() {
+        let codec = ZenohWireCodec(distro: .jazzy)
+        let withSlash = codec.makeActionLivelinessToken(
+            entityKind: .actionServer,
+            domainId: 0,
+            sessionId: "ses",
+            nodeId: "nod",
+            entityId: "ent",
+            namespace: "",
+            nodeName: "fib_node",
+            actionName: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_aaa",
+            qos: QoSPolicy.servicesDefault
+        )
+        let withoutSlash = codec.makeActionLivelinessToken(
+            entityKind: .actionServer,
+            domainId: 0,
+            sessionId: "ses",
+            nodeId: "nod",
+            entityId: "ent",
+            namespace: "",
+            nodeName: "fib_node",
+            actionName: "fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHash: "RIHS01_aaa",
+            qos: QoSPolicy.servicesDefault
+        )
+        XCTAssertEqual(withSlash, withoutSlash)
+        XCTAssertFalse(withSlash.contains("//"))
+        XCTAssertTrue(withSlash.contains("/%fibonacci/"))
+    }
 }

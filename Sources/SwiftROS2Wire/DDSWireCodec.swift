@@ -90,6 +90,42 @@ public struct DDSWireCodec: Sendable {
         public let getResultReplyTypeName: String
         public let feedbackTypeName: String
         public let statusTypeName: String
+
+        public init(
+            sendGoalRequestTopic: String,
+            sendGoalReplyTopic: String,
+            cancelGoalRequestTopic: String,
+            cancelGoalReplyTopic: String,
+            getResultRequestTopic: String,
+            getResultReplyTopic: String,
+            feedbackTopic: String,
+            statusTopic: String,
+            sendGoalRequestTypeName: String,
+            sendGoalReplyTypeName: String,
+            cancelGoalRequestTypeName: String,
+            cancelGoalReplyTypeName: String,
+            getResultRequestTypeName: String,
+            getResultReplyTypeName: String,
+            feedbackTypeName: String,
+            statusTypeName: String
+        ) {
+            self.sendGoalRequestTopic = sendGoalRequestTopic
+            self.sendGoalReplyTopic = sendGoalReplyTopic
+            self.cancelGoalRequestTopic = cancelGoalRequestTopic
+            self.cancelGoalReplyTopic = cancelGoalReplyTopic
+            self.getResultRequestTopic = getResultRequestTopic
+            self.getResultReplyTopic = getResultReplyTopic
+            self.feedbackTopic = feedbackTopic
+            self.statusTopic = statusTopic
+            self.sendGoalRequestTypeName = sendGoalRequestTypeName
+            self.sendGoalReplyTypeName = sendGoalReplyTypeName
+            self.cancelGoalRequestTypeName = cancelGoalRequestTypeName
+            self.cancelGoalReplyTypeName = cancelGoalReplyTypeName
+            self.getResultRequestTypeName = getResultRequestTypeName
+            self.getResultReplyTypeName = getResultReplyTypeName
+            self.feedbackTypeName = feedbackTypeName
+            self.statusTypeName = statusTypeName
+        }
     }
 
     /// Build the DDS topic / type name octuple for an action.
@@ -121,15 +157,15 @@ public struct DDSWireCodec: Sendable {
                 actionTypeName, role: "SendGoal", suffix: "Request"),
             sendGoalReplyTypeName: TypeNameConverter.toDDSActionRoleTypeName(
                 actionTypeName, role: "SendGoal", suffix: "Response"),
-            cancelGoalRequestTypeName: "action_msgs::srv::dds_::CancelGoal_Request_",
-            cancelGoalReplyTypeName: "action_msgs::srv::dds_::CancelGoal_Response_",
+            cancelGoalRequestTypeName: TypeNameConverter.cancelGoalRequestDDSTypeName,
+            cancelGoalReplyTypeName: TypeNameConverter.cancelGoalResponseDDSTypeName,
             getResultRequestTypeName: TypeNameConverter.toDDSActionRoleTypeName(
                 actionTypeName, role: "GetResult", suffix: "Request"),
             getResultReplyTypeName: TypeNameConverter.toDDSActionRoleTypeName(
                 actionTypeName, role: "GetResult", suffix: "Response"),
             feedbackTypeName: TypeNameConverter.toDDSActionRoleTypeName(
                 actionTypeName, role: "FeedbackMessage", suffix: nil),
-            statusTypeName: "action_msgs::msg::dds_::GoalStatusArray_"
+            statusTypeName: TypeNameConverter.goalStatusArrayDDSTypeName
         )
     }
 }

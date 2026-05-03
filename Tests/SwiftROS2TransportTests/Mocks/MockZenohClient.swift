@@ -152,18 +152,25 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
             throw e
         }
         gets.append((key: keyExpr, payload: payload, attachment: attachment, timeoutMs: timeoutMs))
+        // Snapshot the dynamic handler / next scripted reply under the lock,
+        // but call the dynamic handler outside it. Otherwise a handler that
+        // touches the mock (e.g. inspects `writes`) would deadlock on the
+        // same lock.
+        let dyn = getReplyHandler
+        let scripted: (payload: Data?, isError: Bool)? =
+            (dyn == nil && !getScripts.isEmpty) ? getScripts.removeFirst() : nil
+        lock.unlock()
+
         let script: (payload: Data?, isError: Bool)?
-        // Dynamic handler takes precedence over scripted replies.
-        if let dyn = getReplyHandler {
+        if let dyn = dyn {
             if let replyPayload = dyn(keyExpr, payload) {
                 script = (payload: replyPayload, isError: false)
             } else {
                 script = (payload: nil, isError: false)
             }
         } else {
-            script = getScripts.isEmpty ? nil : getScripts.removeFirst()
+            script = scripted
         }
-        lock.unlock()
 
         // Fire the scripted reply / finish on a background queue to mirror
         // the C bridge's "callbacks run on a zenoh-pico-owned thread"
@@ -190,8 +197,9 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     /// Test helper: deliver a synthetic query to every queryable registered on
     /// `keyExpr` and collect the resulting `reply(...)` payloads. Each invoked
     /// handler reads the query asynchronously (the action server fires a Task
-    /// internally), so this helper polls briefly until at least one reply is
-    /// recorded — sufficient for the in-process mock-driven tests.
+    /// internally), so this helper polls briefly until **every** invoked
+    /// handler has produced a reply (one reply per handler) or the 1s
+    /// poll budget elapses — sufficient for the in-process mock-driven tests.
     func deliverQuery(keyExpr: String, payload: Data) async throws -> [Data] {
         let handlers: [@Sendable (any ZenohQueryHandle) -> Void] = {
             lock.lock()

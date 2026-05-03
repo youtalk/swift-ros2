@@ -91,21 +91,48 @@ extension ZenohTransportSession {
             statusKeyExpr: statusKey
         )
 
-        do {
-            let q1 = try client.declareQueryable(sendGoalKey) { [weak server] q in
-                server?.handleSendGoalQuery(q)
+        // Track every queryable / token created so a partial failure tears
+        // them all down before rethrowing — otherwise we leak Zenoh handles
+        // and live callbacks for a server that was never returned.
+        var createdQueryables: [any ZenohQueryableHandle] = []
+        var createdToken: (any ZenohLivelinessTokenHandle)?
+        func rollbackAndThrow(_ error: Error) throws -> Never {
+            try? createdToken?.close()
+            for q in createdQueryables { try? q.close() }
+            if let e = error as? ZenohError {
+                throw TransportError.subscriberCreationFailed(e.localizedDescription ?? "\(e)")
             }
-            let q2 = try client.declareQueryable(cancelGoalKey) { [weak server] q in
-                server?.handleCancelGoalQuery(q)
-            }
-            let q3 = try client.declareQueryable(getResultKey) { [weak server] q in
-                server?.handleGetResultQuery(q)
-            }
-            let token = try client.declareLivelinessToken(livelinessTokenKey)
-            server.attach(queryables: [q1, q2, q3], livelinessToken: token)
-        } catch let e as ZenohError {
-            throw TransportError.subscriberCreationFailed(e.localizedDescription ?? "\(e)")
+            throw error
         }
+        func declareQ(
+            _ key: String, _ handler: @escaping @Sendable (any ZenohQueryHandle) -> Void
+        ) throws -> any ZenohQueryableHandle {
+            do {
+                let q = try client.declareQueryable(key, handler: handler)
+                createdQueryables.append(q)
+                return q
+            } catch {
+                try rollbackAndThrow(error)
+            }
+        }
+
+        let q1 = try declareQ(sendGoalKey) { [weak server] q in
+            server?.handleSendGoalQuery(q)
+        }
+        let q2 = try declareQ(cancelGoalKey) { [weak server] q in
+            server?.handleCancelGoalQuery(q)
+        }
+        let q3 = try declareQ(getResultKey) { [weak server] q in
+            server?.handleGetResultQuery(q)
+        }
+        let token: any ZenohLivelinessTokenHandle
+        do {
+            token = try client.declareLivelinessToken(livelinessTokenKey)
+            createdToken = token
+        } catch {
+            try rollbackAndThrow(error)
+        }
+        server.attach(queryables: [q1, q2, q3], livelinessToken: token)
 
         appendActionServer(server)
         return server
@@ -180,18 +207,44 @@ extension ZenohTransportSession {
             statusKeyExpr: statusKey
         )
 
-        do {
-            let fbSub = try client.subscribe(keyExpr: feedbackKey) { [weak cli] sample in
-                cli?.handleFeedbackSample(payload: sample.payload)
+        // Same rollback pattern as the server path — clean up any
+        // already-created subscriber/token if a later call throws.
+        var createdSubs: [any ZenohSubscriberHandle] = []
+        var createdToken: (any ZenohLivelinessTokenHandle)?
+        func rollbackAndThrow(_ error: Error) throws -> Never {
+            try? createdToken?.close()
+            for s in createdSubs { try? s.close() }
+            if let e = error as? ZenohError {
+                throw TransportError.subscriberCreationFailed(e.localizedDescription ?? "\(e)")
             }
-            let stSub = try client.subscribe(keyExpr: statusKey) { [weak cli] sample in
-                cli?.handleStatusSample(payload: sample.payload)
-            }
-            let token = try client.declareLivelinessToken(livelinessTokenKey)
-            cli.attach(feedbackSub: fbSub, statusSub: stSub, livelinessToken: token)
-        } catch let e as ZenohError {
-            throw TransportError.subscriberCreationFailed(e.localizedDescription ?? "\(e)")
+            throw error
         }
+        func subscribeKey(
+            _ key: String, _ handler: @escaping @Sendable (ZenohSample) -> Void
+        ) throws -> any ZenohSubscriberHandle {
+            do {
+                let s = try client.subscribe(keyExpr: key, handler: handler)
+                createdSubs.append(s)
+                return s
+            } catch {
+                try rollbackAndThrow(error)
+            }
+        }
+
+        let fbSub = try subscribeKey(feedbackKey) { [weak cli] sample in
+            cli?.handleFeedbackSample(payload: sample.payload)
+        }
+        let stSub = try subscribeKey(statusKey) { [weak cli] sample in
+            cli?.handleStatusSample(payload: sample.payload)
+        }
+        let token: any ZenohLivelinessTokenHandle
+        do {
+            token = try client.declareLivelinessToken(livelinessTokenKey)
+            createdToken = token
+        } catch {
+            try rollbackAndThrow(error)
+        }
+        cli.attach(feedbackSub: fbSub, statusSub: stSub, livelinessToken: token)
 
         appendActionClient(cli)
         return cli
@@ -472,12 +525,28 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
         await pending.registerStreams(goalId: goalId, feedback: fbCont, status: stCont)
 
         let frame = ActionFrameDecoder.encodeSendGoalRequest(goalId: goalId, goalCDR: goalCDR)
-        let replyCDR = try await getOnce(
-            keyExpr: sendGoalKeyExpr,
-            payload: frame,
-            timeout: acceptanceTimeout
-        )
-        let resp = try ActionFrameDecoder.decodeSendGoalResponse(from: replyCDR)
+        let replyCDR: Data
+        do {
+            replyCDR = try await getOnce(
+                keyExpr: sendGoalKeyExpr,
+                payload: frame,
+                timeout: acceptanceTimeout
+            )
+        } catch {
+            // The request never completed (timeout / decode failure / get
+            // throw), so the caller never received a handle for this goal.
+            // Drop the pending entry to avoid misrouting future feedback /
+            // status samples to a handle that doesn't exist.
+            await pending.cancel(goalId: goalId)
+            throw error
+        }
+        let resp: (accepted: Bool, stampSec: Int32, stampNanosec: UInt32)
+        do {
+            resp = try ActionFrameDecoder.decodeSendGoalResponse(from: replyCDR)
+        } catch {
+            await pending.cancel(goalId: goalId)
+            throw error
+        }
         if !resp.accepted {
             await pending.cancel(goalId: goalId)
         }
@@ -499,6 +568,11 @@ final class ZenohTransportActionClientImpl: TransportActionClient, @unchecked Se
             timeout: timeout
         )
         let (status, resultCDR) = try ActionFrameDecoder.decodeGetResultResponse(from: replyCDR)
+        // Drain the per-goal entry from `pending` once the result is in
+        // hand — any future feedback / status samples for this goal are
+        // stale, and without this the entry leaks for the lifetime of the
+        // client. (Parallel to the DDS transport's behavior.)
+        await pending.cancel(goalId: goalId)
         return GetResultAck(status: status, resultCDR: resultCDR)
     }
 

@@ -578,6 +578,266 @@ extension Pipeline {
         }
     }
 
+    /// Same parse-and-IR walk as ``generateMulti`` but stops short of
+    /// emission. Used by `swift-ros2-gen --verify-hashes` to diff every
+    /// generator-computed RIHS01 against the canonical rosidl oracle without
+    /// touching the filesystem.
+    ///
+    /// Each returned ``VerifyPlanEntry`` carries the in-process IR, the
+    /// generator-computed hash for the requested distro, and the
+    /// ``topLevelTypeName`` of the IDL file that produced it (e.g. for
+    /// `Fibonacci_SendGoal_Request` the top-level type is `Fibonacci`). The
+    /// verifier groups entries by `(package, kind, topLevelTypeName, distro)`
+    /// so it issues exactly one oracle JSON read per source IDL file.
+    public static func buildVerifyPlan(
+        _ runs: [PackageRun],
+        distros allowedDistros: Set<String>? = nil
+    ) throws -> [VerifyPlanEntry] {
+        // Reuse the multi-package gather + register + hash sequence from
+        // generateMulti so cross-package nested references resolve. We
+        // collect one (run, ir, sourceLabel, topLevelTypeName) tuple per
+        // generated MessageIR; for actions, the topLevelTypeName is the
+        // outer .action stem rather than the contained sub-type's typeName.
+        var unresolvedIRs: [(run: PackageRun, ir: MessageIR, sourceLabel: String, topLevelTypeName: String)] = []
+        var collectedActions: [ParsedAction] = []
+
+        var runsByPackage: [String: [PackageRun]] = [:]
+        var packageOrder: [String] = []
+        for run in runs {
+            if runsByPackage[run.input.name] == nil { packageOrder.append(run.input.name) }
+            runsByPackage[run.input.name, default: []].append(run)
+        }
+        for pkg in packageOrder {
+            let pkgRuns = runsByPackage[pkg]!
+            if pkgRuns.count == 1 {
+                let run = pkgRuns[0]
+                let parsed = try parsePackage(run: run)
+                for entry in parsed {
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: entry.ir, sourceLabel: entry.sourceLabel,
+                            topLevelTypeName: entry.ir.typeName
+                        ))
+                }
+                let services = try parseServicesIn(run: run)
+                for svc in services {
+                    let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
+                    let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
+                    let label = sourceLabelFor(run: run, typeName: svc.typeName, kind: .srv)
+                    unresolvedIRs.append(
+                        (run: run, ir: reqIR, sourceLabel: label, topLevelTypeName: svc.typeName))
+                    unresolvedIRs.append(
+                        (run: run, ir: resIR, sourceLabel: label, topLevelTypeName: svc.typeName))
+                }
+                let actions = try parseActionsIn(run: run)
+                for act in actions {
+                    let label = sourceLabelFor(run: run, typeName: act.typeName, kind: .action)
+                    let top = act.typeName
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.goal, sourceLabel: label, topLevelTypeName: top))
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: act.actionIR.result, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: act.actionIR.feedback, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: act.actionIR.sendGoalRequest, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: act.actionIR.sendGoalResponse, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: act.actionIR.getResultRequest, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: act.actionIR.getResultResponse, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: run, ir: act.actionIR.feedbackMessage, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                }
+                collectedActions.append(contentsOf: actions)
+            } else {
+                let merged = try parseAndMergeMultiDistroPackage(runs: pkgRuns)
+                let primaryRun = pkgRuns.first!
+                for entry in merged {
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: entry.ir, sourceLabel: entry.sourceLabel,
+                            topLevelTypeName: entry.ir.typeName
+                        ))
+                }
+                let services = try parseServicesIn(run: primaryRun)
+                for svc in services {
+                    let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
+                    let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
+                    let label = sourceLabelFor(
+                        run: primaryRun, typeName: svc.typeName, kind: .srv)
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: reqIR, sourceLabel: label,
+                            topLevelTypeName: svc.typeName
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: resIR, sourceLabel: label,
+                            topLevelTypeName: svc.typeName
+                        ))
+                }
+                let actions = try parseActionsIn(run: primaryRun)
+                for act in actions {
+                    let label = sourceLabelFor(
+                        run: primaryRun, typeName: act.typeName, kind: .action)
+                    let top = act.typeName
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.goal, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.result, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.feedback, sourceLabel: label,
+                            topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.sendGoalRequest,
+                            sourceLabel: label, topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.sendGoalResponse,
+                            sourceLabel: label, topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.getResultRequest,
+                            sourceLabel: label, topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.getResultResponse,
+                            sourceLabel: label, topLevelTypeName: top
+                        ))
+                    unresolvedIRs.append(
+                        (
+                            run: primaryRun, ir: act.actionIR.feedbackMessage,
+                            sourceLabel: label, topLevelTypeName: top
+                        ))
+                }
+                collectedActions.append(contentsOf: actions)
+            }
+        }
+        var registry: [String: MessageIR] = [:]
+        for entry in unresolvedIRs {
+            registry[entry.ir.rosTypeName] = entry.ir
+        }
+        try validateAllReferencesResolved(registry: registry)
+
+        // For each distro the caller asked about (default: every distro any
+        // IR was built against), compute the per-distro hash and emit one
+        // VerifyPlanEntry per (ir, distro) pair. Distros that are out of
+        // scope for an IR (e.g. Humble for a type that didn't exist on
+        // Humble, or an IR that was built jazzy-only) are skipped.
+        var out: [VerifyPlanEntry] = []
+        for entry in unresolvedIRs {
+            // Determine the distros this IR is "in scope" for. Single-distro
+            // IRs (Phase 1-3 messages, services, actions) are jazzy-only;
+            // multi-distro merged IRs (Phase 4) carry one entry per distro
+            // in `perDistroFieldPresence`.
+            let scopedDistros: [String]
+            if entry.ir.perDistroFieldPresence.isEmpty {
+                scopedDistros = ["jazzy"]
+            } else {
+                scopedDistros = Array(entry.ir.perDistroFieldPresence.keys).sorted()
+            }
+            for distro in scopedDistros {
+                if let allow = allowedDistros, !allow.contains(distro) { continue }
+                // Humble does not have a hash oracle; rosidl pre-RIHS01.
+                // Skip silently to keep the verify-mode focused on the
+                // distros the rosidl `.json` files actually exist for.
+                if distro == "humble" { continue }
+                let hash = RIHS01.hash(entry.ir, for: distro, registry: registry)
+                out.append(
+                    VerifyPlanEntry(
+                        package: entry.ir.package,
+                        kind: entry.ir.kind,
+                        typeName: entry.ir.typeName,
+                        topLevelTypeName: entry.topLevelTypeName,
+                        distro: distro,
+                        expectedHash: hash
+                    ))
+            }
+        }
+        // NOTE: the action-level `<pkg>/action/<Type>` description is *not*
+        // verified here. rosidl's canonical action-level type description
+        // is built from the three constituent services (SendGoal,
+        // GetResult, FeedbackMessage), not as a flat record of three
+        // nested fields the way `IRBuilder.populateActionHashes`
+        // synthesizes it for the generator's local typeInfo. The eight
+        // wrapper / block hashes (which carry the wire format) are
+        // verified above; the action-level hash drift is tracked as a
+        // separate generator follow-up.
+        _ = collectedActions
+        return out
+    }
+}
+
+/// One in-process expectation produced by ``Pipeline/buildVerifyPlan(_:distros:)``.
+public struct VerifyPlanEntry: Sendable, Equatable {
+    public let package: String
+    public let kind: MessageKind
+    /// Sub-type name (e.g. `"Fibonacci_SendGoal_Request"`).
+    public let typeName: String
+    /// Outermost IDL stem the oracle JSON file is named after (e.g.
+    /// `"Fibonacci"`). The verifier groups requests by this stem so it
+    /// issues exactly one `docker run cat <Type>.json` per source file.
+    public let topLevelTypeName: String
+    public let distro: String
+    public let expectedHash: String
+
+    /// Canonical ROS type name used for `type_hashes[*].type_name` lookup
+    /// in the oracle JSON.
+    public var rosTypeName: String { "\(package)/\(kind.rawValue)/\(typeName)" }
+
+    public init(
+        package: String,
+        kind: MessageKind,
+        typeName: String,
+        topLevelTypeName: String,
+        distro: String,
+        expectedHash: String
+    ) {
+        self.package = package
+        self.kind = kind
+        self.typeName = typeName
+        self.topLevelTypeName = topLevelTypeName
+        self.distro = distro
+        self.expectedHash = expectedHash
+    }
+}
+
+extension Pipeline {
     private static func parsePackage(run: PackageRun) throws -> [ParsedEntry] {
         // Reject typo'd / nonexistent package directories up-front so the
         // srv-only tolerance below cannot mask a bad `--input` path.
@@ -856,7 +1116,7 @@ extension Pipeline {
     /// subdirectory at all (the common case for pure message / service
     /// packages). The same `typesAllowList` filter applies as for messages —
     /// it matches the bare action type name (`Fibonacci`).
-    static func parseActionsIn(run: PackageRun) throws -> [ParsedAction] {
+    public static func parseActionsIn(run: PackageRun) throws -> [ParsedAction] {
         let actionDir = run.input.directory.appendingPathComponent("action", isDirectory: true)
         var isDir: ObjCBool = false
         guard

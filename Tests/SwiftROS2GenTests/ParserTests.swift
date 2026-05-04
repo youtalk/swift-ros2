@@ -283,4 +283,21 @@ struct ParserTests {
         #expect(file.constants.count == 1)
         #expect(file.constants[0].value == "\"hello world\"")
     }
+
+    @Test("rejects trailing characters after array suffix")
+    func rejectsTrailingAfterArray() {
+        do {
+            _ = try Parser.parseMessage(
+                source: "uint8[16]junk uuid\n",
+                file: "Foo.msg",
+                package: "fake_pkg",
+                typeName: "Foo"
+            )
+            Issue.record("expected ParseError")
+        } catch let error as ParseError {
+            #expect(error.message.contains("trailing characters"))
+        } catch {
+            Issue.record("expected ParseError, got \(error)")
+        }
+    }
 }

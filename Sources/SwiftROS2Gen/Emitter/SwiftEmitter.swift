@@ -109,7 +109,7 @@ public enum SwiftEmitter {
             out += "\n"
             out += "    public func encode(to encoder: CDREncoder) throws {\n"
             for field in ir.fields {
-                out += emitEncode(field, nestedNameOverrides: nestedNameOverrides)
+                out += emitEncode(field)
             }
             out += "    }\n"
             out += "\n"
@@ -246,21 +246,34 @@ public enum SwiftEmitter {
         }
     }
 
-    static func emitEncode(_ field: FieldIR, nestedNameOverrides: [String: String]) -> String {
+    static func emitEncode(_ field: FieldIR) -> String {
         switch field.type {
         case .primitive:
             return "        encoder.\(writerCall(field.type))(\(field.swiftName))\n"
         case .nested:
             return "        try \(field.swiftName).encode(to: encoder)\n"
-        case .array(let element, _):
-            // Fixed array: per-element loop, no length prefix.
-            var out = "        for v in \(field.swiftName) {\n"
+        case .array(let element, let length):
+            // Fixed array: enforce caller-supplied length matches the IDL bound,
+            // then per-element loop with no length prefix on the wire.
+            var out = "        precondition(\n"
+            out += "            \(field.swiftName).count == \(length),\n"
+            out += "            \"\(field.swiftName) requires exactly \(length) elements\"\n"
+            out += "        )\n"
+            out += "        for v in \(field.swiftName) {\n"
             out += "            \(elementEncodeStmt(element, value: "v"))\n"
             out += "        }\n"
             return out
-        case .sequence(let element, _):
+        case .sequence(let element, let upperBound):
             // Sequence: explicit uint32 length prefix, then per-element loop.
-            var out = "        encoder.writeUInt32(UInt32(\(field.swiftName).count))\n"
+            // Bounded sequences enforce the IDL upper bound at encode time.
+            var out = ""
+            if let upper = upperBound {
+                out += "        precondition(\n"
+                out += "            \(field.swiftName).count <= \(upper),\n"
+                out += "            \"\(field.swiftName) bounded sequence may not exceed \(upper) elements\"\n"
+                out += "        )\n"
+            }
+            out += "        encoder.writeUInt32(UInt32(\(field.swiftName).count))\n"
             out += "        for v in \(field.swiftName) {\n"
             out += "            \(elementEncodeStmt(element, value: "v"))\n"
             out += "        }\n"

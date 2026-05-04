@@ -201,6 +201,13 @@ public enum Parser {
                     message: "malformed array/sequence token '\(token)' \u{2014} missing ']'"
                 )
             }
+            if closeIdx != token.index(before: token.endIndex) {
+                throw ParseError(
+                    file: file,
+                    line: line,
+                    message: "trailing characters after ']' in type token '\(token)'"
+                )
+            }
             let baseToken = String(token[..<openIdx])
             let inside = String(token[token.index(after: openIdx)..<closeIdx])
             let element = try parseScalarTypeToken(

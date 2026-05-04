@@ -89,9 +89,22 @@ public enum SwiftEmitter {
             }
             out += "    public init() {}\n"
             out += "\n"
-            out += "    public func encode(to encoder: CDREncoder) throws {}\n"
-            out += "\n"
-            out += "    public init(from decoder: CDRDecoder) throws {}\n"
+            // Service halves require a single 0x00 dummy byte after the
+            // encapsulation header so CycloneDDS does not collapse the sample
+            // to zero length. Plain messages (.msg) keep an empty body.
+            if ir.kind == .srv {
+                out += "    public func encode(to encoder: CDREncoder) throws {\n"
+                out += "        encoder.writeUInt8(0)\n"
+                out += "    }\n"
+                out += "\n"
+                out += "    public init(from decoder: CDRDecoder) throws {\n"
+                out += "        _ = try decoder.readUInt8()\n"
+                out += "    }\n"
+            } else {
+                out += "    public func encode(to encoder: CDREncoder) throws {}\n"
+                out += "\n"
+                out += "    public init(from decoder: CDRDecoder) throws {}\n"
+            }
         } else {
             if preludeEmitted {
                 out += "\n"

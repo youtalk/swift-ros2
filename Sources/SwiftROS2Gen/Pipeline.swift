@@ -425,14 +425,33 @@ extension Pipeline {
         let sourceLabel: String
     }
 
+    /// Throw ``GeneratorError/packageDirectoryMissing(_:)`` when `directory`
+    /// does not exist or is not a directory. Used by every `--input` consumer
+    /// before tolerating a missing `msg/` or `srv/` subdirectory, so a typo'd
+    /// `--input` path surfaces as a hard error rather than as an empty
+    /// (single-package path) or partial (multi-distro path) success.
+    private static func requirePackageDirectory(_ directory: URL) throws {
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDir)
+        guard exists, isDir.boolValue else {
+            throw GeneratorError.packageDirectoryMissing(directory)
+        }
+    }
+
     private static func parsePackage(run: PackageRun) throws -> [ParsedEntry] {
+        // Reject typo'd / nonexistent package directories up-front so the
+        // srv-only tolerance below cannot mask a bad `--input` path.
+        try requirePackageDirectory(run.input.directory)
         let msgDir = run.input.directory.appendingPathComponent("msg", isDirectory: true)
         var isDir: ObjCBool = false
-        guard
-            FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir),
-            isDir.boolValue
-        else {
-            throw GeneratorError.packageDirectoryMissing(msgDir)
+        let msgExists =
+            FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir)
+            && isDir.boolValue
+        guard msgExists else {
+            // A package without a msg/ directory is valid when it ships only
+            // services (e.g. std_srvs) or actions. Return empty here; the
+            // caller still walks srv/ via parseServicesIn.
+            return []
         }
         let entries = try FileManager.default.contentsOfDirectory(
             at: msgDir,
@@ -500,6 +519,9 @@ extension Pipeline {
     /// filter applies as for messages — it matches the bare service name
     /// (`CancelGoal`).
     private static func parseServicesIn(run: PackageRun) throws -> [ParsedService] {
+        // Same guard as parsePackage: a missing package directory must surface
+        // as a hard error rather than as an empty service list.
+        try requirePackageDirectory(run.input.directory)
         let srvDir = run.input.directory.appendingPathComponent("srv", isDirectory: true)
         var isDir: ObjCBool = false
         guard
@@ -574,13 +596,22 @@ extension Pipeline {
         }
 
         for run in pkgRuns {
+            // Validate the per-distro `--input` path before falling through to
+            // the msg/ tolerance: a typo'd directory must not be silently
+            // skipped (which would yield a partial multi-distro merge with no
+            // diagnostics), only the absence of the `msg/` subdirectory inside
+            // an otherwise-valid package directory is tolerated.
+            try requirePackageDirectory(run.input.directory)
             let msgDir = run.input.directory.appendingPathComponent("msg", isDirectory: true)
             var isDir: ObjCBool = false
-            guard
-                FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir),
-                isDir.boolValue
-            else {
-                throw GeneratorError.packageDirectoryMissing(msgDir)
+            let msgExists =
+                FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir)
+                && isDir.boolValue
+            guard msgExists else {
+                // Service-only packages (no msg/ directory) are tolerated;
+                // the multi-distro path simply contributes no message IRs
+                // for that distro.
+                continue
             }
             let entries = try FileManager.default.contentsOfDirectory(
                 at: msgDir,

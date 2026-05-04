@@ -53,6 +53,27 @@ public enum RIHS01 {
         return "RIHS01_\(hex)"
     }
 
+    /// Compute the RIHS01 hash for a single distro view of a multi-distro IR.
+    ///
+    /// Filters fields to those whose `availability` includes `distro`, then
+    /// runs the regular hashing path. Pass `registry` when the IR has nested
+    /// references; for primitive-only IRs the empty-registry overload works.
+    public static func hash(
+        _ ir: MessageIR,
+        for distro: String,
+        registry: [String: MessageIR] = [:]
+    ) -> String {
+        let scopedFields = ir.fields.filter { $0.availability.includes(distro) }
+        let scoped = MessageIR(
+            package: ir.package,
+            typeName: ir.typeName,
+            kind: ir.kind,
+            fields: scopedFields,
+            constants: ir.constants
+        )
+        return hash(scoped, registry: registry)
+    }
+
     // MARK: - Canonical serialisation (internal, exposed for debugging)
 
     /// Builds the exact UTF-8 bytes that go into SHA-256.

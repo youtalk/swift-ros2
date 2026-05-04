@@ -323,3 +323,86 @@ struct HashGoldenPhase3Tests {
         #expect(RIHS01.hash(goalStatusArray, registry: registry) == expected)
     }
 }
+
+@Suite("RIHS01 per-distro golden hashes for sensor_msgs/Range")
+struct RangePerDistroHashTests {
+    /// Registry used by both Humble and Jazzy hashing paths. Range references
+    /// `std_msgs/Header`, which itself references `builtin_interfaces/Time`.
+    static func registry() -> [String: MessageIR] {
+        let time = MessageIR(
+            package: "builtin_interfaces", typeName: "Time",
+            fields: [
+                FieldIR(ros2Name: "sec", swiftName: "sec", type: .primitive(.int32)),
+                FieldIR(ros2Name: "nanosec", swiftName: "nanosec", type: .primitive(.uint32)),
+            ]
+        )
+        let header = MessageIR(
+            package: "std_msgs", typeName: "Header",
+            fields: [
+                FieldIR(
+                    ros2Name: "stamp", swiftName: "stamp",
+                    type: .nested(package: "builtin_interfaces", typeName: "Time")),
+                FieldIR(ros2Name: "frame_id", swiftName: "frameId", type: .primitive(.string)),
+            ]
+        )
+        return [
+            time.rosTypeName: time,
+            header.rosTypeName: header,
+        ]
+    }
+
+    /// Range with `variance` annotated as `.onlyIn(["jazzy"])` — the canary
+    /// that Phase 4 is set up to handle.
+    static func rangeIR() -> MessageIR {
+        return MessageIR(
+            package: "sensor_msgs", typeName: "Range",
+            fields: [
+                FieldIR(
+                    ros2Name: "header", swiftName: "header",
+                    type: .nested(package: "std_msgs", typeName: "Header")),
+                FieldIR(
+                    ros2Name: "radiation_type", swiftName: "radiationType",
+                    type: .primitive(.uint8)),
+                FieldIR(
+                    ros2Name: "field_of_view", swiftName: "fieldOfView",
+                    type: .primitive(.float32)),
+                FieldIR(
+                    ros2Name: "min_range", swiftName: "minRange",
+                    type: .primitive(.float32)),
+                FieldIR(
+                    ros2Name: "max_range", swiftName: "maxRange",
+                    type: .primitive(.float32)),
+                FieldIR(
+                    ros2Name: "range", swiftName: "range",
+                    type: .primitive(.float32)),
+                FieldIR(
+                    ros2Name: "variance", swiftName: "variance",
+                    type: .primitive(.float32),
+                    availability: .onlyIn(["jazzy"])),
+            ]
+        )
+    }
+
+    @Test("Range hash for Jazzy matches the canonical value")
+    func jazzyRangeHash() {
+        let reg = Self.registry()
+        let ir = Self.rangeIR()
+        let jazzyHash = RIHS01.hash(ir, for: "jazzy", registry: reg)
+        #expect(
+            jazzyHash
+                == "RIHS01_b42b62562e93cbfe9d42b82fe5994dfa3d63d7d5c90a317981703f7388adff3a")
+    }
+
+    @Test("Range hash for Humble drops the variance field")
+    func humbleRangeHash() {
+        let reg = Self.registry()
+        let ir = Self.rangeIR()
+        // Sanity: the Humble hash differs from the Jazzy one because Humble
+        // omits the `variance` field. The exact value is whatever the hasher
+        // produces for the field-filtered view; we only check that it is
+        // distinct (no Docker oracle available offline).
+        let humbleHash = RIHS01.hash(ir, for: "humble", registry: reg)
+        let jazzyHash = RIHS01.hash(ir, for: "jazzy", registry: reg)
+        #expect(humbleHash != jazzyHash)
+    }
+}

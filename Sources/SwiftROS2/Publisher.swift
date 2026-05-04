@@ -24,8 +24,15 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     }
 
     /// Publish a message
+    ///
+    /// The Publisher writes the 4-byte CDR encapsulation header (`00 01 00 00` for
+    /// little-endian XCDR v1) before delegating to `message.encode(to:)`. Generated
+    /// (Phase 2+) message bodies therefore must NOT write the header themselves;
+    /// hand-written legacy types continue to write their own header until they are
+    /// migrated to the generator output.
     public func publish(_ message: M) throws {
         let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        encoder.writeEncapsulationHeader()
         try message.encode(to: encoder)
         let data = encoder.getData()
 

@@ -189,6 +189,7 @@ final class MessageRoundTripTests: XCTestCase {
         let original = StringMsg(data: "Hello, ROS 2!")
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -201,6 +202,7 @@ final class MessageRoundTripTests: XCTestCase {
         let original = BoolMsg(data: true)
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -211,6 +213,7 @@ final class MessageRoundTripTests: XCTestCase {
 
     func testEmptyMsgRoundTrip() throws {
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try EmptyMsg().encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())

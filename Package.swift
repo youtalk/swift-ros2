@@ -161,6 +161,8 @@ var products: [Product] = [
     .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
     .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
     .library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]),
+    .library(name: "SwiftROS2Gen", targets: ["SwiftROS2Gen"]),
+    .executable(name: "swift-ros2-gen", targets: ["swift-ros2-gen"]),
 ]
 
 var targets: [Target] = [
@@ -244,6 +246,33 @@ var targets: [Target] = [
         name: "SwiftROS2TransportTests",
         dependencies: ["SwiftROS2Transport", "SwiftROS2Wire"],
         path: "Tests/SwiftROS2TransportTests"
+    ),
+
+    // Code generator library — IDL → Swift ROS2Message conformances
+    .target(
+        name: "SwiftROS2Gen",
+        dependencies: [
+            .product(name: "Crypto", package: "swift-crypto")
+        ],
+        path: "Sources/SwiftROS2Gen"
+    ),
+
+    // CLI entry point for the code generator
+    .executableTarget(
+        name: "swift-ros2-gen",
+        dependencies: [
+            "SwiftROS2Gen",
+            .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        ],
+        path: "Sources/swift-ros2-gen"
+    ),
+
+    // Unit tests for the code generator
+    .testTarget(
+        name: "SwiftROS2GenTests",
+        dependencies: ["SwiftROS2Gen"],
+        path: "Tests/SwiftROS2GenTests",
+        resources: [.copy("Resources")]
     ),
 ]
 
@@ -410,10 +439,13 @@ if canBuildDDS {
 // env var explicitly.
 let isDocsBuild = ProcessInfo.processInfo.environment["SWIFT_ROS2_DOCS_BUILD"] == "1"
 
-let packageDependencies: [Package.Dependency] =
-    isDocsBuild
-    ? [.package(url: "https://github.com/apple/swift-docc-plugin", from: "1.3.0")]
-    : []
+var packageDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+]
+if isDocsBuild {
+    packageDependencies.append(.package(url: "https://github.com/apple/swift-docc-plugin", from: "1.3.0"))
+}
 
 let package = Package(
     name: "swift-ros2",

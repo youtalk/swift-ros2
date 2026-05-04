@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.swift text eol=lf
+*.msg text eol=lf
+*.md text eol=lf

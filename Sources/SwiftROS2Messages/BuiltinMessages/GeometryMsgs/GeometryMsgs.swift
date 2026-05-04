@@ -19,7 +19,6 @@ public struct TwistStamped: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         try twist.encode(to: encoder)
     }
@@ -46,7 +45,6 @@ public struct PoseStamped: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         try pose.encode(to: encoder)
     }
@@ -75,7 +73,6 @@ public struct TransformStamped: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         encoder.writeString(childFrameId)
         try transform.encode(to: encoder)

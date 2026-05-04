@@ -25,7 +25,6 @@ public struct MagneticField: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         try magneticField.encode(to: encoder)
         encoder.writeFloat64Array(magneticFieldCovariance)

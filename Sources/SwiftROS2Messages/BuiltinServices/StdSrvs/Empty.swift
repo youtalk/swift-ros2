@@ -25,7 +25,6 @@ public enum EmptySrv: ROS2ServiceType {
         public init() {}
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             // Empty struct CDR convention: emit a single 0x00 dummy byte so
             // CycloneDDS does not collapse the sample to zero length.
             encoder.writeUInt8(0)
@@ -46,7 +45,6 @@ public enum EmptySrv: ROS2ServiceType {
         public init() {}
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             encoder.writeUInt8(0)
         }
 

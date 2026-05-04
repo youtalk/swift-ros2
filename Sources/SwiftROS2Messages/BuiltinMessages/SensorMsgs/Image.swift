@@ -38,7 +38,6 @@ public struct Image: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         encoder.writeUInt32(height)
         encoder.writeUInt32(width)

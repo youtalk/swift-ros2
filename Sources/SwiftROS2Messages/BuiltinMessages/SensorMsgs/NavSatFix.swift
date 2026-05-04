@@ -75,7 +75,6 @@ public struct NavSatFix: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         try status.encode(to: encoder)
         encoder.writeFloat64(latitude)

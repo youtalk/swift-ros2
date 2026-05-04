@@ -26,7 +26,6 @@ public enum CancelGoalSrv: ROS2ServiceType {
         }
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             try goalInfo.encode(to: encoder)
         }
 
@@ -50,7 +49,6 @@ public enum CancelGoalSrv: ROS2ServiceType {
         }
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             encoder.writeInt8(returnCode)
             encoder.writeUInt32(UInt32(goalsCanceling.count))
             for g in goalsCanceling {

@@ -113,12 +113,14 @@ final class ActionClientTests: XCTestCase {
 
     private static func encodeFeedback(_ seq: [Int32]) -> Data {
         let encoder = CDREncoder(isLegacySchema: false)
+        encoder.writeEncapsulationHeader()
         try! FibonacciAction.Feedback(partialSequence: seq).encode(to: encoder)
         return encoder.getData()
     }
 
     private static func encodeResult(_ seq: [Int32]) -> Data {
         let encoder = CDREncoder(isLegacySchema: false)
+        encoder.writeEncapsulationHeader()
         try! FibonacciAction.Result(sequence: seq).encode(to: encoder)
         return encoder.getData()
     }

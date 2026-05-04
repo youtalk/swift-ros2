@@ -25,7 +25,6 @@ public enum TriggerSrv: ROS2ServiceType {
         public init() {}
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             encoder.writeUInt8(0)
         }
 
@@ -49,7 +48,6 @@ public enum TriggerSrv: ROS2ServiceType {
         }
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             encoder.writeBool(success)
             encoder.writeString(message)
         }

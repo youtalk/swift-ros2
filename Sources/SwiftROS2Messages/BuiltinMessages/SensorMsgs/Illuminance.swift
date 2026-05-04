@@ -21,7 +21,6 @@ public struct Illuminance: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         encoder.writeFloat64(illuminance)
         encoder.writeFloat64(variance)

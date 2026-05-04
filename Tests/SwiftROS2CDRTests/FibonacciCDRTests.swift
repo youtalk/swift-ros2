@@ -50,10 +50,12 @@ final class FibonacciCDRTests: XCTestCase {
 
     func testEndToEndWrapperRoundTrip() throws {
         // SendGoalRequest<Fibonacci.Goal> round-trips through CDR.
-        // ActionSendGoalRequest writes the encapsulation header; Goal.encode does not.
+        // The encapsulation header is written by the caller (Publisher /
+        // Service / Action client analogue); test code mirrors that here.
         let goalId = UniqueIdentifierUUID(uuid: Array(repeating: 0xAB, count: 16))
         let original = ActionSendGoalRequest(goalId: goalId, goal: FibonacciAction.Goal(order: 5))
         let enc = CDREncoder()
+        enc.writeEncapsulationHeader()
         try original.encode(to: enc)
         let dec = try CDRDecoder(data: enc.getData())
         let decoded = try ActionSendGoalRequest<FibonacciAction.Goal>(from: dec)

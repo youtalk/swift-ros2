@@ -37,7 +37,6 @@ public struct Imu: ROS2Message, Equatable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         try orientation.encode(to: encoder)
         encoder.writeFloat64Array(orientationCovariance)

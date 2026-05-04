@@ -18,7 +18,6 @@ public struct AudioData: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeUInt8Sequence(data)
     }
 

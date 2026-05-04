@@ -279,6 +279,19 @@ var targets: [Target] = [
         resources: [.copy("Resources")]
     ),
 
+    // Hash-oracle corpus diff (env-gated). When
+    // SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE is unset every test row reports as
+    // a skip (`#require` short-circuit), so the regular `swift test`
+    // sweep stays unchanged for contributors without Docker. CI's
+    // `.github/workflows/hash-oracle.yml` sets the env var to
+    // `osrf/ros:<distro>-desktop` and exercises the full diff.
+    .testTarget(
+        name: "SwiftROS2GenHashOracleTests",
+        dependencies: ["SwiftROS2Gen"],
+        path: "Tests/SwiftROS2GenHashOracleTests",
+        resources: [.copy("Resources")]
+    ),
+
     // SwiftPM build-tool plugin — invokes swift-ros2-gen on a downstream
     // target's msg/ directory. Intentionally thin: handles only the
     // single-package single-distro (jazzy) common case. Multi-distro,

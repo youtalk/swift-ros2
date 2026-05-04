@@ -37,13 +37,14 @@ public enum Parser {
                 )
             }
 
-            // Constant detection: `<UPPER_SNAKE_NAME>=<value>` immediately after the type.
-            // The constant name may not contain whitespace, so the candidate name is the
-            // run of non-whitespace, non-`=` characters before the first `=`.
+            // Constant detection: `<UPPER_SNAKE_NAME> = <value>` after the type.
+            // The constant name may not contain whitespace; whitespace between the
+            // name and `=` is permitted (real ROS messages routinely use it for
+            // alignment, e.g. `int8 STATUS_UNKNOWN   = 0`).
             if let eqIdx = rest.firstIndex(of: "=") {
-                let preEq = rest[..<eqIdx]
-                if !preEq.contains(where: { $0.isWhitespace }) {
-                    let candidate = String(preEq)
+                let preEq = rest[..<eqIdx].trimmingCharacters(in: .whitespaces)
+                if !preEq.isEmpty, !preEq.contains(where: { $0.isWhitespace }) {
+                    let candidate = preEq
                     if isUpperSnakeIdent(candidate) {
                         guard let prim = PrimitiveType(rawROS: typeToken) else {
                             throw ParseError(

@@ -30,6 +30,11 @@ public enum GeneratorError: Error, CustomStringConvertible {
     }
 }
 
+/// Maps `<pkg>/msg/<TypeName>` → preferred Swift struct name. Lets the emitter use
+/// historic names like `UniqueIdentifierUUID` (which the rest of the codebase
+/// already imports) instead of the default collision-rule output.
+public typealias SwiftNameOverrides = [String: String]
+
 /// A single Swift source file produced by the generator.
 public struct GeneratedFile: Equatable, Sendable {
     public let relativePath: String  // "StdMsgs/BoolMsg.swift"
@@ -82,8 +87,7 @@ public enum Pipeline {
                 continue
             }
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
-            let parent = input.directory.deletingLastPathComponent().lastPathComponent
-            let label = "\(parent)/\(input.name)/msg/\(typeName).msg"
+            let label = "\(input.name)/msg/\(typeName).msg"
             do {
                 let idl = try Parser.parseMessage(
                     source: contents,
@@ -97,11 +101,21 @@ public enum Pipeline {
                     package: ir0.package,
                     typeName: ir0.typeName,
                     fields: ir0.fields,
+                    constants: ir0.constants,
                     perDistroHashes: ["jazzy": hash]
                 )
-                let swift = SwiftEmitter.emit(ir, sourceLabel: label)
+                let key = "\(ir.package)/msg/\(ir.typeName)"
+                let nameOverride = Pipeline.defaultSwiftNameOverrides[key]
+                let isNested = Pipeline.defaultNestedOnlyTypes.contains(key)
+                let swift = SwiftEmitter.emit(
+                    ir,
+                    sourceLabel: label,
+                    isNested: isNested,
+                    structNameOverride: nameOverride,
+                    nestedNameOverrides: Pipeline.defaultSwiftNameOverrides
+                )
                 let pascalPackage = pascal(input.name)
-                let structName = SwiftEmitter.swiftStructName(typeName: typeName)
+                let structName = nameOverride ?? SwiftEmitter.swiftStructName(typeName: typeName)
                 results.append(
                     GeneratedFile(
                         relativePath: "\(pascalPackage)/\(structName).swift",
@@ -122,6 +136,29 @@ public enum Pipeline {
 }
 
 extension Pipeline {
+    /// Per-type Swift struct-name overrides applied during emission. Keyed by
+    /// `<package>/msg/<TypeName>` (the ROS canonical name). Emitter callers receive
+    /// this same map as `nestedNameOverrides` so cross-package references resolve to
+    /// the override value instead of the default ``SwiftEmitter/swiftStructName(typeName:)``.
+    public static let defaultSwiftNameOverrides: SwiftNameOverrides = [
+        "unique_identifier_msgs/msg/UUID": "UniqueIdentifierUUID"
+    ]
+
+    /// `<package>/msg/<TypeName>` set of types that emit as nested-only (CDRCodable,
+    /// no `typeInfo`). These types are embedded as fields inside other messages and
+    /// are never advertised at the topic level.
+    ///
+    /// NOTE: Phase 2 already emitted `BuiltinInterfaces/Time`, `GeometryMsgs/*`,
+    /// and `StdMsgs/Header` as full `ROS2Message` types. Marking them nested-only
+    /// here would silently regenerate them with a different conformance the next
+    /// time anyone runs the CLI against those packages, breaking every existing
+    /// caller. Keep this set restricted to the Phase 3 newcomers.
+    public static let defaultNestedOnlyTypes: Set<String> = [
+        "unique_identifier_msgs/msg/UUID",
+        "action_msgs/msg/GoalInfo",
+        "action_msgs/msg/GoalStatus",
+    ]
+
     public struct PackageRun: Sendable {
         public let input: PackageInput
         public let typesAllowList: Set<String>?
@@ -156,11 +193,21 @@ extension Pipeline {
                 package: entry.ir.package,
                 typeName: entry.ir.typeName,
                 fields: entry.ir.fields,
+                constants: entry.ir.constants,
                 perDistroHashes: ["jazzy": hash]
             )
-            let swift = SwiftEmitter.emit(hashed, sourceLabel: entry.sourceLabel)
+            let key = "\(entry.ir.package)/msg/\(entry.ir.typeName)"
+            let nameOverride = Pipeline.defaultSwiftNameOverrides[key]
+            let isNested = Pipeline.defaultNestedOnlyTypes.contains(key)
+            let swift = SwiftEmitter.emit(
+                hashed,
+                sourceLabel: entry.sourceLabel,
+                isNested: isNested,
+                structNameOverride: nameOverride,
+                nestedNameOverrides: Pipeline.defaultSwiftNameOverrides
+            )
             let pascalPackage = pascal(entry.ir.package)
-            let structName = SwiftEmitter.swiftStructName(typeName: entry.ir.typeName)
+            let structName = nameOverride ?? SwiftEmitter.swiftStructName(typeName: entry.ir.typeName)
             results.append(
                 GeneratedFile(
                     relativePath: "\(pascalPackage)/\(structName).swift",
@@ -198,8 +245,7 @@ extension Pipeline {
             let typeName = fileURL.deletingPathExtension().lastPathComponent
             if let allow = run.typesAllowList, !allow.contains(typeName) { continue }
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
-            let parent = run.input.directory.deletingLastPathComponent().lastPathComponent
-            let label = "\(parent)/\(run.input.name)/msg/\(typeName).msg"
+            let label = "\(run.input.name)/msg/\(typeName).msg"
             do {
                 let idl = try Parser.parseMessage(
                     source: contents,

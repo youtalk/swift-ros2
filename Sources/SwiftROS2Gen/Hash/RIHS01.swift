@@ -4,24 +4,32 @@ import Foundation
 /// Computes the RIHS01 type-hash for a ROS 2 message IR.
 ///
 /// The algorithm mirrors `rosidl_generator_type_description.calculate_type_hash`:
-/// 1. Build a `TypeDescription` dictionary in the canonical key order.
+/// 1. Build a `TypeDescription` dictionary in the canonical key order, stripping
+///    `default_value` from every field (root and referenced).
 /// 2. Serialize it with `json.dumps(separators=(", ", ": "), sort_keys=False)`.
 /// 3. SHA-256 the UTF-8 bytes and prepend `"RIHS01_"`.
 ///
-/// Phase 1 supports primitive-only messages. The sentinel field
-/// `structure_needs_at_least_one_member` (UINT8, type_id 3) is injected for
-/// empty message definitions, mirroring what rosidl emits for `std_msgs/msg/Empty`.
+/// Phase 1 supports primitive-only messages. Phase 2 (this file) adds support
+/// for nested message references via `referenced_type_descriptions`.
 ///
 /// Reference JSON files extracted from `osrf/ros:jazzy-desktop`:
 ///   `/opt/ros/jazzy/share/std_msgs/msg/Empty.json`
-///   `/opt/ros/jazzy/share/std_msgs/msg/Bool.json`
-///   etc.
+///   `/opt/ros/jazzy/share/builtin_interfaces/msg/Time.json`
+///   `/opt/ros/jazzy/share/geometry_msgs/msg/Pose.json`
 public enum RIHS01 {
 
     // MARK: - Public API
 
+    /// Phase 1 shim: hash a primitive-only IR with no nested deps.
     public static func hash(_ ir: MessageIR) -> String {
-        let payload = canonicalBytes(ir)
+        hash(ir, registry: [:])
+    }
+
+    /// Hash a (possibly nested) IR. `registry` maps `"<pkg>/msg/<Type>"` to the
+    /// `MessageIR` for every type the root may reference (transitively). The
+    /// Pipeline (Task 9) builds the registry once per multi-package run.
+    public static func hash(_ ir: MessageIR, registry: [String: MessageIR]) -> String {
+        let payload = canonicalBytes(ir, registry: registry)
         let digest = SHA256.hash(data: payload)
         let hex = digest.map { String(format: "%02x", $0) }.joined()
         return "RIHS01_\(hex)"
@@ -30,35 +38,10 @@ public enum RIHS01 {
     // MARK: - Canonical serialisation (internal, exposed for debugging)
 
     /// Builds the exact UTF-8 bytes that go into SHA-256.
-    ///
-    /// The format is a JSON object with this schema (key order preserved):
-    ///
-    /// ```json
-    /// {
-    ///   "type_description": {
-    ///     "type_name": "<pkg>/msg/<Name>",
-    ///     "fields": [
-    ///       {
-    ///         "name": "<field_name>",
-    ///         "type": {
-    ///           "type_id": <int>,
-    ///           "capacity": 0,
-    ///           "string_capacity": 0,
-    ///           "nested_type_name": ""
-    ///         }
-    ///       }
-    ///     ]
-    ///   },
-    ///   "referenced_type_descriptions": []
-    /// }
-    /// ```
-    ///
-    /// Separators: `, ` between items, `: ` between key and value (not compact,
-    /// not indented — this is the exact `json.dumps` default-separator behaviour
-    /// that Python's libyaml-compatible serializer uses).
-    static func canonicalBytes(_ ir: MessageIR) -> Data {
-        let fields = canonicalFields(ir)
-        let json = buildJSON(typeName: ir.rosTypeName, fields: fields)
+    static func canonicalBytes(_ ir: MessageIR, registry: [String: MessageIR]) -> Data {
+        let rootFields = canonicalFields(ir)
+        let referenced = referencedTypeDescriptions(rootIR: ir, registry: registry)
+        let json = buildJSON(typeName: ir.rosTypeName, fields: rootFields, referenced: referenced)
         // Force-unwrap: all inputs are ASCII-safe (pkg names, field names,
         // integer literals, empty string) — encoding to UTF-8 cannot fail.
         return json.data(using: .utf8)!
@@ -71,29 +54,61 @@ public enum RIHS01 {
     /// ROS 2 / rosidl injects a sentinel field for structurally-empty messages
     /// (those with zero user-defined fields) to satisfy the IDL requirement that
     /// every struct has at least one member.
-    private static func canonicalFields(_ ir: MessageIR) -> [[String: Any]] {
+    private static func canonicalFields(_ ir: MessageIR) -> [FieldEntry] {
         if ir.fields.isEmpty {
             // Sentinel field: `uint8 structure_needs_at_least_one_member`
-            return [fieldDict(name: "structure_needs_at_least_one_member", typeID: FieldTypeID.uint8)]
+            return [
+                FieldEntry(
+                    name: "structure_needs_at_least_one_member",
+                    typeID: FieldTypeID.uint8,
+                    nestedTypeName: "")
+            ]
         }
         return ir.fields.map { field in
-            let typeID = FieldTypeID.forPrimitive(field.type)
-            return fieldDict(name: field.ros2Name, typeID: typeID)
+            switch field.type {
+            case .primitive(let prim):
+                return FieldEntry(
+                    name: field.ros2Name,
+                    typeID: FieldTypeID.forPrimitive(prim),
+                    nestedTypeName: "")
+            case .nested(let pkg, let type):
+                return FieldEntry(
+                    name: field.ros2Name,
+                    typeID: FieldTypeID.nestedType,
+                    nestedTypeName: "\(pkg)/msg/\(type)")
+            }
         }
     }
 
-    /// Constructs one field entry (without `default_value` — it is stripped
-    /// before hashing in the upstream Python implementation).
-    private static func fieldDict(name: String, typeID: Int) -> [String: Any] {
-        [
-            "name": name,
-            "type": [
-                "type_id": typeID,
-                "capacity": 0,
-                "string_capacity": 0,
-                "nested_type_name": "",
-            ] as [String: Any],
-        ]
+    /// BFS the registry from the root, collecting every nested IR exactly once.
+    /// The result is sorted by `type_name` (alphabetical) — this matches what
+    /// upstream rosidl emits.
+    private static func referencedTypeDescriptions(
+        rootIR: MessageIR,
+        registry: [String: MessageIR]
+    ) -> [(typeName: String, fields: [FieldEntry])] {
+        var visited: Set<String> = []
+        var queue: [MessageIR] = [rootIR]
+        var collected: [MessageIR] = []
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            for field in current.fields {
+                guard case .nested(let pkg, let type) = field.type else { continue }
+                let key = "\(pkg)/msg/\(type)"
+                if visited.contains(key) { continue }
+                visited.insert(key)
+                guard let nestedIR = registry[key] else {
+                    preconditionFailure(
+                        // swift-format-ignore: NeverForceUnwrap
+                        "RIHS01: unresolved nested type '\(key)' — Pipeline must surface this "
+                            + "as GeneratorError before reaching the hasher")
+                }
+                collected.append(nestedIR)
+                queue.append(nestedIR)
+            }
+        }
+        let sorted = collected.sorted { $0.rosTypeName < $1.rosTypeName }
+        return sorted.map { ($0.rosTypeName, canonicalFields($0)) }
     }
 
     /// Serialises the canonical structure to the exact JSON string that the
@@ -104,29 +119,39 @@ public enum RIHS01 {
     /// alphabetically (different from insertion order) and uses compact
     /// separators (`,` and `:` without spaces), neither of which matches
     /// the upstream format.
-    private static func buildJSON(typeName: String, fields: [[String: Any]]) -> String {
-        let fieldsJSON = fields.map { f -> String in
-            let name = f["name"] as! String
-            let typeDict = f["type"] as! [String: Any]
-            let typeID = typeDict["type_id"] as! Int
-            let capacity = typeDict["capacity"] as! Int
-            let stringCapacity = typeDict["string_capacity"] as! Int
-            let nestedTypeName = typeDict["nested_type_name"] as! String
-            let typeJSON =
-                """
-                {"type_id": \(typeID), "capacity": \(capacity), \
-                "string_capacity": \(stringCapacity), "nested_type_name": "\(nestedTypeName)"}
-                """
-            return """
-                {"name": "\(name)", "type": \(typeJSON)}
-                """
-        }
-        let fieldsStr = fieldsJSON.joined(separator: ", ")
-        return """
-            {"type_description": {"type_name": "\(typeName)", "fields": [\(fieldsStr)]}, \
-            "referenced_type_descriptions": []}
-            """
+    private static func buildJSON(
+        typeName: String,
+        fields: [FieldEntry],
+        referenced: [(typeName: String, fields: [FieldEntry])]
+    ) -> String {
+        let fieldsStr = renderFields(fields)
+        let referencedStr =
+            referenced.map { entry in
+                "{\"type_name\": \"\(entry.typeName)\", \"fields\": [\(renderFields(entry.fields))]}"
+            }
+            .joined(separator: ", ")
+        return
+            "{\"type_description\": {\"type_name\": \"\(typeName)\", \"fields\": [\(fieldsStr)]}, "
+            + "\"referenced_type_descriptions\": [\(referencedStr)]}"
     }
+
+    private static func renderFields(_ fields: [FieldEntry]) -> String {
+        fields.map { f in
+            "{\"name\": \"\(f.name)\", \"type\": {\"type_id\": \(f.typeID), \"capacity\": 0, "
+                + "\"string_capacity\": 0, \"nested_type_name\": \"\(f.nestedTypeName)\"}}"
+        }
+        .joined(separator: ", ")
+    }
+}
+
+// MARK: - Field entry struct
+
+/// One canonical field entry. Strongly typed so we don't shuffle `[String: Any]`
+/// dictionaries through the serializer.
+private struct FieldEntry {
+    let name: String
+    let typeID: Int
+    let nestedTypeName: String
 }
 
 // MARK: - Field type IDs
@@ -134,18 +159,15 @@ public enum RIHS01 {
 /// Maps `FieldType` / `PrimitiveType` values to the integer `type_id` constants
 /// defined by `type_description_interfaces/msg/FieldType.msg` and exposed by
 /// `rosidl_generator_type_description.FIELD_TYPE_NAME_TO_ID`.
+///
+/// Confirmed against `osrf/ros:jazzy-desktop`:
+///   - Nested type fields use `type_id == 1` (NESTED_TYPE), not 48.
+///   - Primitive ids match the `FIELD_TYPE_*` constants in
+///     `type_description_interfaces/msg/FieldType.msg`.
 private enum FieldTypeID {
+    static let nestedType = 1  // NESTED_TYPE — `<pkg>/msg/<Type>` reference
     static let uint8 = 3  // FIELD_TYPE_UINT8 — used for the Empty sentinel field
 
-    static func forPrimitive(_ fieldType: FieldType) -> Int {
-        guard case .primitive(let prim) = fieldType else {
-            // Phase 1 only handles primitives; nested types are not yet supported.
-            preconditionFailure("RIHS01: non-primitive FieldType not supported in Phase 1")
-        }
-        return forPrimitive(prim)
-    }
-
-    // swiftlint:disable:next cyclomatic_complexity
     static func forPrimitive(_ prim: PrimitiveType) -> Int {
         switch prim {
         case .int8: return 2  // FIELD_TYPE_INT8

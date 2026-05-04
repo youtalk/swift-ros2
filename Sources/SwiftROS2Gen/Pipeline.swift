@@ -225,9 +225,36 @@ extension Pipeline {
                     unresolvedIRs.append(
                         (run: primaryRun, ir: entry.ir, sourceLabel: entry.sourceLabel))
                 }
-                // Phase 4 does not multi-distro-merge `.srv` files — services
-                // are taken from the first run only. Phase 5 will revisit.
-                let services = try parseServicesIn(run: primaryRun)
+                // Phase 4: union services across the multi-distro runs, but
+                // require structural agreement. A `.srv` whose request or
+                // response shape differs between distros surfaces as an
+                // IRMergeError so we never silently emit one distro's shape.
+                // Phase 5 will widen this to true multi-distro service merging.
+                var servicesByName: [String: ParsedService] = [:]
+                var serviceOrder: [String] = []
+                for run in pkgRuns {
+                    let runServices = try parseServicesIn(run: run)
+                    for svc in runServices {
+                        if let existing = servicesByName[svc.typeName] {
+                            guard
+                                existing.requestIDL == svc.requestIDL,
+                                existing.responseIDL == svc.responseIDL
+                            else {
+                                throw GeneratorError.parse(
+                                    ParseError(
+                                        file: "\(svc.package)/srv/\(svc.typeName).srv",
+                                        line: 1,
+                                        message:
+                                            "service '\(svc.typeName)' differs between distros — multi-distro service merging is not implemented yet (Phase 5)"
+                                    ))
+                            }
+                        } else {
+                            servicesByName[svc.typeName] = svc
+                            serviceOrder.append(svc.typeName)
+                        }
+                    }
+                }
+                let services = serviceOrder.compactMap { servicesByName[$0] }
                 for svc in services {
                     let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
                     let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
@@ -255,11 +282,12 @@ extension Pipeline {
                 "\(svc.typeName)Response"
         }
         try validateAllReferencesResolved(registry: registry)
-        // Precompute hashes once so the per-half emit loop and the per-service
-        // umbrella loop can both look them up by ROS type name. The "primary"
-        // hash is the modern (jazzy view) — the same value Phase 1-3 wrote into
-        // perDistroHashes["jazzy"]. Phase 4 adds a separate humble entry for
-        // multi-distro IRs whose presence map includes "humble".
+        // Precompute the modern (jazzy-view) hash for every IR. Single-distro
+        // humble-only inputs do not need a Jazzy hash (humble has no RIHS01
+        // anyway), but computing it is cheap and the per-distro projection
+        // below decides whether to emit it. Hashing is per-distro so nested
+        // type lookups in the registry get the same field projection as the
+        // root.
         var hashByRosName: [String: String] = [:]
         for entry in unresolvedIRs {
             hashByRosName[entry.ir.rosTypeName] = RIHS01.hash(
@@ -272,25 +300,44 @@ extension Pipeline {
                     "Pipeline: missing precomputed hash for \(entry.ir.rosTypeName)"
                 )
             }
-            // Phase 4: when the IR was merged across multiple distros, fill
-            // perDistroHashes for every distro the IR came from. Humble has
-            // no RIHS01 (rmw_zenoh_cpp on Humble does not advertise type
-            // hashes), so we record `nil` for that entry — distinct from
-            // the entry being missing entirely (which would mean the type
-            // does not exist on Humble at all).
-            var perDistroHashes: [String: String?] = ["jazzy": primaryHash]
-            for distro in entry.ir.perDistroFieldPresence.keys {
+            // Determine which distros the IR was built against.
+            //   - Multi-distro IR (`IRBuilder.build(perDistro:)`):
+            //     `perDistroFieldPresence.keys` lists every contributing distro.
+            //   - Single-distro IR (`IRBuilder.build(jazzy:)` from the
+            //     fast path): the presence map is empty, so we fall back to
+            //     the run's distro. For a humble-only run that means the
+            //     emitted `typeInfo` advertises a `nil` humble hash.
+            //   - Service halves (`kind == .srv`): treat as supported on
+            //     every distro for now — Phase 5 will multi-distro-merge them.
+            let distros: Set<String>
+            if entry.ir.kind == .srv {
+                distros = ["humble", "jazzy", "kilted", "rolling"]
+            } else if entry.ir.perDistroFieldPresence.isEmpty {
+                distros = [entry.run.input.distro]
+            } else {
+                distros = Set(entry.ir.perDistroFieldPresence.keys)
+            }
+            var perDistroHashes: [String: String?] = [:]
+            for distro in distros {
                 switch distro {
                 case "humble":
+                    // Humble has no RIHS01 — present in this distro, hash is nil.
                     perDistroHashes["humble"] = nil
-                case "jazzy":
-                    break  // already set
-                case "kilted", "rolling":
+                case "jazzy", "kilted", "rolling":
                     // Modern distros share the jazzy wire format and hash.
                     perDistroHashes[distro] = primaryHash
                 default:
                     break
                 }
+            }
+            // The non-conditional emit path keys on `perDistroHashes["jazzy"]`
+            // for the static `typeInfo` constant. A humble-only single-distro
+            // run does not naturally fill this in — plumb the primary
+            // (computed-from-current-fields) hash so the emitter has
+            // something to render. The conditional path uses the presence
+            // map to decide which distros actually advertise the type.
+            if perDistroHashes["jazzy"] == nil {
+                perDistroHashes["jazzy"] = primaryHash
             }
             let hashed = MessageIR(
                 package: entry.ir.package,

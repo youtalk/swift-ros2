@@ -265,15 +265,16 @@ public enum SwiftEmitter {
     }
 
     /// Whether `ir` should emit in distro-conditional mode. True when any
-    /// field has non-`.all` availability OR the IR carries multiple distros
-    /// with disagreeing hash values.
+    /// field has non-`.all` availability, OR when the IR carries multiple
+    /// distros with disagreeing hash values. Multi-distro merges that only
+    /// list a subset of the four canonical distros (e.g.
+    /// `["humble", "jazzy"]`) still emit on the simple path — kilted /
+    /// rolling are implicitly treated as same-wire-shape as jazzy.
     static func isConditional(_ ir: MessageIR) -> Bool {
         if ir.fields.contains(where: { $0.availability != .all }) { return true }
         let normalized = Set(
             ir.perDistroHashes.values.map { ($0 ?? "") }
         )
-        // Single-distro IRs (Phase 1-3) have one entry; uniform distros have
-        // identical entries. Anything else triggers the conditional path.
         return normalized.count > 1
     }
 
@@ -311,19 +312,29 @@ public enum SwiftEmitter {
         return "\"\(v)\""
     }
 
-    /// Encode a field, wrapping the body in `if !encoder.isLegacySchema { ... }`
-    /// when availability indicates it is modern-only.
+    /// Encode a field, wrapping the body in a legacy-schema guard when
+    /// availability marks it as distro-conditional.
+    ///
+    /// Two shapes are supported:
+    ///   - "modern-only" (`.onlyIn` includes `"jazzy"`): emit only when
+    ///     `!encoder.isLegacySchema`, mirroring the wire shape of jazzy+.
+    ///   - "legacy-only" (`.onlyIn` is `["humble"]`): emit only when
+    ///     `encoder.isLegacySchema`, so a humble-shaped wire still includes
+    ///     fields that were dropped in jazzy.
     static func emitEncodeWithAvailability(_ field: FieldIR) -> String {
         switch field.availability {
         case .all:
             return emitEncode(field)
         case .onlyIn(let distros):
-            // Phase 4 only handles the humble<->modern split. Modern-only
-            // means the field is present in every distro in the modern set
-            // (jazzy at minimum).
             precondition(
-                distros.contains("jazzy"),
-                "Phase 4 only handles modern-only field availability (jazzy+); got \(distros)")
+                !distros.isEmpty,
+                "FieldAvailability.onlyIn must contain at least one distro")
+            let known: Set<String> = ["humble", "jazzy", "kilted", "rolling"]
+            precondition(
+                distros.allSatisfy(known.contains),
+                "FieldAvailability.onlyIn contains unknown distro(s): \(distros)")
+            let isLegacyOnly = distros == Set(["humble"])
+            let guardCondition = isLegacyOnly ? "encoder.isLegacySchema" : "!encoder.isLegacySchema"
             let inner = emitEncode(field)
             // Indent each non-empty line by an extra 4 spaces.
             let indented =
@@ -333,7 +344,7 @@ public enum SwiftEmitter {
                     line.isEmpty ? "" : "    " + String(line)
                 }
                 .joined(separator: "\n")
-            var out = "        if !encoder.isLegacySchema {\n"
+            var out = "        if \(guardCondition) {\n"
             out += indented
             out += "        }\n"
             return out
@@ -341,7 +352,8 @@ public enum SwiftEmitter {
     }
 
     /// Decode a field, branching on `decoder.isLegacySchema` when availability
-    /// indicates the field is modern-only — legacy reads default the field.
+    /// marks it as distro-conditional. The branch that does not contain the
+    /// distro defaults the field; the other branch decodes from the wire.
     static func emitDecodeWithAvailability(
         _ field: FieldIR,
         nestedNameOverrides: [String: String]
@@ -351,25 +363,39 @@ public enum SwiftEmitter {
             return emitDecode(field, nestedNameOverrides: nestedNameOverrides)
         case .onlyIn(let distros):
             precondition(
-                distros.contains("jazzy"),
-                "Phase 4 only handles modern-only field availability (jazzy+); got \(distros)")
+                !distros.isEmpty,
+                "FieldAvailability.onlyIn must contain at least one distro")
+            let known: Set<String> = ["humble", "jazzy", "kilted", "rolling"]
+            precondition(
+                distros.allSatisfy(known.contains),
+                "FieldAvailability.onlyIn contains unknown distro(s): \(distros)")
+            let isLegacyOnly = distros == Set(["humble"])
             let defaultExpr = swiftDefault(
                 field.type, nestedNameOverrides: nestedNameOverrides)
-            let modern = emitDecode(field, nestedNameOverrides: nestedNameOverrides)
-            // The modern body assigns `self.<name> = ...` already. Indent it
-            // under the `else` branch.
-            let indentedModern =
-                modern
+            let body = emitDecode(field, nestedNameOverrides: nestedNameOverrides)
+            // The decode body assigns `self.<name> = ...` already. Indent it
+            // under whichever branch contains the field.
+            let indentedBody =
+                body
                 .split(separator: "\n", omittingEmptySubsequences: false)
                 .map { line -> String in
                     line.isEmpty ? "" : "    " + String(line)
                 }
                 .joined(separator: "\n")
-            var out = "        if decoder.isLegacySchema {\n"
-            out += "            self.\(field.swiftName) = \(defaultExpr)\n"
-            out += "        } else {\n"
-            out += indentedModern
-            out += "        }\n"
+            var out = ""
+            if isLegacyOnly {
+                out += "        if decoder.isLegacySchema {\n"
+                out += indentedBody
+                out += "        } else {\n"
+                out += "            self.\(field.swiftName) = \(defaultExpr)\n"
+                out += "        }\n"
+            } else {
+                out += "        if decoder.isLegacySchema {\n"
+                out += "            self.\(field.swiftName) = \(defaultExpr)\n"
+                out += "        } else {\n"
+                out += indentedBody
+                out += "        }\n"
+            }
             return out
         }
     }
@@ -400,6 +426,15 @@ public enum SwiftEmitter {
                 out += "            \(field.swiftName).count <= \(upper),\n"
                 out += "            \"\(field.swiftName) bounded sequence may not exceed \(upper) elements\"\n"
                 out += "        )\n"
+            }
+            // Byte-payload fast path: a sequence of `uint8` / `byte` is the
+            // largest payload in many sensor messages (e.g. `CompressedImage`,
+            // `PointCloud2`). `writeUInt8Sequence` does a single `Data.append`
+            // instead of a per-element loop, which is materially faster on
+            // multi-megabyte buffers.
+            if isUInt8Like(element) {
+                out += "        encoder.writeUInt8Sequence(\(field.swiftName))\n"
+                return out
             }
             out += "        encoder.writeUInt32(UInt32(\(field.swiftName).count))\n"
             out += "        for v in \(field.swiftName) {\n"
@@ -435,6 +470,11 @@ public enum SwiftEmitter {
             out += "        }\n"
             return out
         case .sequence(let element, _):
+            // Byte-payload fast path mirroring the encoder: pull the entire
+            // sequence with a single `Data` slice and bridge to `[UInt8]`.
+            if isUInt8Like(element) {
+                return "        self.\(field.swiftName) = Array(try decoder.readUInt8Sequence())\n"
+            }
             let elemType = swiftType(element, nestedNameOverrides: nestedNameOverrides)
             let elem = elementDecodeExpr(element, nestedNameOverrides: nestedNameOverrides)
             var out = "        do {\n"
@@ -450,6 +490,16 @@ public enum SwiftEmitter {
         case .boundedString:
             return "        self.\(field.swiftName) = try decoder.readString()\n"
         }
+    }
+
+    /// Whether the element is `uint8` (or its `byte` alias). Used by the
+    /// sequence-encoder fast path so byte-payload sequences (e.g. compressed
+    /// image data) bypass the per-element loop.
+    static func isUInt8Like(_ element: FieldType) -> Bool {
+        if case .primitive(let p) = element {
+            return p == .uint8 || p == .byte
+        }
+        return false
     }
 
     /// Encode a single element of an array / sequence.

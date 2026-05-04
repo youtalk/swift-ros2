@@ -214,6 +214,135 @@ public enum IRBuilder {
     }
 }
 
+extension IRBuilder {
+    /// Build an ``ActionIR`` from a parsed ``IDLAction``.
+    ///
+    /// Each of the three user-defined blocks becomes a ``MessageIR`` named
+    /// `<typeName>_Goal` / `_Result` / `_Feedback` (matching what rosidl emits
+    /// for the per-block type descriptions). Five wire-level wrapper IRs are
+    /// then synthesized per the rcl action protocol: `<typeName>_SendGoal_Request`
+    /// (UUID + goal fields), `<typeName>_SendGoal_Response` (bool + Time),
+    /// `<typeName>_GetResult_Request` (UUID), `<typeName>_GetResult_Response`
+    /// (int8 + result fields), and `<typeName>_FeedbackMessage` (UUID + feedback
+    /// fields). All eight resulting IRs carry ``MessageKind/action`` so their
+    /// canonical ROS type name renders with the `action/` segment.
+    public static func build(jazzy idl: IDLAction) -> ActionIR {
+        let goal = build(jazzy: idl.goal, kind: .action)
+        let result = build(jazzy: idl.result, kind: .action)
+        let feedback = build(jazzy: idl.feedback, kind: .action)
+
+        let wrappers = synthesizeActionWrappers(
+            actionPackage: idl.package,
+            actionTypeName: idl.typeName,
+            goalFields: goal.fields,
+            resultFields: result.fields,
+            feedbackFields: feedback.fields
+        )
+
+        return ActionIR(
+            package: idl.package,
+            typeName: idl.typeName,
+            goal: goal,
+            result: result,
+            feedback: feedback,
+            sendGoalRequest: wrappers.sendGoalRequest,
+            sendGoalResponse: wrappers.sendGoalResponse,
+            getResultRequest: wrappers.getResultRequest,
+            getResultResponse: wrappers.getResultResponse,
+            feedbackMessage: wrappers.feedbackMessage
+        )
+    }
+
+    /// Synthesize the five wire-level wrapper ``MessageIR``s per the rcl action
+    /// protocol. Field shapes mirror the hand-written generic wrappers in
+    /// `BuiltinActions/ActionWrappers.swift` (kept until they are deleted in
+    /// the same phase that ships this synthesis).
+    static func synthesizeActionWrappers(
+        actionPackage: String,
+        actionTypeName: String,
+        goalFields: [FieldIR],
+        resultFields: [FieldIR],
+        feedbackFields: [FieldIR]
+    ) -> (
+        sendGoalRequest: MessageIR,
+        sendGoalResponse: MessageIR,
+        getResultRequest: MessageIR,
+        getResultResponse: MessageIR,
+        feedbackMessage: MessageIR
+    ) {
+        let goalIdField = FieldIR(
+            ros2Name: "goal_id",
+            swiftName: "goalId",
+            type: .nested(package: "unique_identifier_msgs", typeName: "UUID")
+        )
+        let acceptedField = FieldIR(
+            ros2Name: "accepted",
+            swiftName: "accepted",
+            type: .primitive(.bool)
+        )
+        let stampField = FieldIR(
+            ros2Name: "stamp",
+            swiftName: "stamp",
+            type: .nested(package: "builtin_interfaces", typeName: "Time")
+        )
+        let statusField = FieldIR(
+            ros2Name: "status",
+            swiftName: "status",
+            type: .primitive(.int8)
+        )
+        let goalNestedField = FieldIR(
+            ros2Name: "goal",
+            swiftName: "goal",
+            type: .nested(package: actionPackage, typeName: "\(actionTypeName)_Goal")
+        )
+        let resultNestedField = FieldIR(
+            ros2Name: "result",
+            swiftName: "result",
+            type: .nested(package: actionPackage, typeName: "\(actionTypeName)_Result")
+        )
+        let feedbackNestedField = FieldIR(
+            ros2Name: "feedback",
+            swiftName: "feedback",
+            type: .nested(package: actionPackage, typeName: "\(actionTypeName)_Feedback")
+        )
+
+        let sendGoalRequest = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_SendGoal_Request",
+            kind: .action,
+            fields: [goalIdField, goalNestedField]
+        )
+        let sendGoalResponse = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_SendGoal_Response",
+            kind: .action,
+            fields: [acceptedField, stampField]
+        )
+        let getResultRequest = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_GetResult_Request",
+            kind: .action,
+            fields: [goalIdField]
+        )
+        let getResultResponse = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_GetResult_Response",
+            kind: .action,
+            fields: [statusField, resultNestedField]
+        )
+        let feedbackMessage = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_FeedbackMessage",
+            kind: .action,
+            fields: [goalIdField, feedbackNestedField]
+        )
+
+        _ = (goalFields, resultFields, feedbackFields)  // referenced via the nested wrappers above
+
+        return (sendGoalRequest, sendGoalResponse, getResultRequest, getResultResponse, feedbackMessage)
+    }
+}
+
 /// An error produced by ``IRBuilder`` while validating defaults / constants.
 public struct IRBuildError: Error, CustomStringConvertible, Equatable, Sendable {
     public let message: String

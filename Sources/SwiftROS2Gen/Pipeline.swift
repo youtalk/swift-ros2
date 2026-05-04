@@ -428,11 +428,14 @@ extension Pipeline {
     private static func parsePackage(run: PackageRun) throws -> [ParsedEntry] {
         let msgDir = run.input.directory.appendingPathComponent("msg", isDirectory: true)
         var isDir: ObjCBool = false
-        guard
-            FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir),
-            isDir.boolValue
-        else {
-            throw GeneratorError.packageDirectoryMissing(msgDir)
+        let msgExists =
+            FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir)
+            && isDir.boolValue
+        guard msgExists else {
+            // A package without a msg/ directory is valid when it ships only
+            // services (e.g. std_srvs) or actions. Return empty here; the
+            // caller still walks srv/ via parseServicesIn.
+            return []
         }
         let entries = try FileManager.default.contentsOfDirectory(
             at: msgDir,
@@ -576,11 +579,14 @@ extension Pipeline {
         for run in pkgRuns {
             let msgDir = run.input.directory.appendingPathComponent("msg", isDirectory: true)
             var isDir: ObjCBool = false
-            guard
-                FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir),
-                isDir.boolValue
-            else {
-                throw GeneratorError.packageDirectoryMissing(msgDir)
+            let msgExists =
+                FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir)
+                && isDir.boolValue
+            guard msgExists else {
+                // Service-only packages (no msg/ directory) are tolerated;
+                // the multi-distro path simply contributes no message IRs
+                // for that distro.
+                continue
             }
             let entries = try FileManager.default.contentsOfDirectory(
                 at: msgDir,

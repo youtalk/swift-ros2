@@ -43,7 +43,7 @@ print("Sending goal order=\(order)")
 let handle = try await cli.sendGoal(FibonacciAction.Goal(order: order))
 let feedbackTask = Task {
     for await fb in handle.feedback {
-        print("Feedback: \(fb.partialSequence)")
+        print("Feedback: \(fb.sequence)")
     }
 }
 let result = try await handle.result()

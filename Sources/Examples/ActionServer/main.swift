@@ -35,7 +35,7 @@ actor FibonacciHandler: ActionServerHandler {
                 throw CancellationError()
             }
             sequence.append(sequence[sequence.count - 1] + sequence[sequence.count - 2])
-            try await handle.publishFeedback(FibonacciAction.Feedback(partialSequence: sequence))
+            try await handle.publishFeedback(FibonacciAction.Feedback(sequence: sequence))
             try await Task.sleep(nanoseconds: 200_000_000)
         }
         return FibonacciAction.Result(sequence: sequence)

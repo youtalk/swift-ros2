@@ -761,13 +761,17 @@ extension Pipeline {
         // Humble, or an IR that was built jazzy-only) are skipped.
         var out: [VerifyPlanEntry] = []
         for entry in unresolvedIRs {
-            // Determine the distros this IR is "in scope" for. Single-distro
-            // IRs (Phase 1-3 messages, services, actions) are jazzy-only;
-            // multi-distro merged IRs (Phase 4) carry one entry per distro
-            // in `perDistroFieldPresence`.
+            // Determine the distros this IR is "in scope" for.
+            //   - Multi-distro merged IRs (Phase 4): one entry per distro
+            //     in `perDistroFieldPresence`.
+            //   - Single-distro IRs (Phase 1-3 messages, services,
+            //     actions): the per-distro presence map is empty, so we
+            //     fall back to the run's own `input.distro`. Hard-coding
+            //     `"jazzy"` here would make `--input ...@kilted` (or
+            //     `@rolling`) silently produce zero verify entries.
             let scopedDistros: [String]
             if entry.ir.perDistroFieldPresence.isEmpty {
-                scopedDistros = ["jazzy"]
+                scopedDistros = [entry.run.input.distro]
             } else {
                 scopedDistros = Array(entry.ir.perDistroFieldPresence.keys).sorted()
             }

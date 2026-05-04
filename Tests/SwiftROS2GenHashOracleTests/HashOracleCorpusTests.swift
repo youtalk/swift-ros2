@@ -34,15 +34,39 @@ struct HashOracleCorpusTests {
         return try! JSONDecoder().decode(Manifest.self, from: data)
     }()
 
+    /// Optional per-job override: when `SWIFT_ROS2_GEN_HASH_ORACLE_DISTRO` is
+    /// set, every corpus row is scoped to that single distro regardless of
+    /// the per-package `distros` list in `expected-corpus.json`. Lets the
+    /// kilted / rolling matrix jobs in the hash-oracle workflow reuse the
+    /// same corpus file as the jazzy job without per-distro JSON copies.
+    /// Treat empty strings the same as unset (matches the
+    /// `SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE` gate below).
+    static let distroOverride: String? = {
+        guard
+            let value = ProcessInfo.processInfo.environment[
+                "SWIFT_ROS2_GEN_HASH_ORACLE_DISTRO"
+            ],
+            !value.isEmpty
+        else { return nil }
+        return value
+    }()
+
     /// Cartesian product of (package, distro). One test row per (package,
     /// distro) pair so a failure surfaces as a discrete row in the test log.
     static let perDistroRows: [(PackageSpec, String)] = manifest.packages.flatMap { pkg in
-        pkg.distros.map { (pkg, $0) }
+        let distros = distroOverride.map { [$0] } ?? pkg.distros
+        return distros.map { (pkg, $0) }
     }
 
-    static let oracleImage: String? = ProcessInfo.processInfo.environment[
-        "SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE"
-    ]
+    static let oracleImage: String? = {
+        guard
+            let value = ProcessInfo.processInfo.environment[
+                "SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE"
+            ],
+            !value.isEmpty
+        else { return nil }
+        return value
+    }()
 
     @Test(
         "in-process RIHS01 matches docker oracle",
@@ -65,9 +89,14 @@ struct HashOracleCorpusTests {
         // Build the cross-package registry by feeding *all* packages from
         // the manifest so nested references (e.g. sensor_msgs/Imu ->
         // std_msgs/Header) resolve. The verify plan is then filtered down
-        // to the package under test.
+        // to the package under test. When a distro override is in effect
+        // (kilted / rolling matrix jobs), every package contributes its
+        // IDLs since the on-disk vendor directories are the same regardless
+        // of the distro under test — the rosidl JSON files inside the
+        // matching docker image provide the per-distro ground truth.
         var runs: [Pipeline.PackageRun] = []
-        for spec in Self.manifest.packages where spec.distros.contains(row.distro) {
+        for spec in Self.manifest.packages
+        where Self.distroOverride != nil || spec.distros.contains(row.distro) {
             let dir = packageRoot.appendingPathComponent(spec.vendor, isDirectory: true)
             let specAllow = Set(spec.types.split(separator: ",").map(String.init))
             runs.append(

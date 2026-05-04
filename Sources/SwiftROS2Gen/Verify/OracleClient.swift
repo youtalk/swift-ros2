@@ -87,8 +87,23 @@ public struct OracleClient: Sendable {
 
     private func runDocker(arguments: [String]) throws -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["docker", "run", "--rm", dockerImage] + arguments
+        // POSIX hosts: shell out via `/usr/bin/env docker` so a developer
+        // who installed Docker in a non-standard location (Homebrew,
+        // CoreOS, etc.) still gets PATH lookup. Windows hosts don't have
+        // `/usr/bin/env`, so resolve the bare `docker.exe` and let the OS
+        // PATH search find it. The Verify family is part of the Windows
+        // build graph (Zenoh-only target builds it as a dependency of
+        // SwiftROS2Gen) so the `#if os(Windows)` branch matters even
+        // though no Windows CI job exercises the verifier today.
+        #if os(Windows)
+            process.executableURL = URL(fileURLWithPath: "docker.exe")
+            process.arguments = ["run", "--rm", dockerImage] + arguments
+            let cmdPrefix = ["docker.exe", "run", "--rm", dockerImage]
+        #else
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["docker", "run", "--rm", dockerImage] + arguments
+            let cmdPrefix = ["docker", "run", "--rm", dockerImage]
+        #endif
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
@@ -103,9 +118,7 @@ public struct OracleClient: Sendable {
         let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
         if process.terminationStatus != 0 {
             let stderr = String(data: errData, encoding: .utf8) ?? ""
-            let cmd =
-                (["docker", "run", "--rm", dockerImage] + arguments)
-                .joined(separator: " ")
+            let cmd = (cmdPrefix + arguments).joined(separator: " ")
             throw OracleError.dockerExitNonZero(
                 process.terminationStatus, stderr: stderr, command: cmd)
         }

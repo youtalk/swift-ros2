@@ -191,6 +191,19 @@ struct SwiftROS2GenCommand: ParsableCommand {
                 !denyList.contains($0.typeName)
                     && !denyList.contains($0.topLevelTypeName)
             }
+        // An empty plan means the input filters (--input paths, --types,
+        // --distros, --exclude-types) selected zero IRs. That is almost
+        // always a misconfiguration — e.g. a typo'd vendor path on a
+        // case-sensitive Linux runner that resolves to nothing — which
+        // would otherwise be reported as `mismatches=0 missing=0` and pass
+        // silently. Surface it as a hard error so CI catches the typo.
+        if plan.isEmpty {
+            FileHandle.standardError.write(
+                Data(
+                    "error: --verify-hashes selected 0 types — check --input paths, --types, --distros, --exclude-types\n"
+                        .utf8))
+            throw ExitCode.failure
+        }
         let verifier = HashVerifier(
             oracle: OracleClient(dockerImage: image),
             diagnose: diagnose

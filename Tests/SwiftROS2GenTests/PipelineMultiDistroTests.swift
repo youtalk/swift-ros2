@@ -120,11 +120,20 @@ struct PipelineMultiDistroEndToEndTests {
             .appendingPathComponent("Sources")
             .appendingPathComponent("SwiftROS2Messages")
             .appendingPathComponent("Generated")
-        // Limit to the 15 sensor_msgs types this phase committed.
+        // Cover every generated `sensor_msgs` artifact this phase committed
+        // — message types plus the synthesized `.srv` request / response /
+        // umbrella halves. Anything that lands under
+        // `Sources/SwiftROS2Messages/Generated/SensorMsgs/` should round-trip
+        // bit-for-bit through the generator on a fresh run.
         let typesUnderTest: Set<String> = [
-            "BatteryState", "CameraInfo", "CompressedImage", "FluidPressure",
-            "Illuminance", "Image", "Imu", "Joy", "MagneticField", "NavSatFix",
-            "PointCloud2", "PointField", "Range", "RegionOfInterest", "Temperature",
+            "BatteryState", "CameraInfo", "ChannelFloat32", "CompressedImage",
+            "FluidPressure", "Illuminance", "Image", "Imu", "JointState", "Joy",
+            "JoyFeedback", "JoyFeedbackArray", "LaserEcho", "LaserScan",
+            "MagneticField", "MultiDOFJointState", "MultiEchoLaserScan",
+            "NavSatFix", "NavSatStatus", "PointCloud", "PointCloud2",
+            "PointField", "Range", "RegionOfInterest", "RelativeHumidity",
+            "SetCameraInfoRequest", "SetCameraInfoResponse", "SetCameraInfoSrv",
+            "Temperature", "TimeReference",
         ]
         var matched = 0
         for file in files where file.relativePath.hasPrefix("SensorMsgs/") {

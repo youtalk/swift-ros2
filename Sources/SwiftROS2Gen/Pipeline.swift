@@ -38,7 +38,17 @@ public enum Pipeline {
     /// Process a single jazzy-distro package and return generated files.
     /// Phase 1: only primitive-typed messages are accepted; everything else
     /// surfaces as a `GeneratorError.parse(...)`.
-    public static func generate(for input: PackageInput) throws -> [GeneratedFile] {
+    ///
+    /// - Parameters:
+    ///   - input: Package name and directory containing the `msg/` subdirectory.
+    ///   - typesAllowList: When non-nil, only `.msg` files whose stem (e.g. `"Bool"`)
+    ///     appear in this set are processed. Files outside the allow-list are silently
+    ///     skipped before reaching the parser, keeping Phase 1 functional against real
+    ///     vendor directories that contain unsupported message types.
+    public static func generate(
+        for input: PackageInput,
+        typesAllowList: Set<String>? = nil
+    ) throws -> [GeneratedFile] {
         let msgDir = input.directory.appendingPathComponent("msg", isDirectory: true)
         var isDir: ObjCBool = false
         guard
@@ -59,6 +69,10 @@ public enum Pipeline {
         var results: [GeneratedFile] = []
         for fileURL in msgFiles {
             let typeName = fileURL.deletingPathExtension().lastPathComponent
+            // Apply allow-list at parse boundary: skip files not in the allow-list.
+            if let allowList = typesAllowList, !allowList.contains(typeName) {
+                continue
+            }
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
             let label = "common_interfaces-jazzy/\(input.name)/msg/\(typeName).msg"
             do {

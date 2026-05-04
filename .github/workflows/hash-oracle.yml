@@ -8,10 +8,10 @@ on:
       - 'Sources/swift-ros2-gen/**'
       - 'Sources/SwiftROS2Messages/Generated/**'
       - 'Tests/SwiftROS2GenHashOracleTests/**'
-      - 'Vendor/common_interfaces-jazzy/**'
-      - 'Vendor/rcl_interfaces-jazzy/**'
-      - 'Vendor/example_interfaces-jazzy/**'
-      - 'Vendor/unique_identifier_msgs/**'
+      - 'vendor/common_interfaces-jazzy/**'
+      - 'vendor/rcl_interfaces-jazzy/**'
+      - 'vendor/example_interfaces-jazzy/**'
+      - 'vendor/unique_identifier_msgs/**'
       - '.github/workflows/hash-oracle.yml'
       - 'Package.swift'
   push:
@@ -83,27 +83,28 @@ jobs:
 
       - name: Verify hash oracle (CLI smoke)
         run: |
-          # `--exclude-types Char` skips the known generator drift in
-          # `std_msgs/msg/Char` and `example_interfaces/msg/Char`
-          # (FIELD_TYPE_CHAR id mismatch in RIHS01.swift). Tracked as a
-          # separate generator follow-up; remove the flag once fixed.
+          # Vendor paths are lowercase to match the canonical git tree on
+          # case-sensitive Linux filesystems. The Phase 4 fix to
+          # `FIELD_TYPE_CHAR` removed the previous `--exclude-types Char`
+          # workaround; the flag itself is still useful for any future
+          # generator drift, but the corpus currently has no entries.
           swift run swift-ros2-gen \
             --verify-hashes "${{ matrix.image }}" \
             --distros "${{ matrix.ros_distro }}" \
             --diagnose \
-            --exclude-types Char \
-            --input "std_msgs=Vendor/common_interfaces-jazzy/std_msgs@${{ matrix.ros_distro }}" \
-            --input "geometry_msgs=Vendor/common_interfaces-jazzy/geometry_msgs@${{ matrix.ros_distro }}" \
-            --input "sensor_msgs=Vendor/common_interfaces-jazzy/sensor_msgs@${{ matrix.ros_distro }}" \
-            --input "std_srvs=Vendor/common_interfaces-jazzy/std_srvs@${{ matrix.ros_distro }}" \
-            --input "action_msgs=Vendor/rcl_interfaces-jazzy/action_msgs@${{ matrix.ros_distro }}" \
-            --input "builtin_interfaces=Vendor/rcl_interfaces-jazzy/builtin_interfaces@${{ matrix.ros_distro }}" \
-            --input "unique_identifier_msgs=Vendor/unique_identifier_msgs@${{ matrix.ros_distro }}" \
-            --input "example_interfaces=Vendor/example_interfaces-jazzy@${{ matrix.ros_distro }}"
+            --input "std_msgs=vendor/common_interfaces-jazzy/std_msgs@${{ matrix.ros_distro }}" \
+            --input "geometry_msgs=vendor/common_interfaces-jazzy/geometry_msgs@${{ matrix.ros_distro }}" \
+            --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@${{ matrix.ros_distro }}" \
+            --input "std_srvs=vendor/common_interfaces-jazzy/std_srvs@${{ matrix.ros_distro }}" \
+            --input "action_msgs=vendor/rcl_interfaces-jazzy/action_msgs@${{ matrix.ros_distro }}" \
+            --input "builtin_interfaces=vendor/rcl_interfaces-jazzy/builtin_interfaces@${{ matrix.ros_distro }}" \
+            --input "unique_identifier_msgs=vendor/unique_identifier_msgs@${{ matrix.ros_distro }}" \
+            --input "example_interfaces=vendor/example_interfaces-jazzy@${{ matrix.ros_distro }}"
 
       - name: Verify hash oracle (test target)
         env:
           SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE: ${{ matrix.image }}
+          SWIFT_ROS2_GEN_HASH_ORACLE_DISTRO: ${{ matrix.ros_distro }}
         run: swift test --filter SwiftROS2GenHashOracleTests --parallel
 
       - name: Diagnose dump on failure

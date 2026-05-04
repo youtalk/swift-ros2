@@ -1,51 +1,51 @@
 {
-  "_comment": "Per-package corpus for the hash-oracle test target. Each entry names a package, its on-disk vendor path under Vendor/, and the comma-separated --types allow-list passed to swift-ros2-gen. The 'distros' list controls which oracle images are diffed against. 'excludeTypes' (optional) is the deny-list passed via --exclude-types — used to skip types the generator currently mishashes (e.g. 'Char', tracked as a separate generator follow-up).",
+  "_comment": "Per-package corpus for the hash-oracle test target. Each entry names a package, its on-disk vendor path under vendor/, and the comma-separated --types allow-list passed to swift-ros2-gen. The 'distros' list controls which oracle images are diffed against. 'excludeTypes' (optional) is the deny-list passed via --exclude-types; the corpus currently has no entries because the FIELD_TYPE_CHAR drift was fixed at the source in phase 4.",
   "packages": [
     {
       "name": "std_msgs",
-      "vendor": "Vendor/common_interfaces-jazzy/std_msgs",
+      "vendor": "vendor/common_interfaces-jazzy/std_msgs",
       "types": "Bool,Empty,Float64,Int32,String,Header",
       "distros": ["jazzy"]
     },
     {
       "name": "geometry_msgs",
-      "vendor": "Vendor/common_interfaces-jazzy/geometry_msgs",
+      "vendor": "vendor/common_interfaces-jazzy/geometry_msgs",
       "types": "Vector3,Point,Quaternion,Pose,Twist,Transform,TransformStamped,PoseStamped,TwistStamped,Vector3Stamped,Wrench,Accel,Point32",
       "distros": ["jazzy"]
     },
     {
       "name": "sensor_msgs",
-      "vendor": "Vendor/common_interfaces-jazzy/sensor_msgs",
+      "vendor": "vendor/common_interfaces-jazzy/sensor_msgs",
       "types": "Imu,Range,BatteryState,FluidPressure,Illuminance,MagneticField,NavSatFix,NavSatStatus,Temperature,RelativeHumidity,TimeReference,RegionOfInterest,CameraInfo,CompressedImage,Image,Joy,JoyFeedback,JoyFeedbackArray,LaserEcho,LaserScan,MultiEchoLaserScan,PointCloud,PointCloud2,PointField,ChannelFloat32,JointState,MultiDOFJointState",
       "distros": ["jazzy"]
     },
     {
       "name": "std_srvs",
-      "vendor": "Vendor/common_interfaces-jazzy/std_srvs",
+      "vendor": "vendor/common_interfaces-jazzy/std_srvs",
       "types": "Empty,SetBool,Trigger",
       "distros": ["jazzy"]
     },
     {
       "name": "action_msgs",
-      "vendor": "Vendor/rcl_interfaces-jazzy/action_msgs",
+      "vendor": "vendor/rcl_interfaces-jazzy/action_msgs",
       "types": "GoalInfo,GoalStatus,GoalStatusArray,CancelGoal",
       "distros": ["jazzy"]
     },
     {
       "name": "builtin_interfaces",
-      "vendor": "Vendor/rcl_interfaces-jazzy/builtin_interfaces",
+      "vendor": "vendor/rcl_interfaces-jazzy/builtin_interfaces",
       "types": "Time,Duration",
       "distros": ["jazzy"]
     },
     {
       "name": "unique_identifier_msgs",
-      "vendor": "Vendor/unique_identifier_msgs",
+      "vendor": "vendor/unique_identifier_msgs",
       "types": "UUID",
       "distros": ["jazzy"]
     },
     {
       "name": "example_interfaces",
-      "vendor": "Vendor/example_interfaces-jazzy",
+      "vendor": "vendor/example_interfaces-jazzy",
       "types": "Fibonacci",
       "distros": ["jazzy"]
     }

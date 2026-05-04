@@ -220,12 +220,15 @@ extension IRBuilder {
     /// Each of the three user-defined blocks becomes a ``MessageIR`` named
     /// `<typeName>_Goal` / `_Result` / `_Feedback` (matching what rosidl emits
     /// for the per-block type descriptions). Five wire-level wrapper IRs are
-    /// then synthesized per the rcl action protocol: `<typeName>_SendGoal_Request`
-    /// (UUID + goal fields), `<typeName>_SendGoal_Response` (bool + Time),
-    /// `<typeName>_GetResult_Request` (UUID), `<typeName>_GetResult_Response`
-    /// (int8 + result fields), and `<typeName>_FeedbackMessage` (UUID + feedback
-    /// fields). All eight resulting IRs carry ``MessageKind/action`` so their
-    /// canonical ROS type name renders with the `action/` segment.
+    /// then synthesized per the rcl action protocol, each containing nested
+    /// references back to the user-defined IRs (matching the rosidl JSON):
+    /// `<typeName>_SendGoal_Request` (UUID `goal_id` + nested `<typeName>_Goal`),
+    /// `<typeName>_SendGoal_Response` (bool `accepted` + `builtin_interfaces/Time`),
+    /// `<typeName>_GetResult_Request` (UUID `goal_id`), `<typeName>_GetResult_Response`
+    /// (int8 `status` + nested `<typeName>_Result`), and
+    /// `<typeName>_FeedbackMessage` (UUID `goal_id` + nested `<typeName>_Feedback`).
+    /// All eight resulting IRs carry ``MessageKind/action`` so their canonical
+    /// ROS type name renders with the `action/` segment.
     public static func build(jazzy idl: IDLAction) -> ActionIR {
         let goal = build(jazzy: idl.goal, kind: .action)
         let result = build(jazzy: idl.result, kind: .action)
@@ -344,21 +347,29 @@ extension IRBuilder {
 }
 
 extension IRBuilder {
-    /// Compute RIHS01 hashes for the action level + every contained
-    /// ``MessageIR`` (Goal / Result / Feedback + 5 wire wrappers) and write
-    /// them into `ir.perDistroHashes[distro]`. The provided `extraRegistry`
-    /// must contain at least `unique_identifier_msgs/msg/UUID` and
+    /// Compute RIHS01 hashes for every contained ``MessageIR`` (Goal / Result
+    /// / Feedback + 5 wire wrappers) and write them into
+    /// `ir.perDistroHashes[distro]`. The provided `extraRegistry` must contain
+    /// at least `unique_identifier_msgs/msg/UUID` and
     /// `builtin_interfaces/msg/Time` because the wrappers reference them; the
     /// per-action user IRs are added automatically.
+    ///
+    /// We intentionally do **not** synthesize the action-level
+    /// `<pkg>/action/<Type>` hash. rosidl computes that from a six-field
+    /// record that references additional service-shaped wrappers
+    /// (`<Type>_SendGoal`, `<Type>_GetResult`, plus `_Event` types and
+    /// `service_msgs/msg/ServiceEventInfo`) that this generator does not
+    /// emit. The wire format only depends on the eight wrapper / block hashes
+    /// stored here; emitting a synthetic action-level value that disagrees
+    /// with upstream would be worse than omitting it.
     public static func populateActionHashes(
         _ ir: inout ActionIR,
         distro: String,
         extraRegistry: [String: MessageIR] = [:]
     ) {
         // Build the registry: extras (UUID, Time, ...) plus the per-action
-        // user IRs (Goal/Result/Feedback) plus the five wrappers themselves
-        // (so the action-level hash, which references SendGoal/GetResult/
-        // FeedbackMessage, can resolve them).
+        // user IRs (Goal/Result/Feedback) so the wrappers can resolve their
+        // nested references.
         var registry = extraRegistry
         registry[ir.goal.rosTypeName] = ir.goal
         registry[ir.result.rosTypeName] = ir.result
@@ -390,43 +401,7 @@ extension IRBuilder {
         ir.getResultResponse.perDistroHashes[distro] = grRespHash
         ir.feedbackMessage.perDistroHashes[distro] = fbMsgHash
 
-        // Action-level hash: rosidl emits a separate type description named
-        // `<pkg>/action/<Type>` whose fields reference the SendGoal / GetResult
-        // service halves and the FeedbackMessage. Building it is optional —
-        // the wire format only depends on the eight wrapper / block hashes
-        // — but expose it for completeness so callers that want to advertise
-        // a single canonical `actionHash` have one available. We use the
-        // upstream-observed value where the IR matches; otherwise the hash is
-        // an empty string.
-        let actionLevelIR = MessageIR(
-            package: ir.package,
-            typeName: ir.typeName,
-            kind: .action,
-            fields: [
-                FieldIR(
-                    ros2Name: "send_goal_service",
-                    swiftName: "sendGoalService",
-                    type: .nested(
-                        package: ir.package,
-                        typeName: "\(ir.typeName)_SendGoal_Request")),
-                FieldIR(
-                    ros2Name: "get_result_service",
-                    swiftName: "getResultService",
-                    type: .nested(
-                        package: ir.package,
-                        typeName: "\(ir.typeName)_GetResult_Request")),
-                FieldIR(
-                    ros2Name: "feedback_message",
-                    swiftName: "feedbackMessage",
-                    type: .nested(
-                        package: ir.package,
-                        typeName: "\(ir.typeName)_FeedbackMessage")),
-            ]
-        )
-        let actionHash = RIHS01.hash(actionLevelIR, registry: registry)
-
         ir.perDistroHashes[distro] = ActionHashes(
-            actionHash: actionHash,
             goalHash: goalHash,
             resultHash: resultHash,
             feedbackHash: feedbackHash,

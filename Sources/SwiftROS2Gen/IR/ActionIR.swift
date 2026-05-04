@@ -1,11 +1,14 @@
-/// Per-distro hashes for an action and its eight contained type descriptions.
+/// Per-distro hashes for an action's eight contained type descriptions.
 ///
-/// The action-level `actionHash` corresponds to the `<pkg>/action/<Type>`
-/// rosidl entry; the seven member hashes are the wrapper / block hashes that
-/// either travel on the wire (the five wrappers) or describe the user-facing
-/// goal / result / feedback payloads.
+/// The eight member hashes are the wrapper / block hashes that either travel
+/// on the wire (the five wrappers) or describe the user-facing goal / result
+/// / feedback payloads. There is intentionally no action-level `<pkg>/action/
+/// <Type>` hash here: rosidl synthesizes that entry by referencing additional
+/// service-shaped wrappers (`<Type>_SendGoal`, `<Type>_GetResult`, plus the
+/// `_Event` types and `service_msgs/msg/ServiceEventInfo`) that this generator
+/// does not emit. We omit the value rather than synthesize one we cannot
+/// verify against upstream — none of the wire codecs read it.
 public struct ActionHashes: Equatable, Sendable {
-    public var actionHash: String
     public var goalHash: String
     public var resultHash: String
     public var feedbackHash: String
@@ -16,7 +19,6 @@ public struct ActionHashes: Equatable, Sendable {
     public var feedbackMessageHash: String
 
     public init(
-        actionHash: String,
         goalHash: String,
         resultHash: String,
         feedbackHash: String,
@@ -26,7 +28,6 @@ public struct ActionHashes: Equatable, Sendable {
         getResultResponseHash: String,
         feedbackMessageHash: String
     ) {
-        self.actionHash = actionHash
         self.goalHash = goalHash
         self.resultHash = resultHash
         self.feedbackHash = feedbackHash
@@ -58,7 +59,7 @@ public struct ActionIR: Equatable, Sendable {
     public var getResultResponse: MessageIR
     public var feedbackMessage: MessageIR
 
-    /// Per-distro hashes for the action itself and each of the eight member IRs.
+    /// Per-distro hashes for each of the eight member IRs.
     public var perDistroHashes: [String: ActionHashes] = [:]
 
     public init(

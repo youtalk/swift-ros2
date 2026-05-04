@@ -308,9 +308,10 @@ public enum SwiftEmitter {
     }
 
     /// Emit a `Goal` / `Result` / `Feedback` inner struct (CDRCodable, no
-    /// `ROS2Message` conformance — the wrapper's own encode prepends the
-    /// CDR encapsulation header and these inner payloads are never published
-    /// directly).
+    /// `ROS2Message` conformance — like any other ``CDRCodable`` body, the
+    /// generated `encode(to:)` writes only the message body; the CDR
+    /// encapsulation header is prepended by the caller (the publish path)
+    /// and these inner payloads are never published directly).
     static func emitActionInnerStruct(
         name: String,
         fields: [FieldIR],

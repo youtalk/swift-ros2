@@ -69,8 +69,10 @@ struct ActionHashGoldenTests {
         #expect(
             h.feedbackMessageHash
                 == "RIHS01_c1de71afd52e49a89c53d8262366884185bc0a02f78ce051c4e46b0a7fe59bb2")
-        // The action-level hash is informational (it does not travel on the
-        // wire); verify only that one was computed.
-        #expect(!h.actionHash.isEmpty)
+        // No action-level (`<pkg>/action/<Type>`) hash is exposed: rosidl
+        // computes it from a six-field record that references additional
+        // service-shaped wrappers (`Fibonacci_SendGoal`, `Fibonacci_GetResult`,
+        // their `_Event` siblings, and `service_msgs/msg/ServiceEventInfo`)
+        // that this generator does not emit. See ``IRBuilder/populateActionHashes``.
     }
 }

@@ -21,7 +21,11 @@ extension Header {
     /// (`UInt32 sec`, `UInt32 nanosec`). Routes through the nested `Time` field
     /// the IDL-generated struct now exposes. New callers should use
     /// `Header(stamp:frameId:)` directly.
-    public init(sec: UInt32, nanosec: UInt32 = 0, frameId: String = "") {
+    ///
+    /// All parameters retain the defaults the original hand-written initializer
+    /// shipped with — removing them would be an API break flagged by the
+    /// `swift package diagnose-api-breaking-changes` baseline.
+    public init(sec: UInt32 = 0, nanosec: UInt32 = 0, frameId: String = "") {
         self.init(stamp: Time(sec: Int32(bitPattern: sec), nanosec: nanosec), frameId: frameId)
     }
 

@@ -12,6 +12,7 @@
 
 import Foundation
 
+/// Source-compat alias for the legacy long name. New code should use `Time`.
 public typealias BuiltinInterfacesTime = Time
 
 extension Time {

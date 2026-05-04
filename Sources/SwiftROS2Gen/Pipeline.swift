@@ -189,6 +189,7 @@ extension Pipeline {
     public static func generateMulti(_ runs: [PackageRun]) throws -> [GeneratedFile] {
         var unresolvedIRs: [(run: PackageRun, ir: MessageIR, sourceLabel: String)] = []
         var collectedServices: [ParsedService] = []
+        var collectedActions: [ParsedAction] = []
         // Group runs by package name; multiple runs with the same name represent
         // different distros for the same logical package.
         var runsByPackage: [String: [PackageRun]] = [:]
@@ -216,6 +217,33 @@ extension Pipeline {
                     unresolvedIRs.append((run: run, ir: resIR, sourceLabel: label))
                 }
                 collectedServices.append(contentsOf: services)
+
+                let actions = try parseActionsIn(run: run)
+                for act in actions {
+                    let label = sourceLabelFor(
+                        run: run, typeName: act.typeName, kind: .action)
+                    // Register the user-defined Goal/Result/Feedback IRs in
+                    // the registry so wrapper nested references resolve.
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.goal, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.result, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.feedback, sourceLabel: label))
+                    // Register the wrappers so the action-level hash and any
+                    // cross-package reference to a wrapper resolves.
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.sendGoalRequest, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.sendGoalResponse, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.getResultRequest, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.getResultResponse, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: run, ir: act.actionIR.feedbackMessage, sourceLabel: label))
+                }
+                collectedActions.append(contentsOf: actions)
             } else {
                 // Multi-distro path: parse each run's IDLs, group by type name,
                 // then merge per-distro IDLs via IRBuilder.build(perDistro:).
@@ -264,6 +292,30 @@ extension Pipeline {
                     unresolvedIRs.append((run: primaryRun, ir: resIR, sourceLabel: label))
                 }
                 collectedServices.append(contentsOf: services)
+
+                // Same single-source-run policy for actions.
+                let actions = try parseActionsIn(run: primaryRun)
+                for act in actions {
+                    let label = sourceLabelFor(
+                        run: primaryRun, typeName: act.typeName, kind: .action)
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.goal, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.result, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.feedback, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.sendGoalRequest, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.sendGoalResponse, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.getResultRequest, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.getResultResponse, sourceLabel: label))
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: act.actionIR.feedbackMessage, sourceLabel: label))
+                }
+                collectedActions.append(contentsOf: actions)
             }
         }
         var registry: [String: MessageIR] = [:]
@@ -349,6 +401,12 @@ extension Pipeline {
                 perDistroFieldPresence: entry.ir.perDistroFieldPresence
             )
             let key = "\(entry.ir.package)/\(entry.ir.kind.rawValue)/\(entry.ir.typeName)"
+            // Action IRs (the three user blocks + five wrappers) are emitted
+            // together in a single per-action Swift file below, not as
+            // standalone files.
+            if entry.ir.kind == .action {
+                continue
+            }
             let nameOverride = nameOverrides[key]
             let isNested = Pipeline.defaultNestedOnlyTypes.contains(key)
             let swift = SwiftEmitter.emit(
@@ -397,6 +455,29 @@ extension Pipeline {
                 GeneratedFile(
                     relativePath: "\(pascalPackage)/\(umbrellaName).swift",
                     contents: umbrella
+                ))
+        }
+        // Phase 6: emit one Swift file per parsed `.action`. Each file owns the
+        // outer `<TypeName>Action` enum (with nested `Goal` / `Result` /
+        // `Feedback`) plus the five sibling `<TypeName>_<Wrapper>` structs.
+        // The action-level + wrapper hashes come from
+        // ``IRBuilder/populateActionHashes(_:distro:extraRegistry:)`` which
+        // reuses the global registry assembled above.
+        for act in collectedActions {
+            var actionIR = act.actionIR
+            IRBuilder.populateActionHashes(
+                &actionIR, distro: "jazzy", extraRegistry: registry)
+            let label = "\(act.package)/action/\(act.typeName).action"
+            let swift = SwiftEmitter.emit(
+                actionIR,
+                sourceLabel: label,
+                nestedNameOverrides: nameOverrides
+            )
+            let pascalPackage = pascal(act.package)
+            results.append(
+                GeneratedFile(
+                    relativePath: "\(pascalPackage)/\(act.typeName)Action.swift",
+                    contents: swift
                 ))
         }
         return results
@@ -675,11 +756,89 @@ extension Pipeline {
         for (_, ir) in registry {
             for field in ir.fields {
                 guard case .nested(let pkg, let type) = field.type else { continue }
-                let key = "\(pkg)/msg/\(type)"
-                if registry[key] == nil {
+                // Phase 6: a nested reference may resolve under msg, srv, or
+                // action — accept the first kind found in the registry.
+                var resolved = false
+                for kind in MessageKind.allCases {
+                    if registry["\(pkg)/\(kind.rawValue)/\(type)"] != nil {
+                        resolved = true
+                        break
+                    }
+                }
+                if !resolved {
                     throw GeneratorError.unresolvedNestedType(package: pkg, typeName: type)
                 }
             }
         }
+    }
+}
+
+extension Pipeline {
+    /// Lightweight carrier for an as-parsed `.action`. The fully-built
+    /// ``ActionIR`` lives here so the emitter can read out the eight contained
+    /// ``MessageIR``s plus the per-distro hash bundle without re-running the
+    /// builder.
+    public struct ParsedAction: Equatable, Sendable {
+        public let package: String
+        public let typeName: String
+        public let actionIR: ActionIR
+
+        public init(package: String, typeName: String, actionIR: ActionIR) {
+            self.package = package
+            self.typeName = typeName
+            self.actionIR = actionIR
+        }
+    }
+
+    /// Enumerate `<pkg>/action/*.action` for the run, parse each into the
+    /// three user-defined blocks + five synthesized wrappers via
+    /// ``IRBuilder/build(jazzy:)``, and return them as ``ParsedAction``
+    /// carriers. Returns an empty array when the package has no `action/`
+    /// subdirectory at all (the common case for pure message / service
+    /// packages). The same `typesAllowList` filter applies as for messages —
+    /// it matches the bare action type name (`Fibonacci`).
+    static func parseActionsIn(run: PackageRun) throws -> [ParsedAction] {
+        let actionDir = run.input.directory.appendingPathComponent("action", isDirectory: true)
+        var isDir: ObjCBool = false
+        guard
+            FileManager.default.fileExists(atPath: actionDir.path, isDirectory: &isDir),
+            isDir.boolValue
+        else {
+            return []
+        }
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: actionDir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        let actionFiles =
+            entries
+            .filter { $0.pathExtension == "action" }
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+        var out: [ParsedAction] = []
+        for fileURL in actionFiles {
+            let typeName = fileURL.deletingPathExtension().lastPathComponent
+            if let allow = run.typesAllowList, !allow.contains(typeName) { continue }
+            let contents = try String(contentsOf: fileURL, encoding: .utf8)
+            let label = sourceLabelFor(run: run, typeName: typeName, kind: .action)
+            do {
+                let idl = try Parser.parseAction(
+                    source: contents,
+                    file: label,
+                    package: run.input.name,
+                    typeName: typeName
+                )
+                let ir = IRBuilder.build(jazzy: idl)
+                out.append(
+                    ParsedAction(
+                        package: run.input.name,
+                        typeName: typeName,
+                        actionIR: ir
+                    ))
+            } catch let err as ParseError {
+                throw GeneratorError.parse(err)
+            }
+        }
+        return out
     }
 }

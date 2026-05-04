@@ -1,3 +1,4 @@
+/// ROS 2 primitive field types that Phase 1 of the generator supports.
 public enum PrimitiveType: String, Sendable, Hashable, CaseIterable {
     case bool, byte, char
     case int8, uint8

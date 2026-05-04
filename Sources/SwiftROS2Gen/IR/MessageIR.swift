@@ -1,3 +1,4 @@
+/// Distro-neutral intermediate representation of a single ROS 2 message type.
 public struct MessageIR: Equatable, Sendable {
     public let package: String  // "std_msgs"
     public let typeName: String  // "Bool"
@@ -21,6 +22,7 @@ public struct MessageIR: Equatable, Sendable {
     public var rosTypeName: String { "\(package)/msg/\(typeName)" }
 }
 
+/// Intermediate representation of a single field in a ROS 2 message.
 public struct FieldIR: Equatable, Sendable {
     public let ros2Name: String  // "linear_acceleration"
     public let swiftName: String  // "linearAcceleration"
@@ -33,6 +35,7 @@ public struct FieldIR: Equatable, Sendable {
     }
 }
 
+/// The resolved type of a single message field (Phase 1: primitives only).
 public enum FieldType: Equatable, Sendable {
     case primitive(PrimitiveType)
 }

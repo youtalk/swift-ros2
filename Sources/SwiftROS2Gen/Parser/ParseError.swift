@@ -1,5 +1,6 @@
 import Foundation
 
+/// Describes a syntax or type error encountered while parsing a `.msg` file.
 public struct ParseError: Error, CustomStringConvertible, Equatable, Sendable {
     public let file: String  // Source file path or descriptive label.
     public let line: Int  // 1-based.

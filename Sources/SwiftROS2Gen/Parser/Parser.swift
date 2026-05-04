@@ -1,5 +1,6 @@
 import Foundation
 
+/// Parses `.msg` source text into an ``IDLFile`` (Phase 1: primitive fields only).
 public enum Parser {
     public static func parseMessage(
         source: String,

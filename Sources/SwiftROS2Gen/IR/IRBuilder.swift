@@ -1,3 +1,4 @@
+/// Transforms a parsed ``IDLFile`` into the distro-neutral ``MessageIR`` used by the emitter.
 public enum IRBuilder {
     public static func build(jazzy idl: IDLFile) -> MessageIR {
         let fields = idl.fields.map { field -> FieldIR in

@@ -1,3 +1,4 @@
+/// Converts a ``MessageIR`` into the Swift source text for a generated ``ROS2Message`` type.
 public enum SwiftEmitter {
     public static func emit(_ ir: MessageIR, sourceLabel: String) -> String {
         var out = ""
@@ -9,7 +10,9 @@ public enum SwiftEmitter {
         out += "/// \(ir.rosTypeName)\n"
         let structName = swiftStructName(typeName: ir.typeName)
         out += "public struct \(structName): ROS2Message, Equatable, Sendable {\n"
-        let hash = ir.perDistroHashes["jazzy"] ?? ""
+        guard let hash = ir.perDistroHashes["jazzy"] else {
+            preconditionFailure("MessageIR for \(ir.rosTypeName) is missing the 'jazzy' type hash")
+        }
         out += "    public static let typeInfo = ROS2MessageTypeInfo(\n"
         out += "        typeName: \"\(ir.rosTypeName)\",\n"
         out += "        typeHash: \"\(hash)\"\n"

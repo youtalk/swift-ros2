@@ -1,3 +1,4 @@
+/// The parsed representation of a single `.msg` file.
 public struct IDLFile: Equatable, Sendable {
     public let package: String
     public let typeName: String
@@ -10,6 +11,7 @@ public struct IDLFile: Equatable, Sendable {
     }
 }
 
+/// A single field declaration parsed from a `.msg` file.
 public struct IDLField: Equatable, Sendable {
     public let name: String
     public let type: IDLFieldType
@@ -22,6 +24,7 @@ public struct IDLField: Equatable, Sendable {
     }
 }
 
+/// The type of a field as parsed from the `.msg` source (Phase 1: primitives only).
 public enum IDLFieldType: Equatable, Sendable {
     case primitive(PrimitiveType)
     // Nested + array variants intentionally omitted in Phase 1.

@@ -20,7 +20,7 @@ public struct Imu: ROS2Message, Equatable {
 
     public init(
         header: Header = Header(),
-        orientation: Quaternion = Quaternion(),
+        orientation: Quaternion = .identity,
         orientationCovariance: [Double] = CovarianceConstants.unknownCovariance3x3(),
         angularVelocity: Vector3 = Vector3(),
         angularVelocityCovariance: [Double] = CovarianceConstants.unknownCovariance3x3(),

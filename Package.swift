@@ -178,10 +178,13 @@ var targets: [Target] = [
         path: "Sources/SwiftROS2Wire"
     ),
 
-    // Message protocols and built-in types
+    // Message protocols and built-in types. Generated messages with
+    // distro-conditional `typeInfo(for:)` reach into `SwiftROS2Wire` for
+    // `ROS2Distro`, so the dependency is declared explicitly even though
+    // `SwiftROS2CDR` does not transitively need it.
     .target(
         name: "SwiftROS2Messages",
-        dependencies: ["SwiftROS2CDR"],
+        dependencies: ["SwiftROS2CDR", "SwiftROS2Wire"],
         path: "Sources/SwiftROS2Messages"
     ),
 

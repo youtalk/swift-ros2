@@ -11,6 +11,50 @@
 import Foundation
 import SwiftROS2CDR
 
+// MARK: - CameraInfo
+
+extension CameraInfo {
+    /// Zero-argument compatibility initializer matching the pre-Phase-4
+    /// hand-written shape: `distortionModel` defaults to ROS's canonical
+    /// `"plumb_bob"` model and `r` defaults to the 3x3 identity rectification
+    /// matrix instead of all-zeros.
+    public init() {
+        self.init(
+            header: Header(),
+            height: 0,
+            width: 0,
+            distortionModel: "plumb_bob",
+            d: [],
+            k: Array(repeating: 0.0, count: 9),
+            r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            p: Array(repeating: 0.0, count: 12),
+            binningX: 0,
+            binningY: 0,
+            roi: RegionOfInterest()
+        )
+    }
+}
+
+// MARK: - Imu
+
+extension Imu {
+    /// Zero-argument compatibility initializer matching the pre-Phase-4
+    /// hand-written shape: `orientation` defaults to the identity quaternion
+    /// (w = 1) instead of all-zero, which is the ROS convention for
+    /// "orientation unknown" with a non-degenerate rotation.
+    public init() {
+        self.init(
+            header: Header(),
+            orientation: Quaternion.identity,
+            orientationCovariance: Array(repeating: 0.0, count: 9),
+            angularVelocity: Vector3(),
+            angularVelocityCovariance: Array(repeating: 0.0, count: 9),
+            linearAcceleration: Vector3(),
+            linearAccelerationCovariance: Array(repeating: 0.0, count: 9)
+        )
+    }
+}
+
 // MARK: - BatteryState
 
 extension BatteryState {
@@ -52,7 +96,9 @@ extension BatteryState {
     /// Convenience initializer matching the pre-Phase-4 hand-written shape.
     /// Accepts the typed Swift enums for `powerSupplyStatus` /
     /// `powerSupplyHealth` / `powerSupplyTechnology` and stores the underlying
-    /// `UInt8` raw value.
+    /// `UInt8` raw value. All parameters default so callers can construct a
+    /// legacy-shaped `BatteryState` from any subset of fields without having
+    /// to fall back to the raw `UInt8` initializer.
     public init(
         header: Header = Header(),
         voltage: Float = 0.0,
@@ -62,7 +108,7 @@ extension BatteryState {
         capacity: Float = .nan,
         designCapacity: Float = .nan,
         percentage: Float = .nan,
-        powerSupplyStatus: PowerSupplyStatus,
+        powerSupplyStatus: PowerSupplyStatus = .unknown,
         powerSupplyHealth: PowerSupplyHealth = .unknown,
         powerSupplyTechnology: PowerSupplyTechnology = .unknown,
         present: Bool = true,
@@ -88,6 +134,30 @@ extension BatteryState {
             cellTemperature: cellTemperature,
             location: location,
             serialNumber: serialNumber
+        )
+    }
+
+    /// Zero-argument compatibility initializer matching the pre-Phase-4
+    /// hand-written defaults: NaN telemetry fields, `present == true`, and
+    /// `unknown` enum values for the three power-supply state fields.
+    public init() {
+        self.init(
+            header: Header(),
+            voltage: 0.0,
+            temperature: .nan,
+            current: .nan,
+            charge: .nan,
+            capacity: .nan,
+            designCapacity: .nan,
+            percentage: .nan,
+            powerSupplyStatus: .unknown,
+            powerSupplyHealth: .unknown,
+            powerSupplyTechnology: .unknown,
+            present: true,
+            cellVoltage: [],
+            cellTemperature: [],
+            location: "",
+            serialNumber: ""
         )
     }
 }
@@ -171,6 +241,16 @@ extension NavSatStatus {
     public static var serviceGLONASS: UInt16 { Self.SERVICE_GLONASS }
     public static var serviceCOMPASS: UInt16 { Self.SERVICE_COMPASS }
     public static var serviceGALILEO: UInt16 { Self.SERVICE_GALILEO }
+
+    /// Zero-argument compatibility initializer matching the pre-Phase-4
+    /// hand-written defaults: `status == STATUS_FIX (0)` and
+    /// `service == SERVICE_GPS (1)`. The generated initializer's
+    /// `STATUS_UNKNOWN` / `SERVICE_UNKNOWN` defaults silently broke every
+    /// caller that constructed a default `NavSatStatus()` and expected a
+    /// "GPS fix acquired" sentinel.
+    public init() {
+        self.init(status: Self.STATUS_FIX, service: Self.SERVICE_GPS)
+    }
 }
 
 // MARK: - PointField

@@ -589,16 +589,17 @@ final class MessageRoundTripTests: XCTestCase {
 
         XCTAssertEqual(decoded.height, 0)
         XCTAssertEqual(decoded.width, 0)
-        // Phase 4: the generator emits the IDL-declared default for every
-        // field. `distortion_model` and `r` have no IDL default, so they
-        // round-trip through their type-shaped zero (empty string, zero
-        // matrix) rather than the legacy hand-written `"plumb_bob"` /
-        // identity matrix. Callers that need those conventional defaults
-        // should set them explicitly.
-        XCTAssertEqual(decoded.distortionModel, "")
+        // Phase 4: the generator emits IDL-declared zero defaults, but
+        // `SensorMsgsExtensions` adds a zero-arg compatibility initializer
+        // that restores the pre-Phase-4 hand-written conventions —
+        // `distortion_model = "plumb_bob"` and `r = identity`. Callers
+        // that want true zeros should pass them explicitly to the
+        // generated multi-arg initializer.
+        XCTAssertEqual(decoded.distortionModel, "plumb_bob")
         XCTAssertEqual(decoded.d.count, 0)
         XCTAssertEqual(decoded.k.count, 9)
-        XCTAssertEqual(decoded.r, Array(repeating: 0.0, count: 9))
+        XCTAssertEqual(
+            decoded.r, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
         XCTAssertEqual(decoded.p.count, 12)
         XCTAssertEqual(decoded.binningX, 0)
         XCTAssertEqual(decoded.binningY, 0)

@@ -2,7 +2,7 @@ import Foundation
 
 public struct PackageInput: Sendable {
     public let name: String  // "std_msgs"
-    public let directory: URL  // Vendor/common_interfaces-jazzy/std_msgs
+    public let directory: URL  // vendor/common_interfaces-jazzy/std_msgs
 
     public init(name: String, directory: URL) {
         self.name = name

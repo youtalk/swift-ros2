@@ -6,3 +6,6 @@
 	path = vendor/cyclonedds
 	url = https://github.com/youtalk/cyclonedds.git
 	branch = swift-ros2-main
+[submodule "Vendor/common_interfaces-jazzy"]
+	path = Vendor/common_interfaces-jazzy
+	url = https://github.com/ros2/common_interfaces.git

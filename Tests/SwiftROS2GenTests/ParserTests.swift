@@ -92,6 +92,23 @@ struct ParserTests {
         #expect(file.fields[0].sourceLine == 5)
     }
 
+    @Test("parses CRLF line endings the same as LF")
+    func parsesCRLFLineEndings() throws {
+        // Windows checkouts of LF-authored vendor `.msg` files arrive with
+        // `\r\n` terminators. The parser must normalise so the wire format
+        // does not depend on the host OS's line-ending convention.
+        let source = "\r\n# header\r\n\r\nbool data\r\nint32 count\r\n"
+        let file = try Parser.parseMessage(
+            source: source,
+            file: "CRLF.msg",
+            package: "std_msgs",
+            typeName: "CRLF"
+        )
+        #expect(file.fields.count == 2)
+        #expect(file.fields[0].type == .primitive(.bool))
+        #expect(file.fields[1].type == .primitive(.int32))
+    }
+
     @Test("parses an empty .msg as zero-field message")
     func parsesEmptyFile() throws {
         let file = try Parser.parseMessage(

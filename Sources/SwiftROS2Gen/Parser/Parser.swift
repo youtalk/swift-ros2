@@ -10,7 +10,12 @@ public enum Parser {
     ) throws -> IDLFile {
         var fields: [IDLField] = []
         var constants: [IDLConstant] = []
-        let rawLines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        // Normalize CRLF before splitting. Swift treats `\r\n` as a single
+        // extended grapheme cluster, so `split(separator: "\n")` does not
+        // split CRLF-line-ended files at all (Windows checkouts of vendor
+        // `.msg` files arrive that way).
+        let normalized = normalizeLineEndings(source)
+        let rawLines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
         for (index, raw) in rawLines.enumerated() {
             let lineNumber = index + 1
             let stripped = stripCommentAndTrim(String(raw))
@@ -117,7 +122,9 @@ public enum Parser {
         package: String,
         typeName: String
     ) throws -> IDLService {
-        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        // Same CRLF normalization as parseMessage — see the comment there.
+        let normalized = normalizeLineEndings(source)
+        let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
         var separatorIndices: [Int] = []
         for (i, raw) in lines.enumerated() {
             let stripped = stripCommentAndTrim(String(raw))
@@ -158,11 +165,50 @@ public enum Parser {
         }
     }
 
-    static func stripCommentAndTrim(_ line: String) -> String {
-        if let hashIndex = line.firstIndex(of: "#") {
-            return String(line[..<hashIndex]).trimmingCharacters(in: .whitespaces)
+    /// Replace `\r\n` with `\n` so subsequent `split(separator: "\n")` works
+    /// on Windows-line-ending input. Swift treats `\r\n` as a single
+    /// extended grapheme cluster, so the split would otherwise return the
+    /// entire source as one "line". `String.contains("\r")` is also
+    /// CRLF-blind for the same reason — we walk Unicode scalars instead.
+    static func normalizeLineEndings(_ source: String) -> String {
+        guard source.unicodeScalars.contains("\r") else { return source }
+        var out = ""
+        out.reserveCapacity(source.utf8.count)
+        var pendingCR = false
+        for ch in source.unicodeScalars {
+            if pendingCR {
+                if ch == "\n" {
+                    out.unicodeScalars.append("\n")
+                } else {
+                    out.unicodeScalars.append("\r")
+                    out.unicodeScalars.append(ch)
+                }
+                pendingCR = false
+                continue
+            }
+            if ch == "\r" {
+                pendingCR = true
+            } else {
+                out.unicodeScalars.append(ch)
+            }
         }
-        return line.trimmingCharacters(in: .whitespaces)
+        if pendingCR { out.unicodeScalars.append("\r") }
+        return out
+    }
+
+    static func stripCommentAndTrim(_ line: String) -> String {
+        // Strip a trailing carriage return first so CRLF-line-ending files
+        // (Windows checkouts of LF-authored vendor `.msg` files) parse the
+        // same as LF inputs. `CharacterSet.whitespaces` is U+0020 + U+0009
+        // only — it does not include `\r`.
+        var trimmed = line
+        if trimmed.hasSuffix("\r") {
+            trimmed.removeLast()
+        }
+        if let hashIndex = trimmed.firstIndex(of: "#") {
+            return String(trimmed[..<hashIndex]).trimmingCharacters(in: .whitespaces)
+        }
+        return trimmed.trimmingCharacters(in: .whitespaces)
     }
 
     static func validateFieldName(_ name: String, file: String, line: Int) throws {

@@ -9,3 +9,6 @@
 [submodule "vendor/common_interfaces-jazzy"]
 	path = vendor/common_interfaces-jazzy
 	url = https://github.com/ros2/common_interfaces.git
+[submodule "vendor/rcl_interfaces-jazzy"]
+	path = vendor/rcl_interfaces-jazzy
+	url = https://github.com/ros2/rcl_interfaces.git

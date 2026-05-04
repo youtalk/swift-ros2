@@ -15,3 +15,6 @@
 [submodule "vendor/unique_identifier_msgs"]
 	path = vendor/unique_identifier_msgs
 	url = https://github.com/ros2/unique_identifier_msgs.git
+[submodule "vendor/common_interfaces-humble"]
+	path = vendor/common_interfaces-humble
+	url = https://github.com/ros2/common_interfaces.git

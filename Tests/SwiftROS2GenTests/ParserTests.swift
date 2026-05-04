@@ -38,6 +38,19 @@ struct IDLFileTests {
         #expect(file.fields[0].type == .primitive(.bool))
         #expect(file == IDLFile(package: "std_msgs", typeName: "Bool", fields: [f]))
     }
+
+    @Test("constructs a nested field with same-package and cross-package references")
+    func constructsNested() {
+        let samePkg = IDLField(name: "linear", type: .nested(package: nil, typeName: "Vector3"), sourceLine: 1)
+        let crossPkg = IDLField(
+            name: "header",
+            type: .nested(package: "std_msgs", typeName: "Header"),
+            sourceLine: 2
+        )
+        let file = IDLFile(package: "geometry_msgs", typeName: "Twist", fields: [samePkg, crossPkg])
+        #expect(file.fields[0].type == .nested(package: nil, typeName: "Vector3"))
+        #expect(file.fields[1].type == .nested(package: "std_msgs", typeName: "Header"))
+    }
 }
 
 @Suite("IRBuilder")

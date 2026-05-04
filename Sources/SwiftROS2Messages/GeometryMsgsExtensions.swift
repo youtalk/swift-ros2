@@ -43,10 +43,14 @@ extension Header {
     }
 
     /// Stamp the header with the current wall-clock time and the given frame.
+    ///
+    /// Saturates rather than traps after Jan 19 2038 03:14:07 UTC: `Int32(ti)`
+    /// would overflow there, but `Int32(clamping:)` over an `Int64` intermediate
+    /// pins to `Int32.max` instead — a more useful failure mode for callers.
     public static func now(frameId: String) -> Header {
         let ti = Date().timeIntervalSince1970
-        let s = Int32(ti)
-        let ns = UInt32((ti - Double(s)) * 1_000_000_000)
+        let s = Int32(clamping: Int64(ti))
+        let ns = UInt32(clamping: Int64((ti - Double(s)) * 1_000_000_000))
         return Header(stamp: Time(sec: s, nanosec: ns), frameId: frameId)
     }
 

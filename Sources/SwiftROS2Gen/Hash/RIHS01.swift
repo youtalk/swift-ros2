@@ -86,6 +86,10 @@ public enum RIHS01 {
                     name: field.ros2Name,
                     typeID: FieldTypeID.nestedType,
                     nestedTypeName: "\(pkg)/msg/\(type)")
+            case .array, .sequence, .boundedString:
+                preconditionFailure(
+                    "RIHS01: array/sequence/boundedString hashing not yet implemented "
+                        + "(Phase 3 Task 8); field '\(field.ros2Name)' in \(ir.rosTypeName)")
             }
         }
     }
@@ -107,7 +111,19 @@ public enum RIHS01 {
             let current = queue[idx]
             idx += 1
             for field in current.fields {
-                guard case .nested(let pkg, let type) = field.type else { continue }
+                let pkg: String
+                let type: String
+                switch field.type {
+                case .nested(let p, let t):
+                    pkg = p
+                    type = t
+                case .primitive:
+                    continue
+                case .array, .sequence, .boundedString:
+                    preconditionFailure(
+                        "RIHS01: array/sequence/boundedString hashing not yet implemented "
+                            + "(Phase 3 Task 8); field '\(field.ros2Name)' in \(current.rosTypeName)")
+                }
                 let key = "\(pkg)/msg/\(type)"
                 if visited.contains(key) { continue }
                 visited.insert(key)

@@ -3,6 +3,7 @@ public struct MessageIR: Equatable, Sendable {
     public let package: String  // "std_msgs"
     public let typeName: String  // "Bool"
     public let fields: [FieldIR]
+    public let constants: [ConstantIR]
     /// Hash for each distro for which the IR was built. Phase 1 fills only `.jazzy`.
     public var perDistroHashes: [String: String] = [:]
 
@@ -10,11 +11,13 @@ public struct MessageIR: Equatable, Sendable {
         package: String,
         typeName: String,
         fields: [FieldIR],
+        constants: [ConstantIR] = [],
         perDistroHashes: [String: String] = [:]
     ) {
         self.package = package
         self.typeName = typeName
         self.fields = fields
+        self.constants = constants
         self.perDistroHashes = perDistroHashes
     }
 
@@ -27,29 +30,70 @@ public struct FieldIR: Equatable, Sendable {
     public let ros2Name: String  // "linear_acceleration"
     public let swiftName: String  // "linearAcceleration"
     public let type: FieldType
+    public let defaultValue: DefaultValue?
 
-    public init(ros2Name: String, swiftName: String, type: FieldType) {
+    public init(
+        ros2Name: String,
+        swiftName: String,
+        type: FieldType,
+        defaultValue: DefaultValue? = nil
+    ) {
         self.ros2Name = ros2Name
         self.swiftName = swiftName
         self.type = type
+        self.defaultValue = defaultValue
     }
 }
 
 /// The resolved type of a single message field.
-public enum FieldType: Equatable, Sendable {
+public indirect enum FieldType: Equatable, Sendable {
     case primitive(PrimitiveType)
     /// A reference to another message IR. `package` is always fully resolved
     /// (no implicit "same package" — IRBuilder rewrites those).
     case nested(package: String, typeName: String)
+    /// Fixed-size array `<elem>[N]`.
+    case array(element: FieldType, length: Int)
+    /// Sequence `<elem>[]` (unbounded, `upperBound == nil`) or `<elem>[<=N]`.
+    case sequence(element: FieldType, upperBound: Int?)
+    /// Bounded string / wstring `string<=N` / `wstring<=N`.
+    case boundedString(isWide: Bool, upperBound: Int)
 }
 
 extension FieldType {
     /// Canonical ROS type name (`<pkg>/msg/<Type>`) for nested references.
-    /// `nil` for primitive types.
+    /// `nil` for primitive / array / sequence / boundedString types.
     public var rosTypeName: String? {
         switch self {
         case .primitive: return nil
         case .nested(let pkg, let type): return "\(pkg)/msg/\(type)"
+        case .array, .sequence, .boundedString: return nil
         }
+    }
+}
+
+/// Typed representation of a field default. Emitted as a Swift literal in the
+/// generated `init(...)` parameter default.
+public enum DefaultValue: Equatable, Sendable {
+    case bool(Bool)
+    case int(Int64)  // covers int8..int64; range-checked at parse time
+    case uint(UInt64)  // covers uint8..uint64
+    case float(Double)  // covers float32 + float64
+    case string(String)  // raw Swift-literal-ready string (no surrounding quotes)
+    case array([DefaultValue])
+    case empty  // explicit "" / [] for sequences/strings without a value
+}
+
+/// A typed, validated constant declaration carried on a ``MessageIR``.
+public struct ConstantIR: Equatable, Sendable {
+    public let ros2Name: String
+    public let swiftName: String
+    public let type: PrimitiveType
+    public let value: DefaultValue
+
+    public init(ros2Name: String, swiftName: String, type: PrimitiveType, value: DefaultValue) {
+        self.ros2Name = ros2Name
+        self.swiftName = swiftName
+        self.type = type
+        self.value = value
     }
 }

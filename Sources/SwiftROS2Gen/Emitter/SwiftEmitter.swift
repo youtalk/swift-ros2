@@ -86,6 +86,9 @@ public enum SwiftEmitter {
         case .primitive(let p): return p.swiftTypeName
         case .nested(_, let typeName):
             return swiftStructName(typeName: typeName)
+        case .array, .sequence, .boundedString:
+            preconditionFailure(
+                "SwiftEmitter.swiftType: array/sequence/boundedString not yet implemented (Phase 3 Task 9)")
         }
     }
 
@@ -102,6 +105,9 @@ public enum SwiftEmitter {
             }
         case .nested(_, let typeName):
             return "\(swiftStructName(typeName: typeName))()"
+        case .array, .sequence, .boundedString:
+            preconditionFailure(
+                "SwiftEmitter.swiftDefault: array/sequence/boundedString not yet implemented (Phase 3 Task 9)")
         }
     }
 
@@ -111,6 +117,9 @@ public enum SwiftEmitter {
             return "        encoder.\(writerCall(field.type))(\(field.swiftName))"
         case .nested:
             return "        try \(field.swiftName).encode(to: encoder)"
+        case .array, .sequence, .boundedString:
+            preconditionFailure(
+                "SwiftEmitter.emitEncodeStatement: array/sequence/boundedString not yet implemented (Phase 3 Task 9)")
         }
     }
 
@@ -120,6 +129,9 @@ public enum SwiftEmitter {
             return "        self.\(field.swiftName) = try decoder.\(readerCall(field.type))()"
         case .nested(_, let typeName):
             return "        self.\(field.swiftName) = try \(swiftStructName(typeName: typeName))(from: decoder)"
+        case .array, .sequence, .boundedString:
+            preconditionFailure(
+                "SwiftEmitter.emitDecodeStatement: array/sequence/boundedString not yet implemented (Phase 3 Task 9)")
         }
     }
 
@@ -142,6 +154,9 @@ public enum SwiftEmitter {
             }
         case .nested:
             preconditionFailure("writerCall is not defined for nested types — use emitEncodeStatement")
+        case .array, .sequence, .boundedString:
+            preconditionFailure(
+                "SwiftEmitter.writerCall: array/sequence/boundedString not yet implemented (Phase 3 Task 9)")
         }
     }
 
@@ -164,6 +179,9 @@ public enum SwiftEmitter {
             }
         case .nested:
             preconditionFailure("readerCall is not defined for nested types — use emitDecodeStatement")
+        case .array, .sequence, .boundedString:
+            preconditionFailure(
+                "SwiftEmitter.readerCall: array/sequence/boundedString not yet implemented (Phase 3 Task 9)")
         }
     }
 }

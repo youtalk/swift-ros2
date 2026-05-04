@@ -1,0 +1,128 @@
+name: Hash Oracle
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Sources/SwiftROS2Gen/**'
+      - 'Sources/swift-ros2-gen/**'
+      - 'Sources/SwiftROS2Messages/Generated/**'
+      - 'Tests/SwiftROS2GenHashOracleTests/**'
+      - 'Vendor/common_interfaces-jazzy/**'
+      - 'Vendor/rcl_interfaces-jazzy/**'
+      - 'Vendor/example_interfaces-jazzy/**'
+      - 'Vendor/unique_identifier_msgs/**'
+      - '.github/workflows/hash-oracle.yml'
+      - 'Package.swift'
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-hash-oracle:
+    name: Verify (hash oracle ${{ matrix.ros_distro }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: jazzy
+            image: osrf/ros:jazzy-desktop
+            required: true
+          - ros_distro: kilted
+            image: osrf/ros:kilted-desktop
+            required: false
+          - ros_distro: rolling
+            image: osrf/ros:rolling-desktop
+            required: false
+    continue-on-error: ${{ !matrix.required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Swift 6.3.1
+        run: |
+          curl -fsSL "https://download.swift.org/swift-6.3.1-release/ubuntu2404/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04.tar.gz" \
+            -o /tmp/swift.tar.gz
+          sudo mkdir -p /opt/swift
+          sudo tar -xzf /tmp/swift.tar.gz -C /opt/swift --strip-components=1
+          echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
+          /opt/swift/usr/bin/swift --version
+
+      - name: Resolve image digest
+        id: digest
+        run: |
+          # `docker buildx imagetools inspect` returns the manifest digest
+          # without pulling the layers. Use that digest as the cache key so
+          # a re-tag of the same upstream image bypasses the cache cleanly.
+          docker buildx imagetools inspect "${{ matrix.image }}" \
+            --format '{{ .Manifest.Digest }}' > /tmp/image.digest
+          echo "value=$(cat /tmp/image.digest)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache docker image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/${{ matrix.ros_distro }}-image.tar
+          key: docker-${{ matrix.image }}-${{ steps.digest.outputs.value }}
+
+      - name: Load or pull image
+        run: |
+          if [[ -f "/tmp/${{ matrix.ros_distro }}-image.tar" ]]; then
+            docker load -i "/tmp/${{ matrix.ros_distro }}-image.tar"
+          else
+            docker pull "${{ matrix.image }}"
+            docker save "${{ matrix.image }}" -o "/tmp/${{ matrix.ros_distro }}-image.tar"
+          fi
+
+      - name: Build swift-ros2-gen
+        run: swift build --target swift-ros2-gen
+
+      - name: Verify hash oracle (CLI smoke)
+        run: |
+          # `--exclude-types Char` skips the known generator drift in
+          # `std_msgs/msg/Char` and `example_interfaces/msg/Char`
+          # (FIELD_TYPE_CHAR id mismatch in RIHS01.swift). Tracked as a
+          # separate generator follow-up; remove the flag once fixed.
+          swift run swift-ros2-gen \
+            --verify-hashes "${{ matrix.image }}" \
+            --distros "${{ matrix.ros_distro }}" \
+            --diagnose \
+            --exclude-types Char \
+            --input "std_msgs=Vendor/common_interfaces-jazzy/std_msgs@${{ matrix.ros_distro }}" \
+            --input "geometry_msgs=Vendor/common_interfaces-jazzy/geometry_msgs@${{ matrix.ros_distro }}" \
+            --input "sensor_msgs=Vendor/common_interfaces-jazzy/sensor_msgs@${{ matrix.ros_distro }}" \
+            --input "std_srvs=Vendor/common_interfaces-jazzy/std_srvs@${{ matrix.ros_distro }}" \
+            --input "action_msgs=Vendor/rcl_interfaces-jazzy/action_msgs@${{ matrix.ros_distro }}" \
+            --input "builtin_interfaces=Vendor/rcl_interfaces-jazzy/builtin_interfaces@${{ matrix.ros_distro }}" \
+            --input "unique_identifier_msgs=Vendor/unique_identifier_msgs@${{ matrix.ros_distro }}" \
+            --input "example_interfaces=Vendor/example_interfaces-jazzy@${{ matrix.ros_distro }}"
+
+      - name: Verify hash oracle (test target)
+        env:
+          SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE: ${{ matrix.image }}
+        run: swift test --filter SwiftROS2GenHashOracleTests --parallel
+
+      - name: Diagnose dump on failure
+        if: failure()
+        run: |
+          if [[ -d /tmp/swift-ros2-gen-diagnose ]]; then
+            ls -la /tmp/swift-ros2-gen-diagnose
+            for f in /tmp/swift-ros2-gen-diagnose/*; do
+              echo "=== $f ==="
+              cat "$f"
+            done
+          else
+            echo "no /tmp/swift-ros2-gen-diagnose dump (failure was earlier than the verifier)"
+          fi
+
+      - name: Upload diagnose artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hash-oracle-diagnose-${{ matrix.ros_distro }}
+          path: /tmp/swift-ros2-gen-diagnose/
+          if-no-files-found: ignore

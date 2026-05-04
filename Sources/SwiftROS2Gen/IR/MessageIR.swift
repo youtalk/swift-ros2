@@ -35,7 +35,21 @@ public struct FieldIR: Equatable, Sendable {
     }
 }
 
-/// The resolved type of a single message field (Phase 1: primitives only).
+/// The resolved type of a single message field.
 public enum FieldType: Equatable, Sendable {
     case primitive(PrimitiveType)
+    /// A reference to another message IR. `package` is always fully resolved
+    /// (no implicit "same package" — IRBuilder rewrites those).
+    case nested(package: String, typeName: String)
+}
+
+extension FieldType {
+    /// Canonical ROS type name (`<pkg>/msg/<Type>`) for nested references.
+    /// `nil` for primitive types.
+    public var rosTypeName: String? {
+        switch self {
+        case .primitive: return nil
+        case .nested(let pkg, let type): return "\(pkg)/msg/\(type)"
+        }
+    }
 }

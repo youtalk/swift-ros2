@@ -77,6 +77,8 @@ public enum SwiftEmitter {
     static func swiftType(_ ft: FieldType) -> String {
         switch ft {
         case .primitive(let p): return p.swiftTypeName
+        case .nested:
+            preconditionFailure("nested types not yet handled by SwiftEmitter (Task 7)")
         }
     }
 
@@ -91,6 +93,8 @@ public enum SwiftEmitter {
             case .float32, .float64: return "0.0"
             case .string, .wstring: return "\"\""
             }
+        case .nested:
+            preconditionFailure("nested types not yet handled by SwiftEmitter (Task 7)")
         }
     }
 
@@ -111,6 +115,8 @@ public enum SwiftEmitter {
             case .float64: return "writeFloat64"
             case .string, .wstring: return "writeString"
             }
+        case .nested:
+            preconditionFailure("nested types not yet handled by SwiftEmitter (Task 7)")
         }
     }
 
@@ -131,6 +137,8 @@ public enum SwiftEmitter {
             case .float64: return "readFloat64"
             case .string, .wstring: return "readString"
             }
+        case .nested:
+            preconditionFailure("nested types not yet handled by SwiftEmitter (Task 7)")
         }
     }
 }

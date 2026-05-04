@@ -39,3 +39,23 @@ struct IDLFileTests {
         #expect(file == IDLFile(package: "std_msgs", typeName: "Bool", fields: [f]))
     }
 }
+
+@Suite("Parser")
+struct ParserTests {
+    @Test("parses a single primitive field")
+    func parsesSingleField() throws {
+        let source = "bool data\n"
+        let file = try Parser.parseMessage(
+            source: source,
+            file: "std_msgs/msg/Bool.msg",
+            package: "std_msgs",
+            typeName: "Bool"
+        )
+        #expect(file.package == "std_msgs")
+        #expect(file.typeName == "Bool")
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].name == "data")
+        #expect(file.fields[0].type == .primitive(.bool))
+        #expect(file.fields[0].sourceLine == 1)
+    }
+}

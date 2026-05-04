@@ -15,6 +15,7 @@ public struct PackageInput: Sendable {
 public enum GeneratorError: Error, CustomStringConvertible {
     case packageDirectoryMissing(URL)
     case parse(ParseError)
+    case unresolvedNestedType(package: String, typeName: String)
 
     public var description: String {
         switch self {
@@ -22,6 +23,9 @@ public enum GeneratorError: Error, CustomStringConvertible {
             return "package directory missing: \(url.path)"
         case .parse(let error):
             return error.description
+        case .unresolvedNestedType(let pkg, let type):
+            return
+                "unresolved nested type '\(pkg)/\(type)' — pass a --input for '\(pkg)' on the same CLI invocation"
         }
     }
 }

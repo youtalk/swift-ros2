@@ -9,13 +9,13 @@ public enum IRBuilder {
                     swiftName: snakeToCamel(field.name),
                     type: .primitive(prim)
                 )
-            case .nested:
-                // Nested-type lowering arrives in Phase 2 Task 5 (IRBuilder
-                // resolution + MessageIR.FieldType.nested). The AST case is
-                // wired here in Task 2 only so callers can construct the new
-                // value; until Task 5 lands, lowering a nested field is a
-                // programming error.
-                fatalError("IDLFieldType.nested lowering not yet implemented (Phase 2 Task 5)")
+            case .nested(let pkg, let type):
+                let resolvedPackage = pkg ?? idl.package
+                return FieldIR(
+                    ros2Name: field.name,
+                    swiftName: snakeToCamel(field.name),
+                    type: .nested(package: resolvedPackage, typeName: type)
+                )
             }
         }
         return MessageIR(package: idl.package, typeName: idl.typeName, fields: fields)

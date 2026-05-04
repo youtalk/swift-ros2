@@ -39,6 +39,11 @@ jobs:
         run: swift build
       - name: Test (with coverage)
         run: swift test --parallel --enable-code-coverage
+      - name: Smoke-test the SwiftPM build plugin
+        run: |
+          swift build --target PluginSmoke
+          .build/debug/PluginSmoke | tee plugin-smoke.out
+          grep -q "BoolMsg.typeInfo.typeName" plugin-smoke.out
       - name: Coverage gate
         run: |
           BIN_PATH=$(swift build --show-bin-path)
@@ -189,6 +194,35 @@ jobs:
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           swift test --parallel
+      - name: Smoke-test the SwiftPM build plugin
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
+          swift build --target PluginSmoke
+          .build/debug/PluginSmoke | tee plugin-smoke.out
+          grep -q "BoolMsg.typeInfo.typeName" plugin-smoke.out
+
+  verify-plugin-arms:
+    name: Plugin manifest resolves on all arms
+    needs: [lint-swift-format]
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+      - name: Verify plugin target visible on every arm
+        run: |
+          for arm in apple linux windows android; do
+            echo "=== SWIFT_ROS2_TARGET_OS=$arm ==="
+            SWIFT_ROS2_TARGET_OS=$arm swift package describe --type json \
+              | jq -e '.targets[] | select(.name == "SwiftROS2GenPlugin") | .name' \
+              || (echo "SwiftROS2GenPlugin missing on arm=$arm"; exit 1)
+            SWIFT_ROS2_TARGET_OS=$arm swift package describe --type json \
+              | jq -e '.targets[] | select(.name == "PluginSmoke") | .name' \
+              || (echo "PluginSmoke missing on arm=$arm"; exit 1)
+          done
 
   build-windows:
     name: Build & Test (Windows x86_64)

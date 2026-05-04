@@ -1,7 +1,17 @@
+/// Indicates which ROS 2 IDL family a `MessageIR` came from. Phase 3 introduces
+/// `.srv` to distinguish the synthesized request / response halves of a service
+/// — they get rendered into the canonical `<pkg>/srv/<Type>_Request|Response`
+/// type name, both in the RIHS01 hash input and in the emitted `typeInfo`.
+public enum MessageKind: String, Equatable, Sendable {
+    case msg
+    case srv
+}
+
 /// Distro-neutral intermediate representation of a single ROS 2 message type.
 public struct MessageIR: Equatable, Sendable {
     public let package: String  // "std_msgs"
     public let typeName: String  // "Bool"
+    public let kind: MessageKind
     public let fields: [FieldIR]
     public let constants: [ConstantIR]
     /// Hash for each distro for which the IR was built. Phase 1 fills only `.jazzy`.
@@ -10,19 +20,21 @@ public struct MessageIR: Equatable, Sendable {
     public init(
         package: String,
         typeName: String,
+        kind: MessageKind = .msg,
         fields: [FieldIR],
         constants: [ConstantIR] = [],
         perDistroHashes: [String: String] = [:]
     ) {
         self.package = package
         self.typeName = typeName
+        self.kind = kind
         self.fields = fields
         self.constants = constants
         self.perDistroHashes = perDistroHashes
     }
 
-    /// "std_msgs/msg/Bool"
-    public var rosTypeName: String { "\(package)/msg/\(typeName)" }
+    /// "std_msgs/msg/Bool" or "action_msgs/srv/CancelGoal_Request" depending on `kind`.
+    public var rosTypeName: String { "\(package)/\(kind.rawValue)/\(typeName)" }
 }
 
 /// Intermediate representation of a single field in a ROS 2 message.

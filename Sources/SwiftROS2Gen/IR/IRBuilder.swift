@@ -6,7 +6,7 @@ public enum IRBuilder {
     /// field default expression into a typed ``DefaultValue``, and validates
     /// constants (range-checks integers, parses bools, etc.). Surfaces every
     /// validation issue as ``IRBuildError``.
-    public static func buildOrThrow(jazzy idl: IDLFile) throws -> MessageIR {
+    public static func buildOrThrow(jazzy idl: IDLFile, kind: MessageKind = .msg) throws -> MessageIR {
         let fields = try idl.fields.map { f -> FieldIR in
             let irType = lift(f.type, currentPackage: idl.package)
             let dv = try f.defaultExpression.map {
@@ -31,6 +31,7 @@ public enum IRBuilder {
         return MessageIR(
             package: idl.package,
             typeName: idl.typeName,
+            kind: kind,
             fields: fields,
             constants: constants
         )
@@ -40,9 +41,9 @@ public enum IRBuilder {
     /// invoke this; range / shape errors trip a `preconditionFailure`. Task 9 /
     /// Task 11 will move callers to ``buildOrThrow(jazzy:)`` so errors propagate
     /// as ``GeneratorError``.
-    public static func build(jazzy idl: IDLFile) -> MessageIR {
+    public static func build(jazzy idl: IDLFile, kind: MessageKind = .msg) -> MessageIR {
         do {
-            return try buildOrThrow(jazzy: idl)
+            return try buildOrThrow(jazzy: idl, kind: kind)
         } catch {
             preconditionFailure("IRBuilder.build hit \(error) — use buildOrThrow")
         }

@@ -59,6 +59,21 @@ public struct IDLConstant: Equatable, Sendable {
     }
 }
 
+/// The parsed representation of a single `.srv` file (a request / response pair).
+public struct IDLService: Equatable, Sendable {
+    public let package: String
+    public let typeName: String
+    public let request: IDLFile
+    public let response: IDLFile
+
+    public init(package: String, typeName: String, request: IDLFile, response: IDLFile) {
+        self.package = package
+        self.typeName = typeName
+        self.request = request
+        self.response = response
+    }
+}
+
 /// The type of a field as parsed from the `.msg` source.
 public indirect enum IDLFieldType: Equatable, Sendable {
     case primitive(PrimitiveType)

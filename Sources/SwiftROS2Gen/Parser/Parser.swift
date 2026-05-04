@@ -106,6 +106,49 @@ public enum Parser {
         return IDLFile(package: package, typeName: typeName, fields: fields, constants: constants)
     }
 
+    /// Parse a `.srv` source. The separator is exactly `---` after stripping
+    /// comments and trimming whitespace; everything before becomes the request,
+    /// everything after becomes the response. Each half is parsed with
+    /// ``parseMessage(source:file:package:typeName:)`` using the synthesized
+    /// `<typeName>_Request` / `<typeName>_Response` names rosidl uses on the wire.
+    public static func parseService(
+        source: String,
+        file: String,
+        package: String,
+        typeName: String
+    ) throws -> IDLService {
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        var separatorIndices: [Int] = []
+        for (i, raw) in lines.enumerated() {
+            let stripped = stripCommentAndTrim(String(raw))
+            if stripped == "---" { separatorIndices.append(i) }
+        }
+        guard separatorIndices.count == 1 else {
+            throw ParseError(
+                file: file,
+                line: 1,
+                message:
+                    "expected exactly one '---' separator in service '\(typeName)' (found \(separatorIndices.count))"
+            )
+        }
+        let sep = separatorIndices[0]
+        let reqText = lines[..<sep].joined(separator: "\n") + "\n"
+        let resText = lines[(sep + 1)...].joined(separator: "\n")
+        let req = try parseMessage(
+            source: reqText,
+            file: file,
+            package: package,
+            typeName: typeName + "_Request"
+        )
+        let res = try parseMessage(
+            source: resText,
+            file: file,
+            package: package,
+            typeName: typeName + "_Response"
+        )
+        return IDLService(package: package, typeName: typeName, request: req, response: res)
+    }
+
     /// `[A-Z_][A-Z0-9_]*` — matches the rosidl convention for constant names.
     static func isUpperSnakeIdent(_ s: String) -> Bool {
         guard let first = s.first, first.isLetter || first == "_" else { return false }

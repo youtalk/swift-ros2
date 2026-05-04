@@ -60,6 +60,7 @@ public final class ROS2Client<S: ROS2ServiceType>: @unchecked Sendable, ClientCl
         let requestCDR: Data
         do {
             let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+            encoder.writeEncapsulationHeader()
             try request.encode(to: encoder)
             requestCDR = encoder.getData()
         } catch {

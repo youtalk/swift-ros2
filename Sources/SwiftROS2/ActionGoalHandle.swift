@@ -102,6 +102,7 @@ public final class ActionGoalHandle<A: ROS2Action>: @unchecked Sendable {
         // Use the schema choice that the owning context registered with us
         // — `false` is wrong on Humble where some message shapes differ.
         let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        encoder.writeEncapsulationHeader()
         do {
             try fb.encode(to: encoder)
         } catch {

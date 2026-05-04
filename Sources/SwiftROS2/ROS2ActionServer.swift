@@ -180,6 +180,7 @@ public final class ROS2ActionServer<H: ActionServerHandler>: @unchecked Sendable
             do {
                 let result = try await self.handler.execute(handle)
                 let encoder = CDREncoder(isLegacySchema: self.isLegacySchema)
+                encoder.writeEncapsulationHeader()
                 try result.encode(to: encoder)
                 self.cacheResult(
                     GetResultAck(

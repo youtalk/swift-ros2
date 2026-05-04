@@ -42,8 +42,12 @@ public enum SwiftEmitter {
 
         var preludeEmitted = false
         if !isNested {
-            guard let hash = ir.perDistroHashes["jazzy"] else {
-                preconditionFailure("MessageIR for \(ir.rosTypeName) is missing the 'jazzy' type hash")
+            guard
+                let hashOpt = ir.perDistroHashes["jazzy"],
+                let hash = hashOpt
+            else {
+                preconditionFailure(
+                    "MessageIR for \(ir.rosTypeName) is missing the 'jazzy' type hash")
             }
             out += "    public static let typeInfo = ROS2MessageTypeInfo(\n"
             out += "        typeName: \"\(ir.rosTypeName)\",\n"

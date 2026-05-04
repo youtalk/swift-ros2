@@ -14,8 +14,16 @@ public struct MessageIR: Equatable, Sendable {
     public let kind: MessageKind
     public let fields: [FieldIR]
     public let constants: [ConstantIR]
-    /// Hash for each distro for which the IR was built. Phase 1 fills only `.jazzy`.
-    public var perDistroHashes: [String: String] = [:]
+    /// Hash for each distro the IR was built against. Phase 1-3 fills only `"jazzy"`.
+    /// Phase 4 widens the value type to `String?` so a distro that supports the
+    /// type but has no RIHS01 (Humble) can be expressed as a present key with
+    /// a `nil` value, distinct from the key being absent (which would mean the
+    /// type does not exist in that distro at all).
+    public var perDistroHashes: [String: String?] = [:]
+    /// Per-distro field presence — for each distro the IR was built against,
+    /// the set of `ros2Name`s the source IDL exposed in that distro. Empty
+    /// for single-distro IRs built via `IRBuilder.build(jazzy:)`.
+    public var perDistroFieldPresence: [String: Set<String>] = [:]
 
     public init(
         package: String,
@@ -23,7 +31,8 @@ public struct MessageIR: Equatable, Sendable {
         kind: MessageKind = .msg,
         fields: [FieldIR],
         constants: [ConstantIR] = [],
-        perDistroHashes: [String: String] = [:]
+        perDistroHashes: [String: String?] = [:],
+        perDistroFieldPresence: [String: Set<String>] = [:]
     ) {
         self.package = package
         self.typeName = typeName
@@ -31,6 +40,7 @@ public struct MessageIR: Equatable, Sendable {
         self.fields = fields
         self.constants = constants
         self.perDistroHashes = perDistroHashes
+        self.perDistroFieldPresence = perDistroFieldPresence
     }
 
     /// "std_msgs/msg/Bool" or "action_msgs/srv/CancelGoal_Request" depending on `kind`.
@@ -43,17 +53,22 @@ public struct FieldIR: Equatable, Sendable {
     public let swiftName: String  // "linearAcceleration"
     public let type: FieldType
     public let defaultValue: DefaultValue?
+    /// Phase 4: which ROS 2 distros define this field. Defaults to `.all` so
+    /// single-distro callers (Phases 1-3) keep compiling without changes.
+    public let availability: FieldAvailability
 
     public init(
         ros2Name: String,
         swiftName: String,
         type: FieldType,
-        defaultValue: DefaultValue? = nil
+        defaultValue: DefaultValue? = nil,
+        availability: FieldAvailability = .all
     ) {
         self.ros2Name = ros2Name
         self.swiftName = swiftName
         self.type = type
         self.defaultValue = defaultValue
+        self.availability = availability
     }
 }
 

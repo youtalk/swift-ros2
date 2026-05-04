@@ -17,7 +17,6 @@ public struct BoolMsg: ROS2Message, Equatable, Sendable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeBool(data)
     }
 

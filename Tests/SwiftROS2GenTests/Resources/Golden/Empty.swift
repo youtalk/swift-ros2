@@ -12,9 +12,7 @@ public struct EmptyMsg: ROS2Message, Equatable, Sendable {
 
     public init() {}
 
-    public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
-    }
+    public func encode(to encoder: CDREncoder) throws {}
 
     public init(from decoder: CDRDecoder) throws {}
 }

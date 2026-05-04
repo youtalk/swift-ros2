@@ -79,7 +79,7 @@ final class ActionWrappersCDRTests: XCTestCase {
 
     func testGetResultResponseRoundTrip() throws {
         let original = ActionGetResultResponse(
-            status: GoalStatusCode.succeeded.rawValue,
+            status: GoalStatus.STATUS_SUCCEEDED,
             result: TestResult(sequence: [0, 1, 1, 2, 3])
         )
         let enc = CDREncoder()
@@ -87,7 +87,7 @@ final class ActionWrappersCDRTests: XCTestCase {
         try original.encode(to: enc)
         let dec = try CDRDecoder(data: enc.getData())
         let decoded = try ActionGetResultResponse<TestResult>(from: dec)
-        XCTAssertEqual(decoded.status, GoalStatusCode.succeeded.rawValue)
+        XCTAssertEqual(decoded.status, GoalStatus.STATUS_SUCCEEDED)
         XCTAssertEqual(decoded.result.sequence, [0, 1, 1, 2, 3])
     }
 

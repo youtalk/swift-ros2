@@ -50,25 +50,25 @@ final class ActionMsgsCDRTests: XCTestCase {
                 goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0xFE, count: 16)),
                 stamp: BuiltinInterfacesTime(sec: 9, nanosec: 10)
             ),
-            status: GoalStatusCode.executing.rawValue
+            status: GoalStatus.STATUS_EXECUTING
         )
         let enc = CDREncoder()
         enc.writeEncapsulationHeader()
         try original.encode(to: enc)
         let dec = try CDRDecoder(data: enc.getData())
         let decoded = try GoalStatus(from: dec)
-        XCTAssertEqual(decoded.status, GoalStatusCode.executing.rawValue)
+        XCTAssertEqual(decoded.status, GoalStatus.STATUS_EXECUTING)
         XCTAssertEqual(decoded.goalInfo.stamp.sec, 9)
     }
 
     func testGoalStatusCodeRawValues() {
-        XCTAssertEqual(GoalStatusCode.unknown.rawValue, 0)
-        XCTAssertEqual(GoalStatusCode.accepted.rawValue, 1)
-        XCTAssertEqual(GoalStatusCode.executing.rawValue, 2)
-        XCTAssertEqual(GoalStatusCode.canceling.rawValue, 3)
-        XCTAssertEqual(GoalStatusCode.succeeded.rawValue, 4)
-        XCTAssertEqual(GoalStatusCode.canceled.rawValue, 5)
-        XCTAssertEqual(GoalStatusCode.aborted.rawValue, 6)
+        XCTAssertEqual(GoalStatus.STATUS_UNKNOWN, 0)
+        XCTAssertEqual(GoalStatus.STATUS_ACCEPTED, 1)
+        XCTAssertEqual(GoalStatus.STATUS_EXECUTING, 2)
+        XCTAssertEqual(GoalStatus.STATUS_CANCELING, 3)
+        XCTAssertEqual(GoalStatus.STATUS_SUCCEEDED, 4)
+        XCTAssertEqual(GoalStatus.STATUS_CANCELED, 5)
+        XCTAssertEqual(GoalStatus.STATUS_ABORTED, 6)
     }
 
     func testGoalStatusArrayRoundTrip() throws {
@@ -77,14 +77,14 @@ final class ActionMsgsCDRTests: XCTestCase {
                 goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0x01, count: 16)),
                 stamp: BuiltinInterfacesTime(sec: 1, nanosec: 0)
             ),
-            status: GoalStatusCode.accepted.rawValue
+            status: GoalStatus.STATUS_ACCEPTED
         )
         let s2 = GoalStatus(
             goalInfo: GoalInfo(
                 goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0x02, count: 16)),
                 stamp: BuiltinInterfacesTime(sec: 2, nanosec: 0)
             ),
-            status: GoalStatusCode.succeeded.rawValue
+            status: GoalStatus.STATUS_SUCCEEDED
         )
         let original = GoalStatusArray(statusList: [s1, s2])
         let enc = CDREncoder()
@@ -93,8 +93,8 @@ final class ActionMsgsCDRTests: XCTestCase {
         let dec = try CDRDecoder(data: enc.getData())
         let decoded = try GoalStatusArray(from: dec)
         XCTAssertEqual(decoded.statusList.count, 2)
-        XCTAssertEqual(decoded.statusList[0].status, GoalStatusCode.accepted.rawValue)
-        XCTAssertEqual(decoded.statusList[1].status, GoalStatusCode.succeeded.rawValue)
+        XCTAssertEqual(decoded.statusList[0].status, GoalStatus.STATUS_ACCEPTED)
+        XCTAssertEqual(decoded.statusList[1].status, GoalStatus.STATUS_SUCCEEDED)
     }
 
     func testGoalStatusArrayEmpty() throws {
@@ -124,7 +124,7 @@ final class ActionMsgsCDRTests: XCTestCase {
 
     func testCancelGoalResponseRoundTrip() throws {
         let original = CancelGoalSrv.Response(
-            returnCode: CancelGoalReturnCode.none.rawValue,
+            returnCode: CancelGoalResponse.ERROR_NONE,
             goalsCanceling: [
                 GoalInfo(
                     goalId: UniqueIdentifierUUID(uuid: Array(repeating: 0xCC, count: 16)),
@@ -137,15 +137,15 @@ final class ActionMsgsCDRTests: XCTestCase {
         try original.encode(to: enc)
         let dec = try CDRDecoder(data: enc.getData())
         let decoded = try CancelGoalSrv.Response(from: dec)
-        XCTAssertEqual(decoded.returnCode, CancelGoalReturnCode.none.rawValue)
+        XCTAssertEqual(decoded.returnCode, CancelGoalResponse.ERROR_NONE)
         XCTAssertEqual(decoded.goalsCanceling.count, 1)
     }
 
     func testCancelGoalReturnCodeRawValues() {
-        XCTAssertEqual(CancelGoalReturnCode.none.rawValue, 0)
-        XCTAssertEqual(CancelGoalReturnCode.rejected.rawValue, 1)
-        XCTAssertEqual(CancelGoalReturnCode.unknownGoalId.rawValue, 2)
-        XCTAssertEqual(CancelGoalReturnCode.goalTerminated.rawValue, 3)
+        XCTAssertEqual(CancelGoalResponse.ERROR_NONE, 0)
+        XCTAssertEqual(CancelGoalResponse.ERROR_REJECTED, 1)
+        XCTAssertEqual(CancelGoalResponse.ERROR_UNKNOWN_GOAL_ID, 2)
+        XCTAssertEqual(CancelGoalResponse.ERROR_GOAL_TERMINATED, 3)
     }
 
     func testCancelGoalSrvTypeInfo() {

@@ -24,12 +24,14 @@ public struct GoalStatusArray: ROS2Message, Equatable, Sendable {
     }
 
     public init(from decoder: CDRDecoder) throws {
-        let count = try decoder.readSequenceCount()
-        var out: [GoalStatus] = []
-        out.reserveCapacity(count)
-        for _ in 0..<count {
-            out.append(try GoalStatus(from: decoder))
+        do {
+            let count = try decoder.readSequenceCount()
+            var out: [GoalStatus] = []
+            out.reserveCapacity(count)
+            for _ in 0..<count {
+                out.append(try GoalStatus(from: decoder))
+            }
+            self.statusList = out
         }
-        self.statusList = out
     }
 }

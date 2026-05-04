@@ -310,7 +310,7 @@ final class MessageRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded.fields.count, 3)
         XCTAssertEqual(decoded.fields[0].name, "x")
         XCTAssertEqual(decoded.pointStep, 12)
-        XCTAssertEqual(decoded.data, pointData)
+        XCTAssertEqual(decoded.dataAsData, pointData)
         XCTAssertTrue(decoded.isDense)
     }
 
@@ -589,10 +589,16 @@ final class MessageRoundTripTests: XCTestCase {
 
         XCTAssertEqual(decoded.height, 0)
         XCTAssertEqual(decoded.width, 0)
-        XCTAssertEqual(decoded.distortionModel, "plumb_bob")
+        // Phase 4: the generator emits the IDL-declared default for every
+        // field. `distortion_model` and `r` have no IDL default, so they
+        // round-trip through their type-shaped zero (empty string, zero
+        // matrix) rather than the legacy hand-written `"plumb_bob"` /
+        // identity matrix. Callers that need those conventional defaults
+        // should set them explicitly.
+        XCTAssertEqual(decoded.distortionModel, "")
         XCTAssertEqual(decoded.d.count, 0)
         XCTAssertEqual(decoded.k.count, 9)
-        XCTAssertEqual(decoded.r, [1, 0, 0, 0, 1, 0, 0, 0, 1])
+        XCTAssertEqual(decoded.r, Array(repeating: 0.0, count: 9))
         XCTAssertEqual(decoded.p.count, 12)
         XCTAssertEqual(decoded.binningX, 0)
         XCTAssertEqual(decoded.binningY, 0)

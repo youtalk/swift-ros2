@@ -40,12 +40,14 @@ public struct CancelGoalResponse: ROS2Message, Equatable, Sendable {
 
     public init(from decoder: CDRDecoder) throws {
         self.returnCode = try decoder.readInt8()
-        let count = try decoder.readSequenceCount()
-        var out: [GoalInfo] = []
-        out.reserveCapacity(count)
-        for _ in 0..<count {
-            out.append(try GoalInfo(from: decoder))
+        do {
+            let count = try decoder.readSequenceCount()
+            var out: [GoalInfo] = []
+            out.reserveCapacity(count)
+            for _ in 0..<count {
+                out.append(try GoalInfo(from: decoder))
+            }
+            self.goalsCanceling = out
         }
-        self.goalsCanceling = out
     }
 }

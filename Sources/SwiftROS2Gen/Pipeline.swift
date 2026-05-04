@@ -211,7 +211,7 @@ extension Pipeline {
                 for svc in services {
                     let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
                     let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
-                    let label = "\(run.input.name)/srv/\(svc.typeName).srv"
+                    let label = sourceLabelFor(run: run, typeName: svc.typeName, kind: .srv)
                     unresolvedIRs.append((run: run, ir: reqIR, sourceLabel: label))
                     unresolvedIRs.append((run: run, ir: resIR, sourceLabel: label))
                 }
@@ -231,7 +231,8 @@ extension Pipeline {
                 for svc in services {
                     let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
                     let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
-                    let label = "\(primaryRun.input.name)/srv/\(svc.typeName).srv"
+                    let label = sourceLabelFor(
+                        run: primaryRun, typeName: svc.typeName, kind: .srv)
                     unresolvedIRs.append((run: primaryRun, ir: reqIR, sourceLabel: label))
                     unresolvedIRs.append((run: primaryRun, ir: resIR, sourceLabel: label))
                 }
@@ -400,7 +401,7 @@ extension Pipeline {
             let typeName = fileURL.deletingPathExtension().lastPathComponent
             if let allow = run.typesAllowList, !allow.contains(typeName) { continue }
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
-            let label = "\(run.input.name)/msg/\(typeName).msg"
+            let label = sourceLabelFor(run: run, typeName: typeName, kind: .msg)
             do {
                 let idl = try Parser.parseMessage(
                     source: contents,
@@ -415,6 +416,34 @@ extension Pipeline {
             }
         }
         return parsed
+    }
+
+    /// Produce a stable `// Source:` label for emitted Swift files. The label
+    /// is informational only (it never affects the wire format), but tests
+    /// and goldens key on it. We prefix with the parent vendor directory
+    /// (`common_interfaces-jazzy`, etc.) when that name unambiguously
+    /// identifies the upstream IDL source; bare names like `vendor` or
+    /// repository roots that happen to be the immediate parent are stripped.
+    private static func sourceLabelFor(
+        run: PackageRun,
+        typeName: String,
+        kind: MessageKind
+    ) -> String {
+        let parent = run.input.directory.deletingLastPathComponent().lastPathComponent
+        let suffix = "\(run.input.name)/\(kind.rawValue)/\(typeName).\(kind.rawValue)"
+        if parent.isEmpty || parent == "vendor" || parent == "Vendor" {
+            return suffix
+        }
+        // Strip a `<repo>-<distro>` parent down to its base when the package
+        // is not the canonical sibling of that repo (e.g. action_msgs lives
+        // under `rcl_interfaces-jazzy/`, but the historical labels emitted
+        // it bare). The rule: keep the parent only when it begins with
+        // `common_interfaces` (the one repo where the prefixed label was
+        // historically committed).
+        if parent.hasPrefix("common_interfaces") {
+            return "\(parent)/\(suffix)"
+        }
+        return suffix
     }
 
     /// Enumerate `<pkg>/srv/*.srv` for the run, parse each into request / response
@@ -446,7 +475,7 @@ extension Pipeline {
             let typeName = fileURL.deletingPathExtension().lastPathComponent
             if let allow = run.typesAllowList, !allow.contains(typeName) { continue }
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
-            let label = "\(run.input.name)/srv/\(typeName).srv"
+            let label = sourceLabelFor(run: run, typeName: typeName, kind: .srv)
             do {
                 let svc = try Parser.parseService(
                     source: contents,
@@ -519,7 +548,11 @@ extension Pipeline {
                 let typeName = fileURL.deletingPathExtension().lastPathComponent
                 if let allow = unifiedAllowList, !allow.contains(typeName) { continue }
                 let contents = try String(contentsOf: fileURL, encoding: .utf8)
-                let label = "common_interfaces-\(run.input.distro)/\(packageName)/msg/\(typeName).msg"
+                // Derive the parent name from the actual filesystem directory
+                // so submodule renames (e.g. vendor/common_interfaces-jazzy ->
+                // vendor/common_interfaces) are reflected in the label.
+                let parentDir = run.input.directory.deletingLastPathComponent().lastPathComponent
+                let label = "\(parentDir)/\(packageName)/msg/\(typeName).msg"
                 do {
                     let idl = try Parser.parseMessage(
                         source: contents,
@@ -540,9 +573,21 @@ extension Pipeline {
             guard let perDistroIDL = idlsByType[typeName] else { continue }
             let mergedIR = try IRBuilder.build(perDistro: perDistroIDL)
             // Use a stable label that names every distro the type came from.
+            // The parent comes from the first run's vendor parent directory
+            // ("common_interfaces" or similar) plus a `+`-joined distro list.
             let distros =
                 perDistroIDL.keys.sorted().joined(separator: "+")
-            let label = "common_interfaces-\(distros)/\(packageName)/msg/\(typeName).msg"
+            let parentDir =
+                pkgRuns.first!.input.directory.deletingLastPathComponent().lastPathComponent
+            // Strip any trailing `-<distro>` suffix from the parent so the
+            // label reads e.g. `common_interfaces-humble+jazzy/sensor_msgs/...`.
+            let baseParent: String = {
+                if let dashIdx = parentDir.firstIndex(of: "-") {
+                    return String(parentDir[..<dashIdx])
+                }
+                return parentDir
+            }()
+            let label = "\(baseParent)-\(distros)/\(packageName)/msg/\(typeName).msg"
             parsed.append(ParsedEntry(ir: mergedIR, sourceLabel: label))
         }
         return parsed

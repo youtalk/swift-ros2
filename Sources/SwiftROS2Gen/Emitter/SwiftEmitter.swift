@@ -420,23 +420,32 @@ public enum SwiftEmitter {
             let n = nestedNameOverrides[key] ?? swiftStructName(typeName: typeName)
             return "        self.\(field.swiftName) = try \(n)(from: decoder)\n"
         case .array(let element, let length):
+            // Wrap in a `do { ... }` block so the local `out` and `count`
+            // variables don't collide with peers when the message has
+            // multiple array / sequence fields (e.g. sensor_msgs/Imu).
             let elemType = swiftType(element, nestedNameOverrides: nestedNameOverrides)
-            var out = "        var out: [\(elemType)] = []\n"
-            out += "        out.reserveCapacity(\(length))\n"
-            out += "        for _ in 0..<\(length) {\n"
-            out += "            out.append(\(elementDecodeExpr(element, nestedNameOverrides: nestedNameOverrides)))\n"
+            let elem = elementDecodeExpr(element, nestedNameOverrides: nestedNameOverrides)
+            var out = "        do {\n"
+            out += "            var out: [\(elemType)] = []\n"
+            out += "            out.reserveCapacity(\(length))\n"
+            out += "            for _ in 0..<\(length) {\n"
+            out += "                out.append(\(elem))\n"
+            out += "            }\n"
+            out += "            self.\(field.swiftName) = out\n"
             out += "        }\n"
-            out += "        self.\(field.swiftName) = out\n"
             return out
         case .sequence(let element, _):
             let elemType = swiftType(element, nestedNameOverrides: nestedNameOverrides)
-            var out = "        let count = try decoder.readSequenceCount()\n"
-            out += "        var out: [\(elemType)] = []\n"
-            out += "        out.reserveCapacity(count)\n"
-            out += "        for _ in 0..<count {\n"
-            out += "            out.append(\(elementDecodeExpr(element, nestedNameOverrides: nestedNameOverrides)))\n"
+            let elem = elementDecodeExpr(element, nestedNameOverrides: nestedNameOverrides)
+            var out = "        do {\n"
+            out += "            let count = try decoder.readSequenceCount()\n"
+            out += "            var out: [\(elemType)] = []\n"
+            out += "            out.reserveCapacity(count)\n"
+            out += "            for _ in 0..<count {\n"
+            out += "                out.append(\(elem))\n"
+            out += "            }\n"
+            out += "            self.\(field.swiftName) = out\n"
             out += "        }\n"
-            out += "        self.\(field.swiftName) = out\n"
             return out
         case .boundedString:
             return "        self.\(field.swiftName) = try decoder.readString()\n"

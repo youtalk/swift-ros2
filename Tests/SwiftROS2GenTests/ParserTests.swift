@@ -58,4 +58,54 @@ struct ParserTests {
         #expect(file.fields[0].type == .primitive(.bool))
         #expect(file.fields[0].sourceLine == 1)
     }
+
+    @Test("ignores comments and blank lines")
+    func ignoresCommentsAndBlanks() throws {
+        let source = """
+            # This is a license header
+            #
+            # Multiple comment lines.
+
+            bool data    # trailing comment
+
+            """
+        let file = try Parser.parseMessage(
+            source: source,
+            file: "Bool.msg",
+            package: "std_msgs",
+            typeName: "Bool"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].sourceLine == 5)
+    }
+
+    @Test("parses an empty .msg as zero-field message")
+    func parsesEmptyFile() throws {
+        let file = try Parser.parseMessage(
+            source: "# only a comment\n",
+            file: "Empty.msg",
+            package: "std_msgs",
+            typeName: "Empty"
+        )
+        #expect(file.fields.isEmpty)
+    }
+
+    @Test("rejects a non-primitive type with an actionable error")
+    func rejectsNonPrimitive() {
+        do {
+            _ = try Parser.parseMessage(
+                source: "Header header\n",
+                file: "Foo.msg",
+                package: "geometry_msgs",
+                typeName: "Foo"
+            )
+            Issue.record("expected ParseError")
+        } catch let error as ParseError {
+            #expect(error.line == 1)
+            #expect(error.message.contains("Header"))
+            #expect(error.message.contains("primitive"))
+        } catch {
+            Issue.record("expected ParseError, got \(error)")
+        }
+    }
 }

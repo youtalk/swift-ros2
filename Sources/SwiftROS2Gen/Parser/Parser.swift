@@ -9,26 +9,83 @@ public enum Parser {
         typeName: String
     ) throws -> IDLFile {
         var fields: [IDLField] = []
+        var constants: [IDLConstant] = []
         let rawLines = source.split(separator: "\n", omittingEmptySubsequences: false)
         for (index, raw) in rawLines.enumerated() {
             let lineNumber = index + 1
             let stripped = stripCommentAndTrim(String(raw))
             if stripped.isEmpty { continue }
-            let tokens = stripped.split(separator: " ", omittingEmptySubsequences: true)
-                .map(String.init)
-            guard tokens.count >= 2 else {
+            // Split into `<typeToken> <rest>` on the first run of whitespace.
+            // We do not split `rest` further with a generic tokenizer because
+            // constants and field defaults can contain whitespace inside quotes
+            // or array literals (`"hello world"`, `[1.0, 2.0]`).
+            guard let firstSpace = stripped.firstIndex(where: { $0.isWhitespace }) else {
                 throw ParseError(
                     file: file,
                     line: lineNumber,
                     message: "expected '<type> <name>'; got '\(stripped)'"
                 )
             }
-            // Trailing tokens (default values, comments-as-tokens) are ignored in Phase 2.
-            // Defaults are stripped before hashing per rosidl_generator_type_description,
-            // so this matches the upstream behaviour for hash purposes.
-            // Phase 3 Task 5 surfaces defaults explicitly.
-            let typeToken = tokens[0]
-            let nameToken = tokens[1]
+            let typeToken = String(stripped[..<firstSpace])
+            let rest = stripped[stripped.index(after: firstSpace)...]
+                .trimmingCharacters(in: .whitespaces)
+            if rest.isEmpty {
+                throw ParseError(
+                    file: file,
+                    line: lineNumber,
+                    message: "expected '<type> <name>'; got '\(stripped)'"
+                )
+            }
+
+            // Constant detection: `<UPPER_SNAKE_NAME>=<value>` immediately after the type.
+            // The constant name may not contain whitespace, so the candidate name is the
+            // run of non-whitespace, non-`=` characters before the first `=`.
+            if let eqIdx = rest.firstIndex(of: "=") {
+                let preEq = rest[..<eqIdx]
+                if !preEq.contains(where: { $0.isWhitespace }) {
+                    let candidate = String(preEq)
+                    if isUpperSnakeIdent(candidate) {
+                        guard let prim = PrimitiveType(rawROS: typeToken) else {
+                            throw ParseError(
+                                file: file,
+                                line: lineNumber,
+                                message:
+                                    "constant must have primitive type; got '\(typeToken)' for '\(candidate)'"
+                            )
+                        }
+                        let value = String(rest[rest.index(after: eqIdx)...])
+                            .trimmingCharacters(in: .whitespaces)
+                        if value.isEmpty {
+                            throw ParseError(
+                                file: file,
+                                line: lineNumber,
+                                message: "constant '\(candidate)' has no value after '='"
+                            )
+                        }
+                        constants.append(
+                            IDLConstant(
+                                name: candidate, type: prim, value: value, sourceLine: lineNumber
+                            )
+                        )
+                        continue
+                    }
+                }
+            }
+
+            // Field path: `<typeToken> <name> [defaultExpr]`.
+            // Split `rest` on first whitespace into name and (optional) default.
+            let nameToken: String
+            let defaultExpression: String?
+            if let nameEnd = rest.firstIndex(where: { $0.isWhitespace }) {
+                nameToken = String(rest[..<nameEnd])
+                let tail = rest[rest.index(after: nameEnd)...]
+                    .trimmingCharacters(in: .whitespaces)
+                defaultExpression = tail.isEmpty ? nil : tail
+            } else {
+                nameToken = String(rest)
+                defaultExpression = nil
+            }
+
             let fieldType = try parseTypeToken(
                 typeToken,
                 currentPackage: package,
@@ -36,9 +93,25 @@ public enum Parser {
                 line: lineNumber
             )
             try validateFieldName(nameToken, file: file, line: lineNumber)
-            fields.append(IDLField(name: nameToken, type: fieldType, sourceLine: lineNumber))
+            fields.append(
+                IDLField(
+                    name: nameToken,
+                    type: fieldType,
+                    defaultExpression: defaultExpression,
+                    sourceLine: lineNumber
+                )
+            )
         }
-        return IDLFile(package: package, typeName: typeName, fields: fields)
+        return IDLFile(package: package, typeName: typeName, fields: fields, constants: constants)
+    }
+
+    /// `[A-Z_][A-Z0-9_]*` — matches the rosidl convention for constant names.
+    static func isUpperSnakeIdent(_ s: String) -> Bool {
+        guard let first = s.first, first.isLetter || first == "_" else { return false }
+        if first.isLetter && !first.isUppercase { return false }
+        return s.allSatisfy { ch in
+            (ch.isLetter && ch.isUppercase) || ch.isNumber || ch == "_"
+        }
     }
 
     static func stripCommentAndTrim(_ line: String) -> String {

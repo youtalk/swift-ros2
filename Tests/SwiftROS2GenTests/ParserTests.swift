@@ -173,10 +173,12 @@ struct ParserTests {
         )
         #expect(file.fields.count == 1)
         #expect(file.fields[0].name == "points")
-        #expect(file.fields[0].type == .sequence(
-            element: .nested(package: nil, typeName: "Vector3"),
-            upperBound: nil
-        ))
+        #expect(
+            file.fields[0].type
+                == .sequence(
+                    element: .nested(package: nil, typeName: "Vector3"),
+                    upperBound: nil
+                ))
     }
 
     @Test("parses fixed-size primitive array")
@@ -200,10 +202,12 @@ struct ParserTests {
             package: "action_msgs",
             typeName: "GoalStatusArray"
         )
-        #expect(file.fields[0].type == .sequence(
-            element: .nested(package: nil, typeName: "GoalStatus"),
-            upperBound: nil
-        ))
+        #expect(
+            file.fields[0].type
+                == .sequence(
+                    element: .nested(package: nil, typeName: "GoalStatus"),
+                    upperBound: nil
+                ))
     }
 
     @Test("parses bounded sequence")
@@ -226,5 +230,57 @@ struct ParserTests {
             typeName: "Bounded"
         )
         #expect(file.fields[0].type == .boundedString(isWide: false, upperBound: 255))
+    }
+
+    @Test("parses primitive field with default value")
+    func parsesPrimitiveDefault() throws {
+        let file = try Parser.parseMessage(
+            source: "int32 retries 3\n",
+            file: "Foo.msg",
+            package: "fake_pkg",
+            typeName: "Foo"
+        )
+        #expect(file.fields[0].name == "retries")
+        #expect(file.fields[0].type == .primitive(.int32))
+        #expect(file.fields[0].defaultExpression == "3")
+    }
+
+    @Test("parses fixed array with default value")
+    func parsesArrayDefault() throws {
+        let file = try Parser.parseMessage(
+            source: "float64[3] xyz [1.0, 2.0, 3.0]\n",
+            file: "Foo.msg",
+            package: "fake_pkg",
+            typeName: "Foo"
+        )
+        #expect(file.fields[0].type == .array(element: .primitive(.float64), length: 3))
+        #expect(file.fields[0].defaultExpression == "[1.0, 2.0, 3.0]")
+    }
+
+    @Test("parses int constant")
+    func parsesIntConstant() throws {
+        let file = try Parser.parseMessage(
+            source: "int8 STATUS_UNKNOWN=0\n",
+            file: "GoalStatus.msg",
+            package: "action_msgs",
+            typeName: "GoalStatus"
+        )
+        #expect(file.fields.isEmpty)
+        #expect(file.constants.count == 1)
+        #expect(file.constants[0].name == "STATUS_UNKNOWN")
+        #expect(file.constants[0].type == .int8)
+        #expect(file.constants[0].value == "0")
+    }
+
+    @Test("parses string constant with quoted value")
+    func parsesStringConstant() throws {
+        let file = try Parser.parseMessage(
+            source: "string GREETING=\"hello world\"\n",
+            file: "Foo.msg",
+            package: "fake_pkg",
+            typeName: "Foo"
+        )
+        #expect(file.constants.count == 1)
+        #expect(file.constants[0].value == "\"hello world\"")
     }
 }

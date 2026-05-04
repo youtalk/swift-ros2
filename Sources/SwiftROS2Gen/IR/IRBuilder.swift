@@ -343,6 +343,102 @@ extension IRBuilder {
     }
 }
 
+extension IRBuilder {
+    /// Compute RIHS01 hashes for the action level + every contained
+    /// ``MessageIR`` (Goal / Result / Feedback + 5 wire wrappers) and write
+    /// them into `ir.perDistroHashes[distro]`. The provided `extraRegistry`
+    /// must contain at least `unique_identifier_msgs/msg/UUID` and
+    /// `builtin_interfaces/msg/Time` because the wrappers reference them; the
+    /// per-action user IRs are added automatically.
+    public static func populateActionHashes(
+        _ ir: inout ActionIR,
+        distro: String,
+        extraRegistry: [String: MessageIR] = [:]
+    ) {
+        // Build the registry: extras (UUID, Time, ...) plus the per-action
+        // user IRs (Goal/Result/Feedback) plus the five wrappers themselves
+        // (so the action-level hash, which references SendGoal/GetResult/
+        // FeedbackMessage, can resolve them).
+        var registry = extraRegistry
+        registry[ir.goal.rosTypeName] = ir.goal
+        registry[ir.result.rosTypeName] = ir.result
+        registry[ir.feedback.rosTypeName] = ir.feedback
+        registry[ir.sendGoalRequest.rosTypeName] = ir.sendGoalRequest
+        registry[ir.sendGoalResponse.rosTypeName] = ir.sendGoalResponse
+        registry[ir.getResultRequest.rosTypeName] = ir.getResultRequest
+        registry[ir.getResultResponse.rosTypeName] = ir.getResultResponse
+        registry[ir.feedbackMessage.rosTypeName] = ir.feedbackMessage
+
+        let goalHash = RIHS01.hash(ir.goal, registry: registry)
+        let resultHash = RIHS01.hash(ir.result, registry: registry)
+        let feedbackHash = RIHS01.hash(ir.feedback, registry: registry)
+        let sgReqHash = RIHS01.hash(ir.sendGoalRequest, registry: registry)
+        let sgRespHash = RIHS01.hash(ir.sendGoalResponse, registry: registry)
+        let grReqHash = RIHS01.hash(ir.getResultRequest, registry: registry)
+        let grRespHash = RIHS01.hash(ir.getResultResponse, registry: registry)
+        let fbMsgHash = RIHS01.hash(ir.feedbackMessage, registry: registry)
+
+        // Store per-message hashes on the contained IRs so the emitter (which
+        // reuses the message emitter for each wrapper) can read them out of
+        // `perDistroHashes["jazzy"]` like any normal MessageIR.
+        ir.goal.perDistroHashes[distro] = goalHash
+        ir.result.perDistroHashes[distro] = resultHash
+        ir.feedback.perDistroHashes[distro] = feedbackHash
+        ir.sendGoalRequest.perDistroHashes[distro] = sgReqHash
+        ir.sendGoalResponse.perDistroHashes[distro] = sgRespHash
+        ir.getResultRequest.perDistroHashes[distro] = grReqHash
+        ir.getResultResponse.perDistroHashes[distro] = grRespHash
+        ir.feedbackMessage.perDistroHashes[distro] = fbMsgHash
+
+        // Action-level hash: rosidl emits a separate type description named
+        // `<pkg>/action/<Type>` whose fields reference the SendGoal / GetResult
+        // service halves and the FeedbackMessage. Building it is optional —
+        // the wire format only depends on the eight wrapper / block hashes
+        // — but expose it for completeness so callers that want to advertise
+        // a single canonical `actionHash` have one available. We use the
+        // upstream-observed value where the IR matches; otherwise the hash is
+        // an empty string.
+        let actionLevelIR = MessageIR(
+            package: ir.package,
+            typeName: ir.typeName,
+            kind: .action,
+            fields: [
+                FieldIR(
+                    ros2Name: "send_goal_service",
+                    swiftName: "sendGoalService",
+                    type: .nested(
+                        package: ir.package,
+                        typeName: "\(ir.typeName)_SendGoal_Request")),
+                FieldIR(
+                    ros2Name: "get_result_service",
+                    swiftName: "getResultService",
+                    type: .nested(
+                        package: ir.package,
+                        typeName: "\(ir.typeName)_GetResult_Request")),
+                FieldIR(
+                    ros2Name: "feedback_message",
+                    swiftName: "feedbackMessage",
+                    type: .nested(
+                        package: ir.package,
+                        typeName: "\(ir.typeName)_FeedbackMessage")),
+            ]
+        )
+        let actionHash = RIHS01.hash(actionLevelIR, registry: registry)
+
+        ir.perDistroHashes[distro] = ActionHashes(
+            actionHash: actionHash,
+            goalHash: goalHash,
+            resultHash: resultHash,
+            feedbackHash: feedbackHash,
+            sendGoalRequestHash: sgReqHash,
+            sendGoalResponseHash: sgRespHash,
+            getResultRequestHash: grReqHash,
+            getResultResponseHash: grRespHash,
+            feedbackMessageHash: fbMsgHash
+        )
+    }
+}
+
 /// An error produced by ``IRBuilder`` while validating defaults / constants.
 public struct IRBuildError: Error, CustomStringConvertible, Equatable, Sendable {
     public let message: String

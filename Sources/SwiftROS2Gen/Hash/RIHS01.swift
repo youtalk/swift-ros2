@@ -55,23 +55,35 @@ public enum RIHS01 {
 
     /// Compute the RIHS01 hash for a single distro view of a multi-distro IR.
     ///
-    /// Filters fields to those whose `availability` includes `distro`, then
-    /// runs the regular hashing path. Pass `registry` when the IR has nested
-    /// references; for primitive-only IRs the empty-registry overload works.
+    /// Filters fields to those whose `availability` includes `distro`, both
+    /// at the root and for every nested IR pulled from `registry`. Without
+    /// the recursive projection a parent type whose nested type also has
+    /// distro-conditional fields would hash with the nested type's full
+    /// (jazzy-shaped) field list even when computing the humble view.
     public static func hash(
         _ ir: MessageIR,
         for distro: String,
         registry: [String: MessageIR] = [:]
     ) -> String {
+        let scoped = projected(ir, for: distro)
+        let scopedRegistry = registry.mapValues { projected($0, for: distro) }
+        return hash(scoped, registry: scopedRegistry)
+    }
+
+    /// Project a `MessageIR` onto a single distro by dropping fields whose
+    /// `availability` excludes that distro. Constants and per-distro metadata
+    /// are preserved unchanged.
+    private static func projected(_ ir: MessageIR, for distro: String) -> MessageIR {
         let scopedFields = ir.fields.filter { $0.availability.includes(distro) }
-        let scoped = MessageIR(
+        return MessageIR(
             package: ir.package,
             typeName: ir.typeName,
             kind: ir.kind,
             fields: scopedFields,
-            constants: ir.constants
+            constants: ir.constants,
+            perDistroHashes: ir.perDistroHashes,
+            perDistroFieldPresence: ir.perDistroFieldPresence
         )
-        return hash(scoped, registry: registry)
     }
 
     // MARK: - Canonical serialisation (internal, exposed for debugging)
@@ -321,7 +333,12 @@ private enum FieldTypeID {
         case .uint64: return 9  // FIELD_TYPE_UINT64
         case .float32: return 10  // FIELD_TYPE_FLOAT
         case .float64: return 11  // FIELD_TYPE_DOUBLE
-        case .char: return 13  // FIELD_TYPE_CHAR
+        // rosidl normalizes `char` to `uint8` before computing the type
+        // description hash, so the canonical type_id is FIELD_TYPE_UINT8 (3),
+        // not FIELD_TYPE_CHAR (13). Confirmed against the
+        // `osrf/ros:jazzy-desktop` hash oracle for `std_msgs/Char` and
+        // `example_interfaces/Char`.
+        case .char: return 3  // FIELD_TYPE_UINT8 (normalized from char)
         case .bool: return 15  // FIELD_TYPE_BOOLEAN
         case .byte: return 16  // FIELD_TYPE_BYTE
         case .string: return 17  // FIELD_TYPE_STRING

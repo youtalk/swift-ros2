@@ -18,7 +18,8 @@ struct ActionPipelineEndToEndTests {
         // The package directory is the parent of the `action/` directory the
         // resource lives in. Resources are flattened by SwiftPM, so the URL
         // reads `…/IDL/example_interfaces/action/Fibonacci.action`.
-        let packageDir = actionURL
+        let packageDir =
+            actionURL
             .deletingLastPathComponent()  // …/example_interfaces/action
             .deletingLastPathComponent()  // …/example_interfaces
 
@@ -32,7 +33,8 @@ struct ActionPipelineEndToEndTests {
                 subdirectory: "Resources/IDL/unique_identifier_msgs/msg"
             )
         )
-        let uuidPkgDir = uuidURL
+        let uuidPkgDir =
+            uuidURL
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let timeURL = try #require(
@@ -42,7 +44,8 @@ struct ActionPipelineEndToEndTests {
                 subdirectory: "Resources/IDL/builtin_interfaces/msg"
             )
         )
-        let timePkgDir = timeURL
+        let timePkgDir =
+            timeURL
             .deletingLastPathComponent()
             .deletingLastPathComponent()
 

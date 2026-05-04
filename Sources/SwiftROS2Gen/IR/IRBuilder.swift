@@ -16,6 +16,11 @@ public enum IRBuilder {
                     swiftName: snakeToCamel(field.name),
                     type: .nested(package: resolvedPackage, typeName: type)
                 )
+            case .array, .sequence, .boundedString:
+                preconditionFailure(
+                    "IDLFieldType.array/sequence/boundedString not yet implemented in IRBuilder "
+                        + "(Phase 3 Task 7); field '\(field.name)' in \(idl.package)/\(idl.typeName)"
+                )
             }
         }
         return MessageIR(package: idl.package, typeName: idl.typeName, fields: fields)

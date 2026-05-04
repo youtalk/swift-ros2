@@ -55,3 +55,24 @@ struct EmitterGoldenTests {
         #expect(actual == golden, "emit mismatch for std_msgs/\(c.typeName)")
     }
 }
+
+@Suite("Pipeline end-to-end on curated std_msgs fixture")
+struct PipelineEndToEndTests {
+    @Test("generates all 5 std_msgs primitive wrappers from a curated fixture")
+    func generatesAllStdMsgs() throws {
+        let fixtureURL = try #require(
+            Bundle.module.url(forResource: "std_msgs", withExtension: nil, subdirectory: "Resources/IDL")
+        )
+        let files = try Pipeline.generate(for: PackageInput(name: "std_msgs", directory: fixtureURL))
+        let names = Set(files.map(\.relativePath))
+        #expect(
+            names
+                == Set([
+                    "StdMsgs/BoolMsg.swift",
+                    "StdMsgs/EmptyMsg.swift",
+                    "StdMsgs/Float64Msg.swift",
+                    "StdMsgs/Int32Msg.swift",
+                    "StdMsgs/StringMsg.swift",
+                ]))
+    }
+}

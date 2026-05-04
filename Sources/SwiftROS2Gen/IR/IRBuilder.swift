@@ -10,12 +10,7 @@ public enum IRBuilder {
         let fields = try idl.fields.map { f -> FieldIR in
             let irType = lift(f.type, currentPackage: idl.package)
             let dv = try f.defaultExpression.map {
-                try parseDefault(
-                    $0,
-                    for: irType,
-                    fieldName: f.name,
-                    sourceLine: f.sourceLine
-                )
+                try parseDefault($0, for: irType, fieldName: f.name)
             }
             return FieldIR(
                 ros2Name: f.name,
@@ -71,8 +66,7 @@ public enum IRBuilder {
     static func parseDefault(
         _ expr: String,
         for type: FieldType,
-        fieldName: String,
-        sourceLine: Int
+        fieldName: String
     ) throws -> DefaultValue {
         switch type {
         case .primitive(let p):
@@ -94,13 +88,22 @@ public enum IRBuilder {
                 )
             }
             let parsed = try items.map {
-                try parseDefault($0, for: element, fieldName: fieldName, sourceLine: sourceLine)
+                try parseDefault($0, for: element, fieldName: fieldName)
             }
             return .array(parsed)
         case .sequence:
             return .empty
-        case .boundedString:
-            return .empty
+        case .boundedString(_, let upper):
+            let stripped =
+                expr.hasPrefix("\"") && expr.hasSuffix("\"") && expr.count >= 2
+                ? String(expr.dropFirst().dropLast())
+                : expr
+            if stripped.count > upper {
+                throw IRBuildError(
+                    "default for bounded-string field '\(fieldName)' has \(stripped.count) chars, exceeds bound \(upper)"
+                )
+            }
+            return .string(stripped)
         case .nested:
             throw IRBuildError("nested field '\(fieldName)' cannot have a default value")
         }

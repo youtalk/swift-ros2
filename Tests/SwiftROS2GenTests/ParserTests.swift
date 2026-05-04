@@ -131,7 +131,7 @@ struct ParserTests {
     func rejectsNonPrimitive() {
         do {
             _ = try Parser.parseMessage(
-                source: "Header header\n",
+                source: "123bogus field\n",
                 file: "Foo.msg",
                 package: "geometry_msgs",
                 typeName: "Foo"
@@ -139,8 +139,66 @@ struct ParserTests {
             Issue.record("expected ParseError")
         } catch let error as ParseError {
             #expect(error.line == 1)
-            #expect(error.message.contains("Header"))
-            #expect(error.message.contains("primitive"))
+            #expect(error.message.contains("123bogus"))
+            #expect(error.message.contains("unsupported type"))
+        } catch {
+            Issue.record("expected ParseError, got \(error)")
+        }
+    }
+
+    @Test("parses a same-package nested field")
+    func parsesSamePackageNested() throws {
+        let source = "Vector3 linear\n"
+        let file = try Parser.parseMessage(
+            source: source, file: "Twist.msg", package: "geometry_msgs", typeName: "Twist"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].name == "linear")
+        #expect(file.fields[0].type == .nested(package: nil, typeName: "Vector3"))
+    }
+
+    @Test("parses a cross-package nested field")
+    func parsesCrossPackageNested() throws {
+        let source = "std_msgs/Header header\n"
+        let file = try Parser.parseMessage(
+            source: source, file: "PoseStamped.msg", package: "geometry_msgs", typeName: "PoseStamped"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].type == .nested(package: "std_msgs", typeName: "Header"))
+    }
+
+    @Test("parses a builtin_interfaces/Time reference")
+    func parsesBuiltinInterfacesTime() throws {
+        let source = "builtin_interfaces/Time stamp\n"
+        let file = try Parser.parseMessage(
+            source: source, file: "Header.msg", package: "std_msgs", typeName: "Header"
+        )
+        #expect(file.fields[0].type == .nested(package: "builtin_interfaces", typeName: "Time"))
+    }
+
+    @Test("rejects a lower-case unknown identifier")
+    func rejectsLowercaseUnknown() {
+        do {
+            _ = try Parser.parseMessage(
+                source: "header header\n", file: "Foo.msg", package: "x", typeName: "Foo"
+            )
+            Issue.record("expected ParseError")
+        } catch let error as ParseError {
+            #expect(error.message.contains("unsupported type"))
+        } catch {
+            Issue.record("expected ParseError, got \(error)")
+        }
+    }
+
+    @Test("rejects an array suffix (Phase 3 territory)")
+    func rejectsArraySuffix() {
+        do {
+            _ = try Parser.parseMessage(
+                source: "Vector3[] points\n", file: "Polygon.msg", package: "geometry_msgs", typeName: "Polygon"
+            )
+            Issue.record("expected ParseError")
+        } catch let error as ParseError {
+            #expect(error.message.contains("array"))
         } catch {
             Issue.record("expected ParseError, got \(error)")
         }

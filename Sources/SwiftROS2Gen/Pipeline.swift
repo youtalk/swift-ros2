@@ -4,10 +4,15 @@ import Foundation
 public struct PackageInput: Sendable {
     public let name: String  // "std_msgs"
     public let directory: URL  // vendor/common_interfaces-jazzy/std_msgs
+    /// ROS 2 distro this directory represents (e.g. "humble", "jazzy"). The
+    /// pipeline groups inputs that share `name` across distros and merges
+    /// their per-distro IDLs into a single distro-conditional IR.
+    public let distro: String
 
-    public init(name: String, directory: URL) {
+    public init(name: String, directory: URL, distro: String = "jazzy") {
         self.name = name
         self.directory = directory
+        self.distro = distro
     }
 }
 
@@ -174,23 +179,64 @@ extension Pipeline {
     /// are aggregated into a registry. Hashing and emission run after the registry is
     /// complete so cross-package references (e.g. `std_msgs/Header → builtin_interfaces/Time`)
     /// resolve regardless of the order packages appear in `runs`.
+    ///
+    /// Phase 4: when two `runs` share the same `input.name` (typically because
+    /// the caller passed both a Humble and a Jazzy directory for the same
+    /// package), the per-distro IDL files for each type are merged via
+    /// ``IRBuilder/build(perDistro:)`` into a single distro-conditional IR.
+    /// `unresolvedIRs` then carries one merged IR per `(package, typeName)`
+    /// even though the source IDLs come from multiple distros.
     public static func generateMulti(_ runs: [PackageRun]) throws -> [GeneratedFile] {
         var unresolvedIRs: [(run: PackageRun, ir: MessageIR, sourceLabel: String)] = []
         var collectedServices: [ParsedService] = []
+        // Group runs by package name; multiple runs with the same name represent
+        // different distros for the same logical package.
+        var runsByPackage: [String: [PackageRun]] = [:]
+        var packageOrder: [String] = []
         for run in runs {
-            let parsed = try parsePackage(run: run)
-            for entry in parsed {
-                unresolvedIRs.append((run: run, ir: entry.ir, sourceLabel: entry.sourceLabel))
+            if runsByPackage[run.input.name] == nil { packageOrder.append(run.input.name) }
+            runsByPackage[run.input.name, default: []].append(run)
+        }
+        for pkg in packageOrder {
+            let pkgRuns = runsByPackage[pkg]!
+            if pkgRuns.count == 1 {
+                // Single-distro fast path (Phase 1-3 behavior preserved).
+                let run = pkgRuns[0]
+                let parsed = try parsePackage(run: run)
+                for entry in parsed {
+                    unresolvedIRs.append(
+                        (run: run, ir: entry.ir, sourceLabel: entry.sourceLabel))
+                }
+                let services = try parseServicesIn(run: run)
+                for svc in services {
+                    let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
+                    let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
+                    let label = "\(run.input.name)/srv/\(svc.typeName).srv"
+                    unresolvedIRs.append((run: run, ir: reqIR, sourceLabel: label))
+                    unresolvedIRs.append((run: run, ir: resIR, sourceLabel: label))
+                }
+                collectedServices.append(contentsOf: services)
+            } else {
+                // Multi-distro path: parse each run's IDLs, group by type name,
+                // then merge per-distro IDLs via IRBuilder.build(perDistro:).
+                let merged = try parseAndMergeMultiDistroPackage(runs: pkgRuns)
+                let primaryRun = pkgRuns.first!
+                for entry in merged {
+                    unresolvedIRs.append(
+                        (run: primaryRun, ir: entry.ir, sourceLabel: entry.sourceLabel))
+                }
+                // Phase 4 does not multi-distro-merge `.srv` files — services
+                // are taken from the first run only. Phase 5 will revisit.
+                let services = try parseServicesIn(run: primaryRun)
+                for svc in services {
+                    let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
+                    let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
+                    let label = "\(primaryRun.input.name)/srv/\(svc.typeName).srv"
+                    unresolvedIRs.append((run: primaryRun, ir: reqIR, sourceLabel: label))
+                    unresolvedIRs.append((run: primaryRun, ir: resIR, sourceLabel: label))
+                }
+                collectedServices.append(contentsOf: services)
             }
-            let services = try parseServicesIn(run: run)
-            for svc in services {
-                let reqIR = IRBuilder.build(jazzy: svc.requestIDL, kind: .srv)
-                let resIR = IRBuilder.build(jazzy: svc.responseIDL, kind: .srv)
-                let label = "\(run.input.name)/srv/\(svc.typeName).srv"
-                unresolvedIRs.append((run: run, ir: reqIR, sourceLabel: label))
-                unresolvedIRs.append((run: run, ir: resIR, sourceLabel: label))
-            }
-            collectedServices.append(contentsOf: services)
         }
         var registry: [String: MessageIR] = [:]
         for entry in unresolvedIRs {
@@ -209,17 +255,41 @@ extension Pipeline {
         }
         try validateAllReferencesResolved(registry: registry)
         // Precompute hashes once so the per-half emit loop and the per-service
-        // umbrella loop can both look them up by ROS type name.
+        // umbrella loop can both look them up by ROS type name. The "primary"
+        // hash is the modern (jazzy view) — the same value Phase 1-3 wrote into
+        // perDistroHashes["jazzy"]. Phase 4 adds a separate humble entry for
+        // multi-distro IRs whose presence map includes "humble".
         var hashByRosName: [String: String] = [:]
         for entry in unresolvedIRs {
-            hashByRosName[entry.ir.rosTypeName] = RIHS01.hash(entry.ir, registry: registry)
+            hashByRosName[entry.ir.rosTypeName] = RIHS01.hash(
+                entry.ir, for: "jazzy", registry: registry)
         }
         var results: [GeneratedFile] = []
         for entry in unresolvedIRs {
-            guard let hash = hashByRosName[entry.ir.rosTypeName] else {
+            guard let primaryHash = hashByRosName[entry.ir.rosTypeName] else {
                 preconditionFailure(
                     "Pipeline: missing precomputed hash for \(entry.ir.rosTypeName)"
                 )
+            }
+            // Phase 4: when the IR was merged across multiple distros, fill
+            // perDistroHashes for every distro the IR came from. Humble has
+            // no RIHS01 (rmw_zenoh_cpp on Humble does not advertise type
+            // hashes), so we record `nil` for that entry — distinct from
+            // the entry being missing entirely (which would mean the type
+            // does not exist on Humble at all).
+            var perDistroHashes: [String: String?] = ["jazzy": primaryHash]
+            for distro in entry.ir.perDistroFieldPresence.keys {
+                switch distro {
+                case "humble":
+                    perDistroHashes["humble"] = nil
+                case "jazzy":
+                    break  // already set
+                case "kilted", "rolling":
+                    // Modern distros share the jazzy wire format and hash.
+                    perDistroHashes[distro] = primaryHash
+                default:
+                    break
+                }
             }
             let hashed = MessageIR(
                 package: entry.ir.package,
@@ -227,7 +297,8 @@ extension Pipeline {
                 kind: entry.ir.kind,
                 fields: entry.ir.fields,
                 constants: entry.ir.constants,
-                perDistroHashes: ["jazzy": hash]
+                perDistroHashes: perDistroHashes,
+                perDistroFieldPresence: entry.ir.perDistroFieldPresence
             )
             let key = "\(entry.ir.package)/\(entry.ir.kind.rawValue)/\(entry.ir.typeName)"
             let nameOverride = nameOverrides[key]
@@ -395,6 +466,86 @@ extension Pipeline {
             }
         }
         return out
+    }
+
+    /// Phase 4 helper. Parses every `.msg` in each `pkgRuns[*].input.directory/msg`
+    /// and groups the IDLFiles by type name; for each group, calls
+    /// ``IRBuilder/build(perDistro:)`` to produce a single distro-conditional IR.
+    /// `pkgRuns` must all share the same `input.name` — the caller in
+    /// ``generateMulti`` already enforces that.
+    private static func parseAndMergeMultiDistroPackage(
+        runs pkgRuns: [PackageRun]
+    ) throws -> [ParsedEntry] {
+        precondition(!pkgRuns.isEmpty, "parseAndMergeMultiDistroPackage: empty runs")
+        let packageName = pkgRuns[0].input.name
+        precondition(
+            pkgRuns.allSatisfy { $0.input.name == packageName },
+            "parseAndMergeMultiDistroPackage: all runs must share the same package name")
+
+        // Per-distro IDL collections, indexed by type name.
+        var idlsByType: [String: [String: IDLFile]] = [:]
+        var typeOrder: [String] = []
+        // Pick the most-permissive type allow-list across the runs (a type
+        // appears in the merge if any run lists it). Practically every run
+        // shares the same allow-list because the CLI applies the same
+        // `--types` filter to every input.
+        var unifiedAllowList: Set<String>? = nil
+        for run in pkgRuns {
+            if let allow = run.typesAllowList {
+                if unifiedAllowList == nil { unifiedAllowList = [] }
+                unifiedAllowList?.formUnion(allow)
+            }
+        }
+
+        for run in pkgRuns {
+            let msgDir = run.input.directory.appendingPathComponent("msg", isDirectory: true)
+            var isDir: ObjCBool = false
+            guard
+                FileManager.default.fileExists(atPath: msgDir.path, isDirectory: &isDir),
+                isDir.boolValue
+            else {
+                throw GeneratorError.packageDirectoryMissing(msgDir)
+            }
+            let entries = try FileManager.default.contentsOfDirectory(
+                at: msgDir,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            let msgFiles =
+                entries
+                .filter { $0.pathExtension == "msg" }
+                .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+            for fileURL in msgFiles {
+                let typeName = fileURL.deletingPathExtension().lastPathComponent
+                if let allow = unifiedAllowList, !allow.contains(typeName) { continue }
+                let contents = try String(contentsOf: fileURL, encoding: .utf8)
+                let label = "common_interfaces-\(run.input.distro)/\(packageName)/msg/\(typeName).msg"
+                do {
+                    let idl = try Parser.parseMessage(
+                        source: contents,
+                        file: label,
+                        package: packageName,
+                        typeName: typeName
+                    )
+                    if idlsByType[typeName] == nil { typeOrder.append(typeName) }
+                    idlsByType[typeName, default: [:]][run.input.distro] = idl
+                } catch let err as ParseError {
+                    throw GeneratorError.parse(err)
+                }
+            }
+        }
+
+        var parsed: [ParsedEntry] = []
+        for typeName in typeOrder {
+            guard let perDistroIDL = idlsByType[typeName] else { continue }
+            let mergedIR = try IRBuilder.build(perDistro: perDistroIDL)
+            // Use a stable label that names every distro the type came from.
+            let distros =
+                perDistroIDL.keys.sorted().joined(separator: "+")
+            let label = "common_interfaces-\(distros)/\(packageName)/msg/\(typeName).msg"
+            parsed.append(ParsedEntry(ir: mergedIR, sourceLabel: label))
+        }
+        return parsed
     }
 
     private static func validateAllReferencesResolved(registry: [String: MessageIR]) throws {

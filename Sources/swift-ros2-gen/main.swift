@@ -12,7 +12,7 @@ struct SwiftROS2GenCommand: ParsableCommand {
     @Option(
         name: .long,
         help:
-            "<package_name>=<directory>@<distro>. Repeatable. Phase 1 only consumes the @jazzy entry per package."
+            "<package_name>=<directory>@<distro>. Repeatable. Phase 4 supports multi-distro inputs: pass two or more entries with the same package name and different distros (e.g. @humble + @jazzy) to produce a single distro-conditional Swift file per type."
     )
     var input: [String] = []
 
@@ -37,11 +37,16 @@ struct SwiftROS2GenCommand: ParsableCommand {
         var runs: [Pipeline.PackageRun] = []
         for raw in input {
             let pkg = try parseInput(raw)
-            // Phase 2 still only consumes @jazzy entries.
-            guard pkg.distro == "jazzy" else { continue }
+            // Phase 4: every distro is consumed. When the same package name
+            // appears twice (e.g. once @humble and once @jazzy), the
+            // pipeline merges them into a single distro-conditional IR.
             runs.append(
                 .init(
-                    input: PackageInput(name: pkg.packageName, directory: pkg.directory),
+                    input: PackageInput(
+                        name: pkg.packageName,
+                        directory: pkg.directory,
+                        distro: pkg.distro
+                    ),
                     typesAllowList: allowList
                 ))
         }

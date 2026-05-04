@@ -310,7 +310,7 @@ final class MessageRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded.fields.count, 3)
         XCTAssertEqual(decoded.fields[0].name, "x")
         XCTAssertEqual(decoded.pointStep, 12)
-        XCTAssertEqual(decoded.data, pointData)
+        XCTAssertEqual(decoded.dataAsData, pointData)
         XCTAssertTrue(decoded.isDense)
     }
 
@@ -589,10 +589,17 @@ final class MessageRoundTripTests: XCTestCase {
 
         XCTAssertEqual(decoded.height, 0)
         XCTAssertEqual(decoded.width, 0)
+        // Phase 4: the generator emits IDL-declared zero defaults, but
+        // `SensorMsgsExtensions` adds a zero-arg compatibility initializer
+        // that restores the pre-Phase-4 hand-written conventions —
+        // `distortion_model = "plumb_bob"` and `r = identity`. Callers
+        // that want true zeros should pass them explicitly to the
+        // generated multi-arg initializer.
         XCTAssertEqual(decoded.distortionModel, "plumb_bob")
         XCTAssertEqual(decoded.d.count, 0)
         XCTAssertEqual(decoded.k.count, 9)
-        XCTAssertEqual(decoded.r, [1, 0, 0, 0, 1, 0, 0, 0, 1])
+        XCTAssertEqual(
+            decoded.r, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
         XCTAssertEqual(decoded.p.count, 12)
         XCTAssertEqual(decoded.binningX, 0)
         XCTAssertEqual(decoded.binningY, 0)

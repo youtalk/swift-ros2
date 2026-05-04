@@ -220,3 +220,147 @@ public struct IRBuildError: Error, CustomStringConvertible, Equatable, Sendable 
     public init(_ message: String) { self.message = message }
     public var description: String { message }
 }
+
+extension IRBuilder {
+    /// Canonical ordering of distros for the multi-distro merge walk. Older
+    /// distros come first so their field order takes precedence when a field
+    /// is shared with a newer distro.
+    public static let distroOrder: [String] = ["humble", "jazzy", "kilted", "rolling"]
+
+    /// Build a unified IR from one parsed IDL per distro.
+    ///
+    /// Walks `idls` in `distroOrder`. For each distro, fields appear in source
+    /// order; new fields are appended at the position they first surface. Each
+    /// resulting `FieldIR.availability` reflects the set of distros that
+    /// declared the field, simplified to `.all` when every input distro had it.
+    ///
+    /// Constants and defaults are taken from the latest (highest-precedence)
+    /// distro that declares each name — newer distros own the canonical
+    /// representation when a constant value or default expression diverges.
+    /// Constants are not part of the wire schema, so they do not participate
+    /// in conflict detection.
+    ///
+    /// Throws `IRMergeError.conflictingFieldType` when the same `ros2Name`
+    /// resolves to incompatible `FieldType`s across distros, and
+    /// `IRMergeError.identityMismatch` when distros disagree on the package
+    /// or type name.
+    public static func build(
+        perDistro idls: [String: IDLFile],
+        kind: MessageKind = .msg
+    ) throws -> MessageIR {
+        precondition(!idls.isEmpty, "IRBuilder.build(perDistro:) needs at least one IDL")
+
+        // Validate identity (package/typeName) agreement across all input distros.
+        var identityPerDistro: [String: String] = [:]
+        for (distro, idl) in idls {
+            identityPerDistro[distro] = "\(idl.package)/\(idl.typeName)"
+        }
+        if Set(identityPerDistro.values).count > 1 {
+            let any = idls.first!.value
+            throw IRMergeError(
+                kind: .identityMismatch(perDistroIdentity: identityPerDistro),
+                typeName: "\(any.package)/\(any.typeName)"
+            )
+        }
+        let firstKey = idls.keys.sorted().first!
+        let canonicalPackage = idls[firstKey]!.package
+        let canonicalType = idls[firstKey]!.typeName
+
+        // Walk the distros in canonical order; only consider distros actually present.
+        let orderedDistros = distroOrder.filter { idls[$0] != nil }
+
+        // Track field types and the distros each field appears in.
+        var fieldOrder: [String] = []
+        var fieldTypeByName: [String: FieldType] = [:]
+        // Carry through the field-level metadata (default, swiftName) of the
+        // latest distro that declared the field; newer distros win.
+        var latestFieldByName: [String: (default: DefaultValue?, swiftName: String)] = [:]
+        var fieldTypeConflict: [String: [String: FieldType]] = [:]
+        var presenceByName: [String: Set<String>] = [:]
+        var presencePerDistro: [String: Set<String>] = [:]
+
+        for distro in orderedDistros {
+            let idl = idls[distro]!
+            var thisDistroPresence: Set<String> = []
+            for f in idl.fields {
+                let irType = lift(f.type, currentPackage: idl.package)
+                thisDistroPresence.insert(f.name)
+                if let existing = fieldTypeByName[f.name] {
+                    if existing != irType {
+                        var bucket = fieldTypeConflict[f.name] ?? [:]
+                        // Backfill the canonical type for already-walked distros that had it.
+                        for prior in orderedDistros {
+                            if prior == distro { break }
+                            if presenceByName[f.name]?.contains(prior) == true {
+                                bucket[prior] = existing
+                            }
+                        }
+                        bucket[distro] = irType
+                        fieldTypeConflict[f.name] = bucket
+                    }
+                } else {
+                    fieldTypeByName[f.name] = irType
+                    fieldOrder.append(f.name)
+                }
+                let dv = try f.defaultExpression.map {
+                    try parseDefault($0, for: irType, fieldName: f.name)
+                }
+                latestFieldByName[f.name] = (dv, snakeToCamel(f.name))
+                presenceByName[f.name, default: []].insert(distro)
+            }
+            presencePerDistro[distro] = thisDistroPresence
+        }
+
+        if let (name, perDistroTypes) = fieldTypeConflict.first {
+            throw IRMergeError(
+                kind: .conflictingFieldType(name: name, perDistroTypes: perDistroTypes),
+                typeName: "\(canonicalPackage)/\(canonicalType)"
+            )
+        }
+
+        let allDistros = Set(orderedDistros)
+        let fields: [FieldIR] = fieldOrder.map { name in
+            let type = fieldTypeByName[name]!
+            let presence = presenceByName[name]!
+            let availability: FieldAvailability =
+                presence == allDistros ? .all : .onlyIn(presence)
+            let meta = latestFieldByName[name]!
+            return FieldIR(
+                ros2Name: name,
+                swiftName: meta.swiftName,
+                type: type,
+                defaultValue: meta.default,
+                availability: availability
+            )
+        }
+
+        // Constants: take the union; later distros win on conflicting values.
+        // Constants do not participate in the RIHS01 hash so a value mismatch
+        // is not treated as an error here.
+        var constantsByName: [String: ConstantIR] = [:]
+        var constantOrder: [String] = []
+        for distro in orderedDistros {
+            let idl = idls[distro]!
+            for c in idl.constants {
+                let dv = try parseConstantValue(c.value, type: c.type, name: c.name)
+                let cir = ConstantIR(
+                    ros2Name: c.name, swiftName: c.name, type: c.type, value: dv)
+                if constantsByName[c.name] == nil {
+                    constantOrder.append(c.name)
+                }
+                constantsByName[c.name] = cir
+            }
+        }
+        let constants = constantOrder.compactMap { constantsByName[$0] }
+
+        return MessageIR(
+            package: canonicalPackage,
+            typeName: canonicalType,
+            kind: kind,
+            fields: fields,
+            constants: constants,
+            perDistroHashes: [:],  // populated by Pipeline (Task 6)
+            perDistroFieldPresence: presencePerDistro
+        )
+    }
+}

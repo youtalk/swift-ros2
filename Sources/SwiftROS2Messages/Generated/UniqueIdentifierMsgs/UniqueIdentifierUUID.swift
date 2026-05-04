@@ -22,11 +22,13 @@ public struct UniqueIdentifierUUID: CDRCodable, Equatable, Sendable {
     }
 
     public init(from decoder: CDRDecoder) throws {
-        var out: [UInt8] = []
-        out.reserveCapacity(16)
-        for _ in 0..<16 {
-            out.append(try decoder.readUInt8())
+        do {
+            var out: [UInt8] = []
+            out.reserveCapacity(16)
+            for _ in 0..<16 {
+                out.append(try decoder.readUInt8())
+            }
+            self.uuid = out
         }
-        self.uuid = out
     }
 }

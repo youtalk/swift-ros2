@@ -20,3 +20,25 @@ API breakage: enumelement ZenohError.queryReplyError has been added as a new enu
 API breakage: enumelement TransportError.goalRejected has been added as a new enum case
 API breakage: enumelement TransportError.goalUnknown has been added as a new enum case
 API breakage: enumelement TransportError.actionServerUnavailable has been added as a new enum case
+
+# 0.9.0: swift-ros2-gen phase 4 — sensor_msgs regenerated; API surface diverged
+# from hand-written 0.6.x version (Data → [UInt8] for byte-payload fields,
+# removed convenience defaults on big initializers, NavSatStatus typo fix
+# `statusGbassFix` → `statusGbasFix`, PointCloud2.pointCount removed because
+# the generator does not emit derived properties).
+API breakage: var CompressedImage.data has declared type change from Foundation.Data to [Swift.UInt8]
+API breakage: accessor CompressedImage.data.Get() has return type change from Foundation.Data to [Swift.UInt8]
+API breakage: accessor CompressedImage.data.Set() has parameter 0 type change from Foundation.Data to [Swift.UInt8]
+API breakage: constructor CompressedImage.init(header:format:data:) has removed default argument from parameter 2
+API breakage: var Image.data has declared type change from Foundation.Data to [Swift.UInt8]
+API breakage: accessor Image.data.Get() has return type change from Foundation.Data to [Swift.UInt8]
+API breakage: accessor Image.data.Set() has parameter 0 type change from Foundation.Data to [Swift.UInt8]
+API breakage: constructor Image.init(header:height:width:encoding:isBigendian:step:data:) has removed default argument from parameter 6
+API breakage: constructor NavSatFix.init(header:status:latitude:longitude:altitude:positionCovariance:positionCovarianceType:) has removed default argument from parameter 6
+API breakage: var PointCloud2.data has declared type change from Foundation.Data to [Swift.UInt8]
+API breakage: accessor PointCloud2.data.Get() has return type change from Foundation.Data to [Swift.UInt8]
+API breakage: accessor PointCloud2.data.Set() has parameter 0 type change from Foundation.Data to [Swift.UInt8]
+API breakage: constructor PointCloud2.init(header:height:width:fields:isBigendian:pointStep:rowStep:data:isDense:) has removed default argument from parameter 7
+API breakage: constructor Range.init(header:radiationType:fieldOfView:minRange:maxRange:range:variance:) has removed default argument from parameter 1
+API breakage: var NavSatStatus.statusGbassFix has been removed
+API breakage: var PointCloud2.pointCount has been removed

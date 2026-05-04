@@ -213,3 +213,113 @@ struct NestedHashGoldenTests {
         #expect(RIHS01.hash(ir, registry: reg) == Self.headerHash)
     }
 }
+
+@Suite("RIHS01 golden hashes for arrays, sequences, and constants")
+struct HashGoldenPhase3Tests {
+    /// Builds the shared 4-type registry used by the GoalStatus / GoalStatusArray
+    /// fixtures. Centralised so each test stays focused.
+    static func actionRegistry() -> [String: MessageIR] {
+        let uuid = MessageIR(
+            package: "unique_identifier_msgs", typeName: "UUID",
+            fields: [
+                FieldIR(
+                    ros2Name: "uuid", swiftName: "uuid",
+                    type: .array(element: .primitive(.uint8), length: 16))
+            ]
+        )
+        let time = MessageIR(
+            package: "builtin_interfaces", typeName: "Time",
+            fields: [
+                FieldIR(ros2Name: "sec", swiftName: "sec", type: .primitive(.int32)),
+                FieldIR(ros2Name: "nanosec", swiftName: "nanosec", type: .primitive(.uint32)),
+            ]
+        )
+        let goalInfo = MessageIR(
+            package: "action_msgs", typeName: "GoalInfo",
+            fields: [
+                FieldIR(
+                    ros2Name: "goal_id", swiftName: "goalId",
+                    type: .nested(package: "unique_identifier_msgs", typeName: "UUID")),
+                FieldIR(
+                    ros2Name: "stamp", swiftName: "stamp",
+                    type: .nested(package: "builtin_interfaces", typeName: "Time")),
+            ]
+        )
+        let names = [
+            "STATUS_UNKNOWN", "STATUS_ACCEPTED", "STATUS_EXECUTING",
+            "STATUS_CANCELING", "STATUS_SUCCEEDED", "STATUS_CANCELED",
+            "STATUS_ABORTED",
+        ]
+        let goalStatus = MessageIR(
+            package: "action_msgs", typeName: "GoalStatus",
+            fields: [
+                FieldIR(
+                    ros2Name: "goal_info", swiftName: "goalInfo",
+                    type: .nested(package: "action_msgs", typeName: "GoalInfo")),
+                FieldIR(
+                    ros2Name: "status", swiftName: "status",
+                    type: .primitive(.int8)),
+            ],
+            constants: names.enumerated().map { i, n in
+                ConstantIR(ros2Name: n, swiftName: n, type: .int8, value: .int(Int64(i)))
+            }
+        )
+        let goalStatusArray = MessageIR(
+            package: "action_msgs", typeName: "GoalStatusArray",
+            fields: [
+                FieldIR(
+                    ros2Name: "status_list", swiftName: "statusList",
+                    type: .sequence(
+                        element: .nested(package: "action_msgs", typeName: "GoalStatus"),
+                        upperBound: nil))
+            ]
+        )
+        return [
+            uuid.rosTypeName: uuid,
+            time.rosTypeName: time,
+            goalInfo.rosTypeName: goalInfo,
+            goalStatus.rosTypeName: goalStatus,
+            goalStatusArray.rosTypeName: goalStatusArray,
+        ]
+    }
+
+    @Test("uint8[16] uuid — fixed primitive array")
+    func uuidHash() {
+        let ir = MessageIR(
+            package: "unique_identifier_msgs",
+            typeName: "UUID",
+            fields: [
+                FieldIR(
+                    ros2Name: "uuid",
+                    swiftName: "uuid",
+                    type: .array(element: .primitive(.uint8), length: 16))
+            ]
+        )
+        let expected = "RIHS01_1b8e8aca958cbea28fe6ef60bf6c19b683c97a9ef60bb34752067d0f2f7ab437"
+        #expect(RIHS01.hash(ir) == expected)
+    }
+
+    @Test("action_msgs/GoalInfo — nested cross-package fields")
+    func goalInfoHash() {
+        let registry = Self.actionRegistry()
+        let goalInfo = registry["action_msgs/msg/GoalInfo"]!
+        let expected = "RIHS01_6398fe763154554353930716b225947f93b672f0fb2e49fdd01bb7a7e37933e9"
+        #expect(RIHS01.hash(goalInfo, registry: registry) == expected)
+    }
+
+    @Test("action_msgs/GoalStatus — constants + nested ref")
+    func goalStatusHash() {
+        let registry = Self.actionRegistry()
+        let goalStatus = registry["action_msgs/msg/GoalStatus"]!
+        let expected = "RIHS01_32f4cfd717735d17657e1178f24431c1ce996c878c515230f6c5b3476819dbb9"
+        #expect(RIHS01.hash(goalStatus, registry: registry) == expected)
+    }
+
+    @Test("action_msgs/GoalStatusArray — sequence of nested")
+    func goalStatusArrayHash() {
+        let registry = Self.actionRegistry()
+        let goalStatusArray = registry["action_msgs/msg/GoalStatusArray"]!
+        let expected = "RIHS01_6c1684b00f177d37438febe6e709fc4e2b0d4248dca4854946f9ed8b30cda83e"
+        #expect(RIHS01.hash(goalStatusArray, registry: registry) == expected)
+    }
+}

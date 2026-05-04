@@ -40,6 +40,30 @@ struct IDLFileTests {
     }
 }
 
+@Suite("IRBuilder")
+struct IRBuilderTests {
+    @Test("converts snake_case field names to camelCase")
+    func convertsSnakeCase() {
+        let idl = IDLFile(
+            package: "std_msgs",
+            typeName: "Bool",
+            fields: [
+                IDLField(name: "linear_acceleration_x", type: .primitive(.float64), sourceLine: 1),
+                IDLField(name: "data", type: .primitive(.bool), sourceLine: 2),
+                IDLField(name: "_leading_underscore", type: .primitive(.int32), sourceLine: 3),
+            ]
+        )
+        let ir = IRBuilder.build(jazzy: idl)
+        #expect(ir.fields[0].ros2Name == "linear_acceleration_x")
+        #expect(ir.fields[0].swiftName == "linearAccelerationX")
+        #expect(ir.fields[1].swiftName == "data")
+        #expect(ir.fields[2].swiftName == "_leadingUnderscore")
+        #expect(ir.package == "std_msgs")
+        #expect(ir.typeName == "Bool")
+        #expect(ir.rosTypeName == "std_msgs/msg/Bool")
+    }
+}
+
 @Suite("Parser")
 struct ParserTests {
     @Test("parses a single primitive field")

@@ -20,7 +20,7 @@ final class ActionGoalHandleTests: XCTestCase {
         )
         do {
             try await handle.publishFeedback(
-                FibonacciAction.Feedback(partialSequence: [])
+                FibonacciAction.Feedback(sequence: [])
             )
             XCTFail("expected wrongSide")
         } catch let e as ActionError {

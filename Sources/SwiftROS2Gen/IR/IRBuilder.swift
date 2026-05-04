@@ -214,6 +214,206 @@ public enum IRBuilder {
     }
 }
 
+extension IRBuilder {
+    /// Build an ``ActionIR`` from a parsed ``IDLAction``.
+    ///
+    /// Each of the three user-defined blocks becomes a ``MessageIR`` named
+    /// `<typeName>_Goal` / `_Result` / `_Feedback` (matching what rosidl emits
+    /// for the per-block type descriptions). Five wire-level wrapper IRs are
+    /// then synthesized per the rcl action protocol, each containing nested
+    /// references back to the user-defined IRs (matching the rosidl JSON):
+    /// `<typeName>_SendGoal_Request` (UUID `goal_id` + nested `<typeName>_Goal`),
+    /// `<typeName>_SendGoal_Response` (bool `accepted` + `builtin_interfaces/Time`),
+    /// `<typeName>_GetResult_Request` (UUID `goal_id`), `<typeName>_GetResult_Response`
+    /// (int8 `status` + nested `<typeName>_Result`), and
+    /// `<typeName>_FeedbackMessage` (UUID `goal_id` + nested `<typeName>_Feedback`).
+    /// All eight resulting IRs carry ``MessageKind/action`` so their canonical
+    /// ROS type name renders with the `action/` segment.
+    public static func build(jazzy idl: IDLAction) -> ActionIR {
+        let goal = build(jazzy: idl.goal, kind: .action)
+        let result = build(jazzy: idl.result, kind: .action)
+        let feedback = build(jazzy: idl.feedback, kind: .action)
+
+        let wrappers = synthesizeActionWrappers(
+            actionPackage: idl.package,
+            actionTypeName: idl.typeName,
+            goalFields: goal.fields,
+            resultFields: result.fields,
+            feedbackFields: feedback.fields
+        )
+
+        return ActionIR(
+            package: idl.package,
+            typeName: idl.typeName,
+            goal: goal,
+            result: result,
+            feedback: feedback,
+            sendGoalRequest: wrappers.sendGoalRequest,
+            sendGoalResponse: wrappers.sendGoalResponse,
+            getResultRequest: wrappers.getResultRequest,
+            getResultResponse: wrappers.getResultResponse,
+            feedbackMessage: wrappers.feedbackMessage
+        )
+    }
+
+    /// Synthesize the five wire-level wrapper ``MessageIR``s per the rcl action
+    /// protocol. Field shapes mirror the hand-written generic wrappers in
+    /// `BuiltinActions/ActionWrappers.swift` (kept until they are deleted in
+    /// the same phase that ships this synthesis).
+    static func synthesizeActionWrappers(
+        actionPackage: String,
+        actionTypeName: String,
+        goalFields: [FieldIR],
+        resultFields: [FieldIR],
+        feedbackFields: [FieldIR]
+    ) -> (
+        sendGoalRequest: MessageIR,
+        sendGoalResponse: MessageIR,
+        getResultRequest: MessageIR,
+        getResultResponse: MessageIR,
+        feedbackMessage: MessageIR
+    ) {
+        let goalIdField = FieldIR(
+            ros2Name: "goal_id",
+            swiftName: "goalId",
+            type: .nested(package: "unique_identifier_msgs", typeName: "UUID")
+        )
+        let acceptedField = FieldIR(
+            ros2Name: "accepted",
+            swiftName: "accepted",
+            type: .primitive(.bool)
+        )
+        let stampField = FieldIR(
+            ros2Name: "stamp",
+            swiftName: "stamp",
+            type: .nested(package: "builtin_interfaces", typeName: "Time")
+        )
+        let statusField = FieldIR(
+            ros2Name: "status",
+            swiftName: "status",
+            type: .primitive(.int8)
+        )
+        let goalNestedField = FieldIR(
+            ros2Name: "goal",
+            swiftName: "goal",
+            type: .nested(package: actionPackage, typeName: "\(actionTypeName)_Goal")
+        )
+        let resultNestedField = FieldIR(
+            ros2Name: "result",
+            swiftName: "result",
+            type: .nested(package: actionPackage, typeName: "\(actionTypeName)_Result")
+        )
+        let feedbackNestedField = FieldIR(
+            ros2Name: "feedback",
+            swiftName: "feedback",
+            type: .nested(package: actionPackage, typeName: "\(actionTypeName)_Feedback")
+        )
+
+        let sendGoalRequest = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_SendGoal_Request",
+            kind: .action,
+            fields: [goalIdField, goalNestedField]
+        )
+        let sendGoalResponse = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_SendGoal_Response",
+            kind: .action,
+            fields: [acceptedField, stampField]
+        )
+        let getResultRequest = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_GetResult_Request",
+            kind: .action,
+            fields: [goalIdField]
+        )
+        let getResultResponse = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_GetResult_Response",
+            kind: .action,
+            fields: [statusField, resultNestedField]
+        )
+        let feedbackMessage = MessageIR(
+            package: actionPackage,
+            typeName: "\(actionTypeName)_FeedbackMessage",
+            kind: .action,
+            fields: [goalIdField, feedbackNestedField]
+        )
+
+        _ = (goalFields, resultFields, feedbackFields)  // referenced via the nested wrappers above
+
+        return (sendGoalRequest, sendGoalResponse, getResultRequest, getResultResponse, feedbackMessage)
+    }
+}
+
+extension IRBuilder {
+    /// Compute RIHS01 hashes for every contained ``MessageIR`` (Goal / Result
+    /// / Feedback + 5 wire wrappers) and write them into
+    /// `ir.perDistroHashes[distro]`. The provided `extraRegistry` must contain
+    /// at least `unique_identifier_msgs/msg/UUID` and
+    /// `builtin_interfaces/msg/Time` because the wrappers reference them; the
+    /// per-action user IRs are added automatically.
+    ///
+    /// We intentionally do **not** synthesize the action-level
+    /// `<pkg>/action/<Type>` hash. rosidl computes that from a six-field
+    /// record that references additional service-shaped wrappers
+    /// (`<Type>_SendGoal`, `<Type>_GetResult`, plus `_Event` types and
+    /// `service_msgs/msg/ServiceEventInfo`) that this generator does not
+    /// emit. The wire format only depends on the eight wrapper / block hashes
+    /// stored here; emitting a synthetic action-level value that disagrees
+    /// with upstream would be worse than omitting it.
+    public static func populateActionHashes(
+        _ ir: inout ActionIR,
+        distro: String,
+        extraRegistry: [String: MessageIR] = [:]
+    ) {
+        // Build the registry: extras (UUID, Time, ...) plus the per-action
+        // user IRs (Goal/Result/Feedback) so the wrappers can resolve their
+        // nested references.
+        var registry = extraRegistry
+        registry[ir.goal.rosTypeName] = ir.goal
+        registry[ir.result.rosTypeName] = ir.result
+        registry[ir.feedback.rosTypeName] = ir.feedback
+        registry[ir.sendGoalRequest.rosTypeName] = ir.sendGoalRequest
+        registry[ir.sendGoalResponse.rosTypeName] = ir.sendGoalResponse
+        registry[ir.getResultRequest.rosTypeName] = ir.getResultRequest
+        registry[ir.getResultResponse.rosTypeName] = ir.getResultResponse
+        registry[ir.feedbackMessage.rosTypeName] = ir.feedbackMessage
+
+        let goalHash = RIHS01.hash(ir.goal, registry: registry)
+        let resultHash = RIHS01.hash(ir.result, registry: registry)
+        let feedbackHash = RIHS01.hash(ir.feedback, registry: registry)
+        let sgReqHash = RIHS01.hash(ir.sendGoalRequest, registry: registry)
+        let sgRespHash = RIHS01.hash(ir.sendGoalResponse, registry: registry)
+        let grReqHash = RIHS01.hash(ir.getResultRequest, registry: registry)
+        let grRespHash = RIHS01.hash(ir.getResultResponse, registry: registry)
+        let fbMsgHash = RIHS01.hash(ir.feedbackMessage, registry: registry)
+
+        // Store per-message hashes on the contained IRs so the emitter (which
+        // reuses the message emitter for each wrapper) can read them out of
+        // `perDistroHashes["jazzy"]` like any normal MessageIR.
+        ir.goal.perDistroHashes[distro] = goalHash
+        ir.result.perDistroHashes[distro] = resultHash
+        ir.feedback.perDistroHashes[distro] = feedbackHash
+        ir.sendGoalRequest.perDistroHashes[distro] = sgReqHash
+        ir.sendGoalResponse.perDistroHashes[distro] = sgRespHash
+        ir.getResultRequest.perDistroHashes[distro] = grReqHash
+        ir.getResultResponse.perDistroHashes[distro] = grRespHash
+        ir.feedbackMessage.perDistroHashes[distro] = fbMsgHash
+
+        ir.perDistroHashes[distro] = ActionHashes(
+            goalHash: goalHash,
+            resultHash: resultHash,
+            feedbackHash: feedbackHash,
+            sendGoalRequestHash: sgReqHash,
+            sendGoalResponseHash: sgRespHash,
+            getResultRequestHash: grReqHash,
+            getResultResponseHash: grRespHash,
+            feedbackMessageHash: fbMsgHash
+        )
+    }
+}
+
 /// An error produced by ``IRBuilder`` while validating defaults / constants.
 public struct IRBuildError: Error, CustomStringConvertible, Equatable, Sendable {
     public let message: String

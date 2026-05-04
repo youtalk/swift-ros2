@@ -156,6 +156,68 @@ public enum Parser {
         return IDLService(package: package, typeName: typeName, request: req, response: res)
     }
 
+    /// Parse a `.action` source. The grammar is `<block> --- <block> --- <block>`
+    /// where each block obeys the same grammar as a `.msg` file body. A separator
+    /// line is one whose stripped content (after stripping `#…` comments and
+    /// trimming) is exactly `---`. Anywhere `---` appears inside a comment or
+    /// with trailing non-whitespace, it is treated as ordinary content.
+    ///
+    /// The three blocks are parsed via ``parseMessage(source:file:package:typeName:)``
+    /// using the synthesized `<typeName>_Goal` / `<typeName>_Result` /
+    /// `<typeName>_Feedback` names rosidl uses for the per-block type
+    /// descriptions on the wire.
+    public static func parseAction(
+        source: String,
+        file: String,
+        package: String,
+        typeName: String
+    ) throws -> IDLAction {
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        var separatorIndices: [Int] = []
+        for (i, raw) in lines.enumerated() {
+            let stripped = stripCommentAndTrim(String(raw))
+            if stripped == "---" { separatorIndices.append(i) }
+        }
+        guard separatorIndices.count == 2 else {
+            throw ParseError(
+                file: file,
+                line: 1,
+                message:
+                    "expected exactly two '---' separators in action '\(typeName)' (found \(separatorIndices.count))"
+            )
+        }
+        let goalSep = separatorIndices[0]
+        let resultSep = separatorIndices[1]
+        let goalText = lines[..<goalSep].joined(separator: "\n") + "\n"
+        let resultText = lines[(goalSep + 1)..<resultSep].joined(separator: "\n") + "\n"
+        let feedbackText = lines[(resultSep + 1)...].joined(separator: "\n")
+        let goal = try parseMessage(
+            source: goalText,
+            file: file,
+            package: package,
+            typeName: typeName + "_Goal"
+        )
+        let result = try parseMessage(
+            source: resultText,
+            file: file,
+            package: package,
+            typeName: typeName + "_Result"
+        )
+        let feedback = try parseMessage(
+            source: feedbackText,
+            file: file,
+            package: package,
+            typeName: typeName + "_Feedback"
+        )
+        return IDLAction(
+            package: package,
+            typeName: typeName,
+            goal: goal,
+            result: result,
+            feedback: feedback
+        )
+    }
+
     /// `[A-Z_][A-Z0-9_]*` — matches the rosidl convention for constant names.
     static func isUpperSnakeIdent(_ s: String) -> Bool {
         guard let first = s.first, first.isLetter || first == "_" else { return false }

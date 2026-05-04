@@ -2,9 +2,14 @@
 /// `.srv` to distinguish the synthesized request / response halves of a service
 /// — they get rendered into the canonical `<pkg>/srv/<Type>_Request|Response`
 /// type name, both in the RIHS01 hash input and in the emitted `typeInfo`.
-public enum MessageKind: String, Equatable, Sendable {
+public enum MessageKind: String, CaseIterable, Equatable, Sendable {
     case msg
     case srv
+    /// `.action` family: the three user-defined blocks (`<Type>_Goal`,
+    /// `<Type>_Result`, `<Type>_Feedback`) and the five synthesized wire-level
+    /// wrappers (`<Type>_SendGoal_Request`, etc.) all render their canonical
+    /// ROS type name with the `action/` segment instead of `msg/` or `srv/`.
+    case action
 }
 
 /// Distro-neutral intermediate representation of a single ROS 2 message type.

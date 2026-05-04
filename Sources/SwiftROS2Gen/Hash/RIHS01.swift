@@ -90,7 +90,7 @@ public enum RIHS01 {
 
     /// Builds the exact UTF-8 bytes that go into SHA-256.
     static func canonicalBytes(_ ir: MessageIR, registry: [String: MessageIR]) -> Data {
-        let rootFields = canonicalFields(ir)
+        let rootFields = canonicalFields(ir, registry: registry)
         let referenced = referencedTypeDescriptions(rootIR: ir, registry: registry)
         let json = buildJSON(typeName: ir.rosTypeName, fields: rootFields, referenced: referenced)
         // Force-unwrap: all inputs are ASCII-safe (pkg names, field names,
@@ -115,7 +115,10 @@ public enum RIHS01 {
     /// before SHA-256, so the byte stream sees no `default_value` keys at all.
     /// Constants are likewise absent from `serialize_individual_type_description`
     /// — ``MessageIR.constants`` is intentionally not consulted here either.
-    private static func canonicalFields(_ ir: MessageIR) -> [FieldEntry] {
+    private static func canonicalFields(
+        _ ir: MessageIR,
+        registry: [String: MessageIR] = [:]
+    ) -> [FieldEntry] {
         if ir.fields.isEmpty {
             // Sentinel field: `uint8 structure_needs_at_least_one_member`
             return [
@@ -128,7 +131,7 @@ public enum RIHS01 {
             ]
         }
         return ir.fields.map { field in
-            let resolved = resolve(field.type)
+            let resolved = resolve(field.type, registry: registry)
             return FieldEntry(
                 name: field.ros2Name,
                 typeID: resolved.typeID,
@@ -150,7 +153,10 @@ public enum RIHS01 {
     /// element is `.nested(_:_:)`, even when wrapped in array/sequence.
     /// `string_capacity` is the bound for `string<=N` / `wstring<=N`,
     /// including arrays/sequences of bounded strings.
-    private static func resolve(_ ft: FieldType) -> ResolvedFieldType {
+    private static func resolve(
+        _ ft: FieldType,
+        registry: [String: MessageIR] = [:]
+    ) -> ResolvedFieldType {
         switch ft {
         case .primitive(let prim):
             return ResolvedFieldType(
@@ -159,20 +165,26 @@ public enum RIHS01 {
                 stringCapacity: 0,
                 nestedTypeName: "")
         case .nested(let pkg, let type):
+            // Default kind is `msg`; if the registry has the type under an
+            // `action`-kind IR (per Phase 6 action wrappers nesting `_Goal`
+            // / `_Result` / `_Feedback`), use that as the canonical segment so
+            // the rosidl JSON byte stream matches upstream exactly.
+            let nested = canonicalNestedTypeName(
+                package: pkg, typeName: type, registry: registry)
             return ResolvedFieldType(
                 typeID: FieldTypeID.nestedType,
                 capacity: 0,
                 stringCapacity: 0,
-                nestedTypeName: "\(pkg)/msg/\(type)")
+                nestedTypeName: nested)
         case .array(let element, let length):
-            let inner = resolve(element)
+            let inner = resolve(element, registry: registry)
             return ResolvedFieldType(
                 typeID: inner.typeID + FieldTypeID.arrayOffset,
                 capacity: length,
                 stringCapacity: inner.stringCapacity,
                 nestedTypeName: inner.nestedTypeName)
         case .sequence(let element, let upper):
-            let inner = resolve(element)
+            let inner = resolve(element, registry: registry)
             if let upper = upper {
                 return ResolvedFieldType(
                     typeID: inner.typeID + FieldTypeID.boundedSequenceOffset,
@@ -193,6 +205,24 @@ public enum RIHS01 {
                 stringCapacity: upperBound,
                 nestedTypeName: "")
         }
+    }
+
+    /// Resolve `<pkg>/<kind>/<Type>` for a nested reference. Tries the registry
+    /// in `msg`, `srv`, `action` order so callers do not have to pass the kind
+    /// explicitly; falls back to `msg` when the registry has no entry (the
+    /// pre-Phase-6 behavior).
+    private static func canonicalNestedTypeName(
+        package: String,
+        typeName: String,
+        registry: [String: MessageIR]
+    ) -> String {
+        for kind in MessageKind.allCases {
+            let candidate = "\(package)/\(kind.rawValue)/\(typeName)"
+            if registry[candidate] != nil {
+                return candidate
+            }
+        }
+        return "\(package)/msg/\(typeName)"
     }
 
     /// Walk `field.type` to find the nested element it ultimately points at,
@@ -229,7 +259,12 @@ public enum RIHS01 {
             idx += 1
             for field in current.fields {
                 guard let target = nestedTarget(of: field.type) else { continue }
-                let key = "\(target.pkg)/msg/\(target.type)"
+                // Try each kind (msg, srv, action) for the nested target so
+                // action wrappers nesting `_Goal` / `_Result` / `_Feedback`
+                // (kind == .action) resolve in the same registry as plain
+                // message references (kind == .msg).
+                let key = canonicalNestedTypeName(
+                    package: target.pkg, typeName: target.type, registry: registry)
                 if visited.contains(key) { continue }
                 visited.insert(key)
                 guard let nestedIR = registry[key] else {
@@ -243,7 +278,7 @@ public enum RIHS01 {
             }
         }
         let sorted = collected.sorted { $0.rosTypeName < $1.rosTypeName }
-        return sorted.map { ($0.rosTypeName, canonicalFields($0)) }
+        return sorted.map { ($0.rosTypeName, canonicalFields($0, registry: registry)) }
     }
 
     /// Serialises the canonical structure to the exact JSON string that the

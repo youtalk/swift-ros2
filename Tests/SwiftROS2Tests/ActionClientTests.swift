@@ -66,7 +66,7 @@ final class ActionClientTests: XCTestCase {
         let handle = try await cli.sendGoal(FibonacciAction.Goal(order: 5))
         var seen: [[Int32]] = []
         for await fb in handle.feedback {
-            seen.append(fb.partialSequence)
+            seen.append(fb.sequence)
             if seen.count == 2 { break }
         }
         XCTAssertEqual(seen, [[1, 1, 2], [1, 1, 2, 3]])
@@ -114,7 +114,7 @@ final class ActionClientTests: XCTestCase {
     private static func encodeFeedback(_ seq: [Int32]) -> Data {
         let encoder = CDREncoder(isLegacySchema: false)
         encoder.writeEncapsulationHeader()
-        try! FibonacciAction.Feedback(partialSequence: seq).encode(to: encoder)
+        try! FibonacciAction.Feedback(sequence: seq).encode(to: encoder)
         return encoder.getData()
     }
 

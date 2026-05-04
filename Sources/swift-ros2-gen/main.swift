@@ -29,6 +29,13 @@ struct SwiftROS2GenCommand: ParsableCommand {
     @Flag(name: .long, help: "Print what would be written; do not touch the filesystem.")
     var dryRun: Bool = false
 
+    @Option(
+        name: .long,
+        help:
+            "Repeatable. Additional `import <Module>` statement(s) to inject into every emitted Swift file. Used by SwiftROS2GenPlugin so generated files compiled outside the SwiftROS2Messages module can resolve `ROS2Message` / `ROS2MessageTypeInfo`."
+    )
+    var extraImport: [String] = []
+
     func run() throws {
         let outputRoot = URL(fileURLWithPath: output, isDirectory: true)
         let allowList: Set<String>? = types.map {
@@ -52,7 +59,7 @@ struct SwiftROS2GenCommand: ParsableCommand {
         }
         let files: [GeneratedFile]
         do {
-            files = try Pipeline.generateMulti(runs)
+            files = try Pipeline.generateMulti(runs, extraImports: extraImport)
         } catch let err as GeneratorError {
             FileHandle.standardError.write(Data("error: \(err)\n".utf8))
             throw ExitCode.failure

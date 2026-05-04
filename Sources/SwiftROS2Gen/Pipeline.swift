@@ -65,7 +65,8 @@ public enum Pipeline {
     ///     vendor directories that contain unsupported message types.
     public static func generate(
         for input: PackageInput,
-        typesAllowList: Set<String>? = nil
+        typesAllowList: Set<String>? = nil,
+        extraImports: [String] = []
     ) throws -> [GeneratedFile] {
         let msgDir = input.directory.appendingPathComponent("msg", isDirectory: true)
         var isDir: ObjCBool = false
@@ -118,7 +119,8 @@ public enum Pipeline {
                     sourceLabel: label,
                     isNested: isNested,
                     structNameOverride: nameOverride,
-                    nestedNameOverrides: Pipeline.defaultSwiftNameOverrides
+                    nestedNameOverrides: Pipeline.defaultSwiftNameOverrides,
+                    extraImports: extraImports
                 )
                 let pascalPackage = pascal(input.name)
                 let structName = nameOverride ?? SwiftEmitter.swiftStructName(typeName: typeName)
@@ -186,7 +188,10 @@ extension Pipeline {
     /// ``IRBuilder/build(perDistro:)`` into a single distro-conditional IR.
     /// `unresolvedIRs` then carries one merged IR per `(package, typeName)`
     /// even though the source IDLs come from multiple distros.
-    public static func generateMulti(_ runs: [PackageRun]) throws -> [GeneratedFile] {
+    public static func generateMulti(
+        _ runs: [PackageRun],
+        extraImports: [String] = []
+    ) throws -> [GeneratedFile] {
         var unresolvedIRs: [(run: PackageRun, ir: MessageIR, sourceLabel: String)] = []
         var collectedServices: [ParsedService] = []
         var collectedActions: [ParsedAction] = []
@@ -414,7 +419,8 @@ extension Pipeline {
                 sourceLabel: entry.sourceLabel,
                 isNested: isNested,
                 structNameOverride: nameOverride,
-                nestedNameOverrides: nameOverrides
+                nestedNameOverrides: nameOverrides,
+                extraImports: extraImports
             )
             let pascalPackage = pascal(entry.ir.package)
             let structName =
@@ -448,7 +454,8 @@ extension Pipeline {
                 responseStructName: responseStructName,
                 requestHash: requestHash,
                 responseHash: responseHash,
-                sourceLabel: "\(svc.package)/srv/\(svc.typeName).srv"
+                sourceLabel: "\(svc.package)/srv/\(svc.typeName).srv",
+                extraImports: extraImports
             )
             let pascalPackage = pascal(svc.package)
             results.append(
@@ -471,7 +478,8 @@ extension Pipeline {
             let swift = SwiftEmitter.emit(
                 actionIR,
                 sourceLabel: label,
-                nestedNameOverrides: nameOverrides
+                nestedNameOverrides: nameOverrides,
+                extraImports: extraImports
             )
             let pascalPackage = pascal(act.package)
             results.append(

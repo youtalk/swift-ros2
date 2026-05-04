@@ -36,6 +36,19 @@ struct SwiftROS2GenCommand: ParsableCommand {
     )
     var extraImport: [String] = []
 
+    func validate() throws {
+        // Reject untrusted whitespace / quotes / newlines in --extra-import
+        // before the value is spliced into emitted Swift `import` lines.
+        // ``ModuleIdentifier`` enforces the same rule the Pipeline boundary
+        // re-validates, but surfacing it here lets ArgumentParser print the
+        // CLI usage banner instead of an opaque GeneratorError.
+        for value in extraImport where !ModuleIdentifier.isValid(value) {
+            throw ValidationError(
+                "invalid --extra-import '\(value)' — expected a Swift module identifier (e.g. 'SwiftROS2Messages' or 'My.Nested.Module')"
+            )
+        }
+    }
+
     func run() throws {
         let outputRoot = URL(fileURLWithPath: output, isDirectory: true)
         let allowList: Set<String>? = types.map {

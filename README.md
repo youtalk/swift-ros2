@@ -288,7 +288,7 @@ into your target's directory under `msg/` and add the plugin to the target:
 
 ```swift
 .target(
-    name: "MyMsgs",
+    name: "my_msgs",
     dependencies: [
         .product(name: "SwiftROS2", package: "swift-ros2"),
     ],
@@ -297,6 +297,10 @@ into your target's directory under `msg/` and add the plugin to the target:
     ]
 )
 ```
+
+The plugin uses the SwiftPM target name as the ROS package segment in the
+generated `typeInfo.typeName`, so the target name should match the intended
+ROS 2 package name (snake_case / lowercase) — `my_msgs`, not `MyMsgs`.
 
 The plugin handles the single-package single-distro (jazzy) case. For
 multi-distro merging, multi-package builds, `.srv`, `.action`, or an

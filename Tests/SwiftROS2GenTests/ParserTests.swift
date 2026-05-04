@@ -166,17 +166,65 @@ struct ParserTests {
         }
     }
 
-    @Test("rejects an array suffix (Phase 3 territory)")
-    func rejectsArraySuffix() {
-        do {
-            _ = try Parser.parseMessage(
-                source: "Vector3[] points\n", file: "Polygon.msg", package: "geometry_msgs", typeName: "Polygon"
-            )
-            Issue.record("expected ParseError")
-        } catch let error as ParseError {
-            #expect(error.message.contains("array"))
-        } catch {
-            Issue.record("expected ParseError, got \(error)")
-        }
+    @Test("parses an unbounded same-package nested sequence (formerly Phase 3 territory)")
+    func parsesSamePackageNestedSequence() throws {
+        let file = try Parser.parseMessage(
+            source: "Vector3[] points\n", file: "Polygon.msg", package: "geometry_msgs", typeName: "Polygon"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].name == "points")
+        #expect(file.fields[0].type == .sequence(
+            element: .nested(package: nil, typeName: "Vector3"),
+            upperBound: nil
+        ))
+    }
+
+    @Test("parses fixed-size primitive array")
+    func parsesFixedArray() throws {
+        let file = try Parser.parseMessage(
+            source: "uint8[16] uuid\n",
+            file: "UUID.msg",
+            package: "unique_identifier_msgs",
+            typeName: "UUID"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].name == "uuid")
+        #expect(file.fields[0].type == .array(element: .primitive(.uint8), length: 16))
+    }
+
+    @Test("parses unbounded sequence")
+    func parsesUnboundedSequence() throws {
+        let file = try Parser.parseMessage(
+            source: "GoalStatus[] status_list\n",
+            file: "GoalStatusArray.msg",
+            package: "action_msgs",
+            typeName: "GoalStatusArray"
+        )
+        #expect(file.fields[0].type == .sequence(
+            element: .nested(package: nil, typeName: "GoalStatus"),
+            upperBound: nil
+        ))
+    }
+
+    @Test("parses bounded sequence")
+    func parsesBoundedSequence() throws {
+        let file = try Parser.parseMessage(
+            source: "float32[<=8] data\n",
+            file: "Bounded.msg",
+            package: "fake_pkg",
+            typeName: "Bounded"
+        )
+        #expect(file.fields[0].type == .sequence(element: .primitive(.float32), upperBound: 8))
+    }
+
+    @Test("parses bounded string")
+    func parsesBoundedString() throws {
+        let file = try Parser.parseMessage(
+            source: "string<=255 name\n",
+            file: "Bounded.msg",
+            package: "fake_pkg",
+            typeName: "Bounded"
+        )
+        #expect(file.fields[0].type == .boundedString(isWide: false, upperBound: 255))
     }
 }

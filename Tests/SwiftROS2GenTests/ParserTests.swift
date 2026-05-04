@@ -27,3 +27,15 @@ struct PrimitiveTypeTests {
         #expect(PrimitiveType(rawROS: "") == nil)
     }
 }
+
+@Suite("IDLFile AST")
+struct IDLFileTests {
+    @Test("constructs and round-trips equality")
+    func constructs() {
+        let f = IDLField(name: "data", type: .primitive(.bool), sourceLine: 1)
+        let file = IDLFile(package: "std_msgs", typeName: "Bool", fields: [f])
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].type == .primitive(.bool))
+        #expect(file == IDLFile(package: "std_msgs", typeName: "Bool", fields: [f]))
+    }
+}

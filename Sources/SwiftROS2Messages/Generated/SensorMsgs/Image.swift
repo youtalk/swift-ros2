@@ -43,10 +43,7 @@ public struct Image: ROS2Message, Equatable, Sendable {
         encoder.writeString(encoding)
         encoder.writeUInt8(isBigendian)
         encoder.writeUInt32(step)
-        encoder.writeUInt32(UInt32(data.count))
-        for v in data {
-            encoder.writeUInt8(v)
-        }
+        encoder.writeUInt8Sequence(data)
     }
 
     public init(from decoder: CDRDecoder) throws {
@@ -56,14 +53,6 @@ public struct Image: ROS2Message, Equatable, Sendable {
         self.encoding = try decoder.readString()
         self.isBigendian = try decoder.readUInt8()
         self.step = try decoder.readUInt32()
-        do {
-            let count = try decoder.readSequenceCount()
-            var out: [UInt8] = []
-            out.reserveCapacity(count)
-            for _ in 0..<count {
-                out.append(try decoder.readUInt8())
-            }
-            self.data = out
-        }
+        self.data = Array(try decoder.readUInt8Sequence())
     }
 }

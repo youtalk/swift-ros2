@@ -53,10 +53,7 @@ public struct PointCloud2: ROS2Message, Equatable, Sendable {
         encoder.writeBool(isBigendian)
         encoder.writeUInt32(pointStep)
         encoder.writeUInt32(rowStep)
-        encoder.writeUInt32(UInt32(data.count))
-        for v in data {
-            encoder.writeUInt8(v)
-        }
+        encoder.writeUInt8Sequence(data)
         encoder.writeBool(isDense)
     }
 
@@ -76,15 +73,7 @@ public struct PointCloud2: ROS2Message, Equatable, Sendable {
         self.isBigendian = try decoder.readBool()
         self.pointStep = try decoder.readUInt32()
         self.rowStep = try decoder.readUInt32()
-        do {
-            let count = try decoder.readSequenceCount()
-            var out: [UInt8] = []
-            out.reserveCapacity(count)
-            for _ in 0..<count {
-                out.append(try decoder.readUInt8())
-            }
-            self.data = out
-        }
+        self.data = Array(try decoder.readUInt8Sequence())
         self.isDense = try decoder.readBool()
     }
 }

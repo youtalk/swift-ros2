@@ -1,5 +1,6 @@
 import Foundation
 
+/// Identifies a ROS 2 package directory that the generator should process.
 public struct PackageInput: Sendable {
     public let name: String  // "std_msgs"
     public let directory: URL  // vendor/common_interfaces-jazzy/std_msgs
@@ -10,6 +11,7 @@ public struct PackageInput: Sendable {
     }
 }
 
+/// Errors that the ``Pipeline`` surfaces when generation cannot proceed.
 public enum GeneratorError: Error, CustomStringConvertible {
     case packageDirectoryMissing(URL)
     case parse(ParseError)
@@ -24,6 +26,7 @@ public enum GeneratorError: Error, CustomStringConvertible {
     }
 }
 
+/// A single Swift source file produced by the generator.
 public struct GeneratedFile: Equatable, Sendable {
     public let relativePath: String  // "StdMsgs/BoolMsg.swift"
     public let contents: String
@@ -34,6 +37,7 @@ public struct GeneratedFile: Equatable, Sendable {
     }
 }
 
+/// Orchestrates parsing, IR building, hashing, and emission for a ROS 2 package.
 public enum Pipeline {
     /// Process a single jazzy-distro package and return generated files.
     /// Phase 1: only primitive-typed messages are accepted; everything else
@@ -74,7 +78,8 @@ public enum Pipeline {
                 continue
             }
             let contents = try String(contentsOf: fileURL, encoding: .utf8)
-            let label = "common_interfaces-jazzy/\(input.name)/msg/\(typeName).msg"
+            let parent = input.directory.deletingLastPathComponent().lastPathComponent
+            let label = "\(parent)/\(input.name)/msg/\(typeName).msg"
             do {
                 let idl = try Parser.parseMessage(
                     source: contents,

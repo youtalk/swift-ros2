@@ -9,13 +9,21 @@ import Foundation
 /// 2. Serialize it with `json.dumps(separators=(", ", ": "), sort_keys=False)`.
 /// 3. SHA-256 the UTF-8 bytes and prepend `"RIHS01_"`.
 ///
-/// Phase 1 supports primitive-only messages. Phase 2 (this file) adds support
-/// for nested message references via `referenced_type_descriptions`.
-///
 /// Reference JSON files extracted from `osrf/ros:jazzy-desktop`:
 ///   `/opt/ros/jazzy/share/std_msgs/msg/Empty.json`
 ///   `/opt/ros/jazzy/share/builtin_interfaces/msg/Time.json`
 ///   `/opt/ros/jazzy/share/geometry_msgs/msg/Pose.json`
+///   `/opt/ros/jazzy/share/unique_identifier_msgs/msg/UUID.json`
+///   `/opt/ros/jazzy/share/action_msgs/msg/GoalStatusArray.json`
+///
+/// Phase coverage:
+///   - Phase 1: primitive-only messages.
+///   - Phase 2: nested message references via `referenced_type_descriptions`.
+///   - Phase 3 (this file): fixed-size arrays, bounded/unbounded sequences,
+///     bounded strings. ``ConstantIR`` and ``FieldIR.defaultValue`` are
+///     intentionally **not** consulted — upstream `calculate_type_hash` deletes
+///     `default_value` from every field before SHA-256, and constants never
+///     appear in `serialize_individual_type_description` at all.
 public enum RIHS01 {
 
     // MARK: - Public API
@@ -64,6 +72,16 @@ public enum RIHS01 {
     /// ROS 2 / rosidl injects a sentinel field for structurally-empty messages
     /// (those with zero user-defined fields) to satisfy the IDL requirement that
     /// every struct has at least one member.
+    ///
+    /// Note: ``FieldIR.defaultValue`` is intentionally not consulted. Upstream
+    /// `calculate_type_hash` does:
+    ///   ```python
+    ///   for field in hashable_dict['type_description']['fields']:
+    ///       del field['default_value']
+    ///   ```
+    /// before SHA-256, so the byte stream sees no `default_value` keys at all.
+    /// Constants are likewise absent from `serialize_individual_type_description`
+    /// — ``MessageIR.constants`` is intentionally not consulted here either.
     private static func canonicalFields(_ ir: MessageIR) -> [FieldEntry] {
         if ir.fields.isEmpty {
             // Sentinel field: `uint8 structure_needs_at_least_one_member`
@@ -71,28 +89,98 @@ public enum RIHS01 {
                 FieldEntry(
                     name: "structure_needs_at_least_one_member",
                     typeID: FieldTypeID.uint8,
+                    capacity: 0,
+                    stringCapacity: 0,
                     nestedTypeName: "")
             ]
         }
         return ir.fields.map { field in
-            switch field.type {
-            case .primitive(let prim):
-                return FieldEntry(
-                    name: field.ros2Name,
-                    typeID: FieldTypeID.forPrimitive(prim),
-                    nestedTypeName: "")
-            case .nested(let pkg, let type):
-                return FieldEntry(
-                    name: field.ros2Name,
-                    typeID: FieldTypeID.nestedType,
-                    nestedTypeName: "\(pkg)/msg/\(type)")
+            let resolved = resolve(field.type)
+            return FieldEntry(
+                name: field.ros2Name,
+                typeID: resolved.typeID,
+                capacity: resolved.capacity,
+                stringCapacity: resolved.stringCapacity,
+                nestedTypeName: resolved.nestedTypeName)
+        }
+    }
+
+    /// Decompose a ``FieldType`` into the four canonical slots that rosidl
+    /// emits per field: `(type_id, capacity, string_capacity, nested_type_name)`.
+    ///
+    /// The offsets follow `type_description_interfaces/msg/FieldType.msg`:
+    ///   - Bare type: `value_id` (1..22).
+    ///   - Fixed array `T[N]`: `value_id + 48`, `capacity = N`.
+    ///   - Bounded sequence `T[<=N]`: `value_id + 96`, `capacity = N`.
+    ///   - Unbounded sequence `T[]`: `value_id + 144`, `capacity = 0`.
+    /// `nested_type_name` is the inner element type's full name when the
+    /// element is `.nested(_:_:)`, even when wrapped in array/sequence.
+    /// `string_capacity` is the bound for `string<=N` / `wstring<=N`,
+    /// including arrays/sequences of bounded strings.
+    private static func resolve(_ ft: FieldType) -> ResolvedFieldType {
+        switch ft {
+        case .primitive(let prim):
+            return ResolvedFieldType(
+                typeID: FieldTypeID.forPrimitive(prim),
+                capacity: 0,
+                stringCapacity: 0,
+                nestedTypeName: "")
+        case .nested(let pkg, let type):
+            return ResolvedFieldType(
+                typeID: FieldTypeID.nestedType,
+                capacity: 0,
+                stringCapacity: 0,
+                nestedTypeName: "\(pkg)/msg/\(type)")
+        case .array(let element, let length):
+            let inner = resolve(element)
+            return ResolvedFieldType(
+                typeID: inner.typeID + FieldTypeID.arrayOffset,
+                capacity: length,
+                stringCapacity: inner.stringCapacity,
+                nestedTypeName: inner.nestedTypeName)
+        case .sequence(let element, let upper):
+            let inner = resolve(element)
+            if let upper = upper {
+                return ResolvedFieldType(
+                    typeID: inner.typeID + FieldTypeID.boundedSequenceOffset,
+                    capacity: upper,
+                    stringCapacity: inner.stringCapacity,
+                    nestedTypeName: inner.nestedTypeName)
+            } else {
+                return ResolvedFieldType(
+                    typeID: inner.typeID + FieldTypeID.unboundedSequenceOffset,
+                    capacity: 0,
+                    stringCapacity: inner.stringCapacity,
+                    nestedTypeName: inner.nestedTypeName)
             }
+        case .boundedString(let isWide, let upperBound):
+            return ResolvedFieldType(
+                typeID: isWide ? FieldTypeID.boundedWString : FieldTypeID.boundedString,
+                capacity: 0,
+                stringCapacity: upperBound,
+                nestedTypeName: "")
+        }
+    }
+
+    /// Walk `field.type` to find the nested element it ultimately points at,
+    /// for BFS traversal of `referenced_type_descriptions`. Returns `nil` for
+    /// purely primitive / bounded-string fields.
+    private static func nestedTarget(of ft: FieldType) -> (pkg: String, type: String)? {
+        switch ft {
+        case .primitive, .boundedString:
+            return nil
+        case .nested(let pkg, let type):
+            return (pkg, type)
+        case .array(let element, _):
+            return nestedTarget(of: element)
+        case .sequence(let element, _):
+            return nestedTarget(of: element)
         }
     }
 
     /// BFS the registry from the root, collecting every nested IR exactly once.
     /// The result is sorted by `type_name` (alphabetical) — this matches what
-    /// upstream rosidl emits.
+    /// upstream rosidl emits via `sorted(output_references)`.
     private static func referencedTypeDescriptions(
         rootIR: MessageIR,
         registry: [String: MessageIR]
@@ -107,8 +195,8 @@ public enum RIHS01 {
             let current = queue[idx]
             idx += 1
             for field in current.fields {
-                guard case .nested(let pkg, let type) = field.type else { continue }
-                let key = "\(pkg)/msg/\(type)"
+                guard let target = nestedTarget(of: field.type) else { continue }
+                let key = "\(target.pkg)/msg/\(target.type)"
                 if visited.contains(key) { continue }
                 visited.insert(key)
                 guard let nestedIR = registry[key] else {
@@ -151,8 +239,9 @@ public enum RIHS01 {
 
     private static func renderFields(_ fields: [FieldEntry]) -> String {
         fields.map { f in
-            "{\"name\": \"\(f.name)\", \"type\": {\"type_id\": \(f.typeID), \"capacity\": 0, "
-                + "\"string_capacity\": 0, \"nested_type_name\": \"\(f.nestedTypeName)\"}}"
+            "{\"name\": \"\(f.name)\", \"type\": {\"type_id\": \(f.typeID), "
+                + "\"capacity\": \(f.capacity), \"string_capacity\": \(f.stringCapacity), "
+                + "\"nested_type_name\": \"\(f.nestedTypeName)\"}}"
         }
         .joined(separator: ", ")
     }
@@ -165,6 +254,16 @@ public enum RIHS01 {
 private struct FieldEntry {
     let name: String
     let typeID: Int
+    let capacity: Int
+    let stringCapacity: Int
+    let nestedTypeName: String
+}
+
+/// Result of decomposing a ``FieldType`` into the four canonical slots.
+private struct ResolvedFieldType {
+    let typeID: Int
+    let capacity: Int
+    let stringCapacity: Int
     let nestedTypeName: String
 }
 
@@ -175,12 +274,19 @@ private struct FieldEntry {
 /// `rosidl_generator_type_description.FIELD_TYPE_NAME_TO_ID`.
 ///
 /// Confirmed against `osrf/ros:jazzy-desktop`:
-///   - Nested type fields use `type_id == 1` (NESTED_TYPE), not 48.
-///   - Primitive ids match the `FIELD_TYPE_*` constants in
-///     `type_description_interfaces/msg/FieldType.msg`.
+///   - Nested type fields use `type_id == 1` (NESTED_TYPE).
+///   - Fixed arrays add 48 (e.g. `uint8[16]` => 51, `T[N]` of nested => 49).
+///   - Bounded sequences add 96 (`uint8[<=N]` => 99).
+///   - Unbounded sequences add 144 (`GoalStatus[]` => 145).
 private enum FieldTypeID {
     static let nestedType = 1  // NESTED_TYPE — `<pkg>/msg/<Type>` reference
     static let uint8 = 3  // FIELD_TYPE_UINT8 — used for the Empty sentinel field
+    static let boundedString = 21  // FIELD_TYPE_BOUNDED_STRING
+    static let boundedWString = 22  // FIELD_TYPE_BOUNDED_WSTRING
+
+    static let arrayOffset = 48  // adds to base id => fixed array
+    static let boundedSequenceOffset = 96  // adds to base id => bounded sequence
+    static let unboundedSequenceOffset = 144  // adds to base id => unbounded sequence
 
     static func forPrimitive(_ prim: PrimitiveType) -> Int {
         switch prim {

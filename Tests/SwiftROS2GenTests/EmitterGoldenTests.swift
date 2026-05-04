@@ -119,3 +119,120 @@ struct EmitterNestedGoldenTests {
         #expect(actual == golden)
     }
 }
+
+@Suite("SwiftEmitter golden output for arrays / sequences / constants")
+struct EmitterGoldenPhase3Tests {
+    static func loadGolden(_ name: String) throws -> String {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: name, withExtension: "swift", subdirectory: "Resources/Golden"))
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test("UUID — fixed uint8 array, nested-only, name override")
+    func uuid() throws {
+        let ir = MessageIR(
+            package: "unique_identifier_msgs",
+            typeName: "UUID",
+            fields: [
+                FieldIR(
+                    ros2Name: "uuid", swiftName: "uuid",
+                    type: .array(element: .primitive(.uint8), length: 16))
+            ]
+        )
+        let actual = SwiftEmitter.emit(
+            ir,
+            sourceLabel: "unique_identifier_msgs/msg/UUID.msg",
+            isNested: true,
+            structNameOverride: "UniqueIdentifierUUID",
+            nestedNameOverrides: [:]
+        )
+        let golden = try Self.loadGolden("UUID")
+        #expect(actual == golden)
+    }
+
+    @Test("GoalStatusArray — sequence of nested, top-level message")
+    func goalStatusArray() throws {
+        let ir = MessageIR(
+            package: "action_msgs",
+            typeName: "GoalStatusArray",
+            fields: [
+                FieldIR(
+                    ros2Name: "status_list", swiftName: "statusList",
+                    type: .sequence(
+                        element: .nested(package: "action_msgs", typeName: "GoalStatus"),
+                        upperBound: nil))
+            ],
+            perDistroHashes: [
+                "jazzy": "RIHS01_6c1684b00f177d37438febe6e709fc4e2b0d4248dca4854946f9ed8b30cda83e"
+            ]
+        )
+        let actual = SwiftEmitter.emit(
+            ir,
+            sourceLabel: "action_msgs/msg/GoalStatusArray.msg",
+            isNested: false,
+            structNameOverride: nil,
+            nestedNameOverrides: [:]
+        )
+        let golden = try Self.loadGolden("GoalStatusArray")
+        #expect(actual == golden)
+    }
+
+    @Test("GoalStatus — nested ref + 7 int8 constants")
+    func goalStatus() throws {
+        let names = [
+            "STATUS_UNKNOWN", "STATUS_ACCEPTED", "STATUS_EXECUTING",
+            "STATUS_CANCELING", "STATUS_SUCCEEDED", "STATUS_CANCELED",
+            "STATUS_ABORTED",
+        ]
+        let ir = MessageIR(
+            package: "action_msgs",
+            typeName: "GoalStatus",
+            fields: [
+                FieldIR(
+                    ros2Name: "goal_info", swiftName: "goalInfo",
+                    type: .nested(package: "action_msgs", typeName: "GoalInfo")),
+                FieldIR(
+                    ros2Name: "status", swiftName: "status",
+                    type: .primitive(.int8)),
+            ],
+            constants: names.enumerated().map { i, n in
+                ConstantIR(ros2Name: n, swiftName: n, type: .int8, value: .int(Int64(i)))
+            }
+        )
+        let actual = SwiftEmitter.emit(
+            ir,
+            sourceLabel: "action_msgs/msg/GoalStatus.msg",
+            isNested: true,
+            structNameOverride: nil,
+            nestedNameOverrides: [:]
+        )
+        let golden = try Self.loadGolden("GoalStatus")
+        #expect(actual == golden)
+    }
+
+    @Test("GoalInfo — two nested fields, name overrides for cross-pkg refs")
+    func goalInfo() throws {
+        let ir = MessageIR(
+            package: "action_msgs",
+            typeName: "GoalInfo",
+            fields: [
+                FieldIR(
+                    ros2Name: "goal_id", swiftName: "goalId",
+                    type: .nested(package: "unique_identifier_msgs", typeName: "UUID")),
+                FieldIR(
+                    ros2Name: "stamp", swiftName: "stamp",
+                    type: .nested(package: "builtin_interfaces", typeName: "Time")),
+            ]
+        )
+        let actual = SwiftEmitter.emit(
+            ir,
+            sourceLabel: "action_msgs/msg/GoalInfo.msg",
+            isNested: true,
+            structNameOverride: nil,
+            nestedNameOverrides: ["unique_identifier_msgs/msg/UUID": "UniqueIdentifierUUID"]
+        )
+        let golden = try Self.loadGolden("GoalInfo")
+        #expect(actual == golden)
+    }
+}

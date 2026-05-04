@@ -166,15 +166,136 @@ struct ParserTests {
         }
     }
 
-    @Test("rejects an array suffix (Phase 3 territory)")
-    func rejectsArraySuffix() {
+    @Test("parses an unbounded same-package nested sequence (formerly Phase 3 territory)")
+    func parsesSamePackageNestedSequence() throws {
+        let file = try Parser.parseMessage(
+            source: "Vector3[] points\n", file: "Polygon.msg", package: "geometry_msgs", typeName: "Polygon"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].name == "points")
+        #expect(
+            file.fields[0].type
+                == .sequence(
+                    element: .nested(package: nil, typeName: "Vector3"),
+                    upperBound: nil
+                ))
+    }
+
+    @Test("parses fixed-size primitive array")
+    func parsesFixedArray() throws {
+        let file = try Parser.parseMessage(
+            source: "uint8[16] uuid\n",
+            file: "UUID.msg",
+            package: "unique_identifier_msgs",
+            typeName: "UUID"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].name == "uuid")
+        #expect(file.fields[0].type == .array(element: .primitive(.uint8), length: 16))
+    }
+
+    @Test("parses unbounded sequence")
+    func parsesUnboundedSequence() throws {
+        let file = try Parser.parseMessage(
+            source: "GoalStatus[] status_list\n",
+            file: "GoalStatusArray.msg",
+            package: "action_msgs",
+            typeName: "GoalStatusArray"
+        )
+        #expect(
+            file.fields[0].type
+                == .sequence(
+                    element: .nested(package: nil, typeName: "GoalStatus"),
+                    upperBound: nil
+                ))
+    }
+
+    @Test("parses bounded sequence")
+    func parsesBoundedSequence() throws {
+        let file = try Parser.parseMessage(
+            source: "float32[<=8] data\n",
+            file: "Bounded.msg",
+            package: "fake_pkg",
+            typeName: "Bounded"
+        )
+        #expect(file.fields[0].type == .sequence(element: .primitive(.float32), upperBound: 8))
+    }
+
+    @Test("parses bounded string")
+    func parsesBoundedString() throws {
+        let file = try Parser.parseMessage(
+            source: "string<=255 name\n",
+            file: "Bounded.msg",
+            package: "fake_pkg",
+            typeName: "Bounded"
+        )
+        #expect(file.fields[0].type == .boundedString(isWide: false, upperBound: 255))
+    }
+
+    @Test("parses primitive field with default value")
+    func parsesPrimitiveDefault() throws {
+        let file = try Parser.parseMessage(
+            source: "int32 retries 3\n",
+            file: "Foo.msg",
+            package: "fake_pkg",
+            typeName: "Foo"
+        )
+        #expect(file.fields[0].name == "retries")
+        #expect(file.fields[0].type == .primitive(.int32))
+        #expect(file.fields[0].defaultExpression == "3")
+    }
+
+    @Test("parses fixed array with default value")
+    func parsesArrayDefault() throws {
+        let file = try Parser.parseMessage(
+            source: "float64[3] xyz [1.0, 2.0, 3.0]\n",
+            file: "Foo.msg",
+            package: "fake_pkg",
+            typeName: "Foo"
+        )
+        #expect(file.fields[0].type == .array(element: .primitive(.float64), length: 3))
+        #expect(file.fields[0].defaultExpression == "[1.0, 2.0, 3.0]")
+    }
+
+    @Test("parses int constant")
+    func parsesIntConstant() throws {
+        let file = try Parser.parseMessage(
+            source: "int8 STATUS_UNKNOWN=0\n",
+            file: "GoalStatus.msg",
+            package: "action_msgs",
+            typeName: "GoalStatus"
+        )
+        #expect(file.fields.isEmpty)
+        #expect(file.constants.count == 1)
+        #expect(file.constants[0].name == "STATUS_UNKNOWN")
+        #expect(file.constants[0].type == .int8)
+        #expect(file.constants[0].value == "0")
+    }
+
+    @Test("parses string constant with quoted value")
+    func parsesStringConstant() throws {
+        let file = try Parser.parseMessage(
+            source: "string GREETING=\"hello world\"\n",
+            file: "Foo.msg",
+            package: "fake_pkg",
+            typeName: "Foo"
+        )
+        #expect(file.constants.count == 1)
+        #expect(file.constants[0].value == "\"hello world\"")
+    }
+
+    @Test("rejects trailing characters after array suffix")
+    func rejectsTrailingAfterArray() {
         do {
             _ = try Parser.parseMessage(
-                source: "Vector3[] points\n", file: "Polygon.msg", package: "geometry_msgs", typeName: "Polygon"
+                source: "uint8[16]junk uuid\n",
+                file: "Foo.msg",
+                package: "fake_pkg",
+                typeName: "Foo"
             )
             Issue.record("expected ParseError")
         } catch let error as ParseError {
-            #expect(error.message.contains("array"))
+            #expect(error.message.contains("trailing characters"))
         } catch {
             Issue.record("expected ParseError, got \(error)")
         }

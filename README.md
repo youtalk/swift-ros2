@@ -280,6 +280,29 @@ public struct MyMsg: ROS2Message {
 
 When the planned [`swift-ros2-gen`](#roadmap) code generator lands, hand-written conformances like this become optional — the generator will emit the same shape from `.msg` files automatically.
 
+### Build plugin (SwiftPM)
+
+Phase 7 introduced `SwiftROS2GenPlugin`, a SwiftPM build-tool plugin that
+generates Swift wrappers for ROS 2 `.msg` files at build time. Drop the IDL
+into your target's directory under `msg/` and add the plugin to the target:
+
+```swift
+.target(
+    name: "MyMsgs",
+    dependencies: [
+        .product(name: "SwiftROS2", package: "swift-ros2"),
+    ],
+    plugins: [
+        .plugin(name: "SwiftROS2GenPlugin", package: "swift-ros2"),
+    ]
+)
+```
+
+The plugin handles the single-package single-distro (jazzy) case. For
+multi-distro merging, multi-package builds, `.srv`, `.action`, or an
+explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly
+(see [`CLAUDE.md`](CLAUDE.md) for the full CLI grammar).
+
 ## Versioning
 
 Tags follow Apple-ecosystem bare semver (no `v` prefix): `0.2.0`, `1.0.0-rc.1`, etc. The [release workflow](.github/workflows/release-xcframework.yml) fires on any tag matching `[0-9]*.[0-9]*.[0-9]*` (optionally `-qualifier`), builds both xcframeworks for all six Apple slices (`iphoneos`, `iphonesimulator`, `macosx`, `maccatalyst`, `xros`, `xrsimulator`), and attaches them + `.checksum` files to the GitHub release named after the tag.

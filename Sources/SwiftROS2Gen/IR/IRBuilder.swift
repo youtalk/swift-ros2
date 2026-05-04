@@ -9,6 +9,13 @@ public enum IRBuilder {
                     swiftName: snakeToCamel(field.name),
                     type: .primitive(prim)
                 )
+            case .nested(let pkg, let type):
+                let resolvedPackage = pkg ?? idl.package
+                return FieldIR(
+                    ros2Name: field.name,
+                    swiftName: snakeToCamel(field.name),
+                    type: .nested(package: resolvedPackage, typeName: type)
+                )
             }
         }
         return MessageIR(package: idl.package, typeName: idl.typeName, fields: fields)

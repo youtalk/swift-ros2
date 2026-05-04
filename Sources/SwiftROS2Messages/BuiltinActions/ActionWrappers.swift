@@ -18,7 +18,6 @@ public struct ActionSendGoalRequest<Goal: CDRCodable & Sendable>: CDRCodable, Se
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try goalId.encode(to: encoder)
         try goal.encode(to: encoder)
     }
@@ -42,7 +41,6 @@ public struct ActionSendGoalResponse: CDRCodable, Sendable, Equatable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeBool(accepted)
         try stamp.encode(to: encoder)
     }
@@ -64,7 +62,6 @@ public struct ActionGetResultRequest: CDRCodable, Sendable, Equatable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try goalId.encode(to: encoder)
     }
 
@@ -86,7 +83,6 @@ public struct ActionGetResultResponse<Result: CDRCodable & Sendable>: CDRCodable
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeInt8(status)
         try result.encode(to: encoder)
     }
@@ -110,7 +106,6 @@ public struct ActionFeedbackMessage<Feedback: CDRCodable & Sendable>: CDRCodable
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try goalId.encode(to: encoder)
         try feedback.encode(to: encoder)
     }

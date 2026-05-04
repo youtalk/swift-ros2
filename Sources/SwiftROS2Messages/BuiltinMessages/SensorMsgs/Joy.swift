@@ -21,7 +21,6 @@ public struct Joy: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         encoder.writeFloat32Sequence(axes)
         encoder.writeInt32Sequence(buttons)

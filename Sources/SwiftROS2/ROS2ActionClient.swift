@@ -48,6 +48,7 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, ActionC
         let goalIdBytes = Self.uuidBytes(goalUUID)
 
         let encoder = CDREncoder(isLegacySchema: isLegacySchema)
+        encoder.writeEncapsulationHeader()
         do {
             try goal.encode(to: encoder)
         } catch {

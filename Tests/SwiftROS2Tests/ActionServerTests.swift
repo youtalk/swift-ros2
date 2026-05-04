@@ -66,6 +66,7 @@ final class ActionServerTests: XCTestCase {
         // Drive a goal through the captured handlers.
         let goalId = [UInt8](repeating: 0xAA, count: 16)
         let encoder = CDREncoder(isLegacySchema: false)
+        encoder.writeEncapsulationHeader()
         try FibonacciAction.Goal(order: 5).encode(to: encoder)
         let goalCDR = encoder.getData()
 
@@ -107,6 +108,7 @@ final class ActionServerTests: XCTestCase {
         )
         let goalId = [UInt8](repeating: 0xBB, count: 16)
         let encoder = CDREncoder(isLegacySchema: false)
+        encoder.writeEncapsulationHeader()
         try FibonacciAction.Goal(order: 5).encode(to: encoder)
         let (accepted, _, _) = try await captured.handlers!.onSendGoal(goalId, encoder.getData())
         XCTAssertFalse(accepted)

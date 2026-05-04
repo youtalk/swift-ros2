@@ -10,6 +10,7 @@ final class StdSrvsRoundTripTests: XCTestCase {
     func testEmptyRequestRoundTrip() throws {
         let request = EmptySrv.Request()
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try request.encode(to: encoder)
         let bytes = encoder.getData()
 
@@ -24,6 +25,7 @@ final class StdSrvsRoundTripTests: XCTestCase {
     func testEmptyResponseRoundTrip() throws {
         let response = EmptySrv.Response()
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try response.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         _ = try EmptySrv.Response(from: decoder)
@@ -32,6 +34,7 @@ final class StdSrvsRoundTripTests: XCTestCase {
     func testTriggerRequestRoundTrip() throws {
         let request = TriggerSrv.Request()
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try request.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         _ = try TriggerSrv.Request(from: decoder)
@@ -40,6 +43,7 @@ final class StdSrvsRoundTripTests: XCTestCase {
     func testTriggerResponseRoundTripSuccessTrue() throws {
         let response = TriggerSrv.Response(success: true, message: "ok")
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try response.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try TriggerSrv.Response(from: decoder)
@@ -50,6 +54,7 @@ final class StdSrvsRoundTripTests: XCTestCase {
     func testTriggerResponseRoundTripSuccessFalseEmptyMessage() throws {
         let response = TriggerSrv.Response(success: false, message: "")
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try response.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try TriggerSrv.Response(from: decoder)
@@ -61,6 +66,7 @@ final class StdSrvsRoundTripTests: XCTestCase {
         for value in [true, false] {
             let request = SetBoolSrv.Request(data: value)
             let encoder = CDREncoder()
+            encoder.writeEncapsulationHeader()
             try request.encode(to: encoder)
             let decoder = try CDRDecoder(data: encoder.getData())
             let decoded = try SetBoolSrv.Request(from: decoder)
@@ -71,6 +77,7 @@ final class StdSrvsRoundTripTests: XCTestCase {
     func testSetBoolResponseRoundTrip() throws {
         let response = SetBoolSrv.Response(success: true, message: "applied")
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try response.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try SetBoolSrv.Response(from: decoder)

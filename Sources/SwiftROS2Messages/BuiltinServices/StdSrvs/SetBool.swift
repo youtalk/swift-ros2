@@ -29,7 +29,6 @@ public enum SetBoolSrv: ROS2ServiceType {
         }
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             encoder.writeBool(data)
         }
 
@@ -53,7 +52,6 @@ public enum SetBoolSrv: ROS2ServiceType {
         }
 
         public func encode(to encoder: CDREncoder) throws {
-            encoder.writeEncapsulationHeader()
             encoder.writeBool(success)
             encoder.writeString(message)
         }

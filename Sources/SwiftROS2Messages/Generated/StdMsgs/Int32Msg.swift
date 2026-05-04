@@ -17,7 +17,6 @@ public struct Int32Msg: ROS2Message, Equatable, Sendable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeInt32(data)
     }
 

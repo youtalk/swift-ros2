@@ -97,6 +97,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let data = encoder.getData()
 
@@ -119,6 +120,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -139,6 +141,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -157,6 +160,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -174,6 +178,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -189,6 +194,7 @@ final class MessageRoundTripTests: XCTestCase {
         let original = StringMsg(data: "Hello, ROS 2!")
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -201,6 +207,7 @@ final class MessageRoundTripTests: XCTestCase {
         let original = BoolMsg(data: true)
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -211,6 +218,7 @@ final class MessageRoundTripTests: XCTestCase {
 
     func testEmptyMsgRoundTrip() throws {
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try EmptyMsg().encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -231,6 +239,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -265,6 +274,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try Image(from: decoder)
@@ -291,6 +301,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try PointCloud2(from: decoder)
@@ -313,6 +324,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try BatteryState(from: decoder)
@@ -332,6 +344,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try Joy(from: decoder)
@@ -349,6 +362,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try Range(from: decoder)
@@ -367,10 +381,12 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let legacyEncoder = CDREncoder(isLegacySchema: true)
+        legacyEncoder.writeEncapsulationHeader()
         try original.encode(to: legacyEncoder)
         let legacyBytes = legacyEncoder.getData()
 
         let modernEncoder = CDREncoder()
+        modernEncoder.writeEncapsulationHeader()
         try original.encode(to: modernEncoder)
         let modernBytes = modernEncoder.getData()
 
@@ -393,6 +409,7 @@ final class MessageRoundTripTests: XCTestCase {
         let original = AudioData(data: audioBytes)
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try AudioData(from: decoder)
@@ -408,6 +425,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try MagneticField(from: decoder)
@@ -428,6 +446,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
         let decoder = try CDRDecoder(data: encoder.getData())
         let decoded = try NavSatFix(from: decoder)
@@ -448,6 +467,7 @@ final class MessageRoundTripTests: XCTestCase {
         let original = TFMessage(transforms: [])
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -477,6 +497,7 @@ final class MessageRoundTripTests: XCTestCase {
         ])
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -560,6 +581,7 @@ final class MessageRoundTripTests: XCTestCase {
         let original = CameraInfo()
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -592,6 +614,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -628,6 +651,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try original.encode(to: encoder)
 
         let decoder = try CDRDecoder(data: encoder.getData())
@@ -669,6 +693,7 @@ final class MessageRoundTripTests: XCTestCase {
         )
 
         let encoder = CDREncoder()
+        encoder.writeEncapsulationHeader()
         try message.encode(to: encoder)
         let bytes = encoder.getData()
 

@@ -17,7 +17,6 @@ public struct Float64Msg: ROS2Message, Equatable, Sendable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeFloat64(data)
     }
 

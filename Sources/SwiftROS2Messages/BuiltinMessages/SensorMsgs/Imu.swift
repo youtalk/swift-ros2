@@ -20,7 +20,7 @@ public struct Imu: ROS2Message, Equatable {
 
     public init(
         header: Header = Header(),
-        orientation: Quaternion = Quaternion(),
+        orientation: Quaternion = .identity,
         orientationCovariance: [Double] = CovarianceConstants.unknownCovariance3x3(),
         angularVelocity: Vector3 = Vector3(),
         angularVelocityCovariance: [Double] = CovarianceConstants.unknownCovariance3x3(),
@@ -37,7 +37,6 @@ public struct Imu: ROS2Message, Equatable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         try orientation.encode(to: encoder)
         encoder.writeFloat64Array(orientationCovariance)

@@ -17,7 +17,6 @@ public struct TFMessage: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeUInt32(UInt32(transforms.count))
         for tf in transforms {
             // Inline serialization (no encapsulation header per element)

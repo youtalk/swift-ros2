@@ -156,6 +156,7 @@ public final class ROS2Node: @unchecked Sendable {
             }
             let typedResponse = try await handler(typedRequest)
             let encoder = CDREncoder(isLegacySchema: isLegacy)
+            encoder.writeEncapsulationHeader()
             do {
                 try typedResponse.encode(to: encoder)
             } catch {

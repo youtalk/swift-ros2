@@ -56,23 +56,66 @@ struct EmitterGoldenTests {
     }
 }
 
-@Suite("Pipeline end-to-end on curated std_msgs fixture")
-struct PipelineEndToEndTests {
-    @Test("generates all 5 std_msgs primitive wrappers from a curated fixture")
-    func generatesAllStdMsgs() throws {
-        let fixtureURL = try #require(
-            Bundle.module.url(forResource: "std_msgs", withExtension: nil, subdirectory: "Resources/IDL")
+@Suite("SwiftEmitter golden output — Phase 2 nested types")
+struct EmitterNestedGoldenTests {
+    @Test("emits Vector3 (no nested deps)")
+    func emitsVector3() throws {
+        let ir = MessageIR(
+            package: "geometry_msgs",
+            typeName: "Vector3",
+            fields: [
+                FieldIR(ros2Name: "x", swiftName: "x", type: .primitive(.float64)),
+                FieldIR(ros2Name: "y", swiftName: "y", type: .primitive(.float64)),
+                FieldIR(ros2Name: "z", swiftName: "z", type: .primitive(.float64)),
+            ],
+            perDistroHashes: ["jazzy": NestedHashGoldenTests.vector3Hash]
         )
-        let files = try Pipeline.generate(for: PackageInput(name: "std_msgs", directory: fixtureURL))
-        let names = Set(files.map(\.relativePath))
-        #expect(
-            names
-                == Set([
-                    "StdMsgs/BoolMsg.swift",
-                    "StdMsgs/EmptyMsg.swift",
-                    "StdMsgs/Float64Msg.swift",
-                    "StdMsgs/Int32Msg.swift",
-                    "StdMsgs/StringMsg.swift",
-                ]))
+        let actual = SwiftEmitter.emit(ir, sourceLabel: "common_interfaces-jazzy/geometry_msgs/msg/Vector3.msg")
+        let goldenURL = try #require(
+            Bundle.module.url(forResource: "Vector3", withExtension: "swift", subdirectory: "Resources/Golden"))
+        let golden = try String(contentsOf: goldenURL, encoding: .utf8)
+        #expect(actual == golden)
+    }
+
+    @Test("emits Pose (same-package nested deps)")
+    func emitsPose() throws {
+        let ir = MessageIR(
+            package: "geometry_msgs",
+            typeName: "Pose",
+            fields: [
+                FieldIR(
+                    ros2Name: "position", swiftName: "position",
+                    type: .nested(package: "geometry_msgs", typeName: "Point")),
+                FieldIR(
+                    ros2Name: "orientation", swiftName: "orientation",
+                    type: .nested(package: "geometry_msgs", typeName: "Quaternion")),
+            ],
+            perDistroHashes: ["jazzy": NestedHashGoldenTests.poseHash]
+        )
+        let actual = SwiftEmitter.emit(ir, sourceLabel: "common_interfaces-jazzy/geometry_msgs/msg/Pose.msg")
+        let goldenURL = try #require(
+            Bundle.module.url(forResource: "Pose", withExtension: "swift", subdirectory: "Resources/Golden"))
+        let golden = try String(contentsOf: goldenURL, encoding: .utf8)
+        #expect(actual == golden)
+    }
+
+    @Test("emits Header (cross-package nested dep on Time)")
+    func emitsHeader() throws {
+        let ir = MessageIR(
+            package: "std_msgs",
+            typeName: "Header",
+            fields: [
+                FieldIR(
+                    ros2Name: "stamp", swiftName: "stamp",
+                    type: .nested(package: "builtin_interfaces", typeName: "Time")),
+                FieldIR(ros2Name: "frame_id", swiftName: "frameId", type: .primitive(.string)),
+            ],
+            perDistroHashes: ["jazzy": NestedHashGoldenTests.headerHash]
+        )
+        let actual = SwiftEmitter.emit(ir, sourceLabel: "common_interfaces-jazzy/std_msgs/msg/Header.msg")
+        let goldenURL = try #require(
+            Bundle.module.url(forResource: "Header", withExtension: "swift", subdirectory: "Resources/Golden"))
+        let golden = try String(contentsOf: goldenURL, encoding: .utf8)
+        #expect(actual == golden)
     }
 }

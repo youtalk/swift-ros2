@@ -34,31 +34,35 @@ struct SwiftROS2GenCommand: ParsableCommand {
         let allowList: Set<String>? = types.map {
             Set($0.split(separator: ",").map(String.init))
         }
+        var runs: [Pipeline.PackageRun] = []
         for raw in input {
             let pkg = try parseInput(raw)
-            // Phase 1 ignores entries that are not @jazzy.
+            // Phase 2 still only consumes @jazzy entries.
             guard pkg.distro == "jazzy" else { continue }
-            do {
-                let files = try Pipeline.generate(
-                    for: PackageInput(name: pkg.packageName, directory: pkg.directory),
+            runs.append(
+                .init(
+                    input: PackageInput(name: pkg.packageName, directory: pkg.directory),
                     typesAllowList: allowList
+                ))
+        }
+        let files: [GeneratedFile]
+        do {
+            files = try Pipeline.generateMulti(runs)
+        } catch let err as GeneratorError {
+            FileHandle.standardError.write(Data("error: \(err)\n".utf8))
+            throw ExitCode.failure
+        }
+        for file in files {
+            let absolute = outputRoot.appendingPathComponent(file.relativePath)
+            if dryRun {
+                FileHandle.standardOutput.write(
+                    Data("WRITE \(absolute.path) (\(file.contents.utf8.count) bytes)\n".utf8))
+            } else {
+                try FileManager.default.createDirectory(
+                    at: absolute.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
                 )
-                for file in files {
-                    let absolute = outputRoot.appendingPathComponent(file.relativePath)
-                    if dryRun {
-                        FileHandle.standardOutput.write(
-                            Data("WRITE \(absolute.path) (\(file.contents.utf8.count) bytes)\n".utf8))
-                    } else {
-                        try FileManager.default.createDirectory(
-                            at: absolute.deletingLastPathComponent(),
-                            withIntermediateDirectories: true
-                        )
-                        try file.contents.write(to: absolute, atomically: true, encoding: .utf8)
-                    }
-                }
-            } catch let err as GeneratorError {
-                FileHandle.standardError.write(Data("error in \(pkg.packageName): \(err)\n".utf8))
-                throw ExitCode.failure
+                try file.contents.write(to: absolute, atomically: true, encoding: .utf8)
             }
         }
     }

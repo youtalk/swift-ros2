@@ -24,8 +24,12 @@ public struct IDLField: Equatable, Sendable {
     }
 }
 
-/// The type of a field as parsed from the `.msg` source (Phase 1: primitives only).
+/// The type of a field as parsed from the `.msg` source.
 public enum IDLFieldType: Equatable, Sendable {
     case primitive(PrimitiveType)
-    // Nested + array variants intentionally omitted in Phase 1.
+    /// A reference to another message type. `package == nil` means "same package as the
+    /// declaring message" — the IR builder resolves it. `package != nil` is a fully
+    /// qualified reference such as `std_msgs/Header`.
+    case nested(package: String?, typeName: String)
+    // Array variants intentionally omitted in Phase 2.
 }

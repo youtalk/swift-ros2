@@ -22,7 +22,6 @@ public struct CompressedImage: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         encoder.writeString(format)
         encoder.writeUInt8Sequence(data)

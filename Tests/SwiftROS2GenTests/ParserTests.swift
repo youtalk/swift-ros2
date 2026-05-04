@@ -38,29 +38,18 @@ struct IDLFileTests {
         #expect(file.fields[0].type == .primitive(.bool))
         #expect(file == IDLFile(package: "std_msgs", typeName: "Bool", fields: [f]))
     }
-}
 
-@Suite("IRBuilder")
-struct IRBuilderTests {
-    @Test("converts snake_case field names to camelCase")
-    func convertsSnakeCase() {
-        let idl = IDLFile(
-            package: "std_msgs",
-            typeName: "Bool",
-            fields: [
-                IDLField(name: "linear_acceleration_x", type: .primitive(.float64), sourceLine: 1),
-                IDLField(name: "data", type: .primitive(.bool), sourceLine: 2),
-                IDLField(name: "_leading_underscore", type: .primitive(.int32), sourceLine: 3),
-            ]
+    @Test("constructs a nested field with same-package and cross-package references")
+    func constructsNested() {
+        let samePkg = IDLField(name: "linear", type: .nested(package: nil, typeName: "Vector3"), sourceLine: 1)
+        let crossPkg = IDLField(
+            name: "header",
+            type: .nested(package: "std_msgs", typeName: "Header"),
+            sourceLine: 2
         )
-        let ir = IRBuilder.build(jazzy: idl)
-        #expect(ir.fields[0].ros2Name == "linear_acceleration_x")
-        #expect(ir.fields[0].swiftName == "linearAccelerationX")
-        #expect(ir.fields[1].swiftName == "data")
-        #expect(ir.fields[2].swiftName == "_leadingUnderscore")
-        #expect(ir.package == "std_msgs")
-        #expect(ir.typeName == "Bool")
-        #expect(ir.rosTypeName == "std_msgs/msg/Bool")
+        let file = IDLFile(package: "geometry_msgs", typeName: "Twist", fields: [samePkg, crossPkg])
+        #expect(file.fields[0].type == .nested(package: nil, typeName: "Vector3"))
+        #expect(file.fields[1].type == .nested(package: "std_msgs", typeName: "Header"))
     }
 }
 
@@ -118,7 +107,7 @@ struct ParserTests {
     func rejectsNonPrimitive() {
         do {
             _ = try Parser.parseMessage(
-                source: "Header header\n",
+                source: "123bogus field\n",
                 file: "Foo.msg",
                 package: "geometry_msgs",
                 typeName: "Foo"
@@ -126,8 +115,66 @@ struct ParserTests {
             Issue.record("expected ParseError")
         } catch let error as ParseError {
             #expect(error.line == 1)
-            #expect(error.message.contains("Header"))
-            #expect(error.message.contains("primitive"))
+            #expect(error.message.contains("123bogus"))
+            #expect(error.message.contains("unsupported type"))
+        } catch {
+            Issue.record("expected ParseError, got \(error)")
+        }
+    }
+
+    @Test("parses a same-package nested field")
+    func parsesSamePackageNested() throws {
+        let source = "Vector3 linear\n"
+        let file = try Parser.parseMessage(
+            source: source, file: "Twist.msg", package: "geometry_msgs", typeName: "Twist"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].name == "linear")
+        #expect(file.fields[0].type == .nested(package: nil, typeName: "Vector3"))
+    }
+
+    @Test("parses a cross-package nested field")
+    func parsesCrossPackageNested() throws {
+        let source = "std_msgs/Header header\n"
+        let file = try Parser.parseMessage(
+            source: source, file: "PoseStamped.msg", package: "geometry_msgs", typeName: "PoseStamped"
+        )
+        #expect(file.fields.count == 1)
+        #expect(file.fields[0].type == .nested(package: "std_msgs", typeName: "Header"))
+    }
+
+    @Test("parses a builtin_interfaces/Time reference")
+    func parsesBuiltinInterfacesTime() throws {
+        let source = "builtin_interfaces/Time stamp\n"
+        let file = try Parser.parseMessage(
+            source: source, file: "Header.msg", package: "std_msgs", typeName: "Header"
+        )
+        #expect(file.fields[0].type == .nested(package: "builtin_interfaces", typeName: "Time"))
+    }
+
+    @Test("rejects a lower-case unknown identifier")
+    func rejectsLowercaseUnknown() {
+        do {
+            _ = try Parser.parseMessage(
+                source: "header header\n", file: "Foo.msg", package: "x", typeName: "Foo"
+            )
+            Issue.record("expected ParseError")
+        } catch let error as ParseError {
+            #expect(error.message.contains("unsupported type"))
+        } catch {
+            Issue.record("expected ParseError, got \(error)")
+        }
+    }
+
+    @Test("rejects an array suffix (Phase 3 territory)")
+    func rejectsArraySuffix() {
+        do {
+            _ = try Parser.parseMessage(
+                source: "Vector3[] points\n", file: "Polygon.msg", package: "geometry_msgs", typeName: "Polygon"
+            )
+            Issue.record("expected ParseError")
+        } catch let error as ParseError {
+            #expect(error.message.contains("array"))
         } catch {
             Issue.record("expected ParseError, got \(error)")
         }

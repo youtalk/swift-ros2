@@ -18,7 +18,6 @@ public struct GoalStatusArray: ROS2Message, Sendable, Equatable {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         encoder.writeUInt32(UInt32(statusList.count))
         for s in statusList {
             try s.encode(to: encoder)

@@ -42,7 +42,6 @@ public struct Range: ROS2Message {
     }
 
     public func encode(to encoder: CDREncoder) throws {
-        encoder.writeEncapsulationHeader()
         try header.encode(to: encoder)
         encoder.writeUInt8(radiationType)
         encoder.writeFloat32(fieldOfView)

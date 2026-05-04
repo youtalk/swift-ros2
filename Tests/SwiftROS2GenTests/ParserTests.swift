@@ -1,0 +1,29 @@
+import Testing
+
+@testable import SwiftROS2Gen
+
+@Suite("PrimitiveType")
+struct PrimitiveTypeTests {
+    @Test("parses every ROS 2 primitive name")
+    func parsesEveryPrimitive() {
+        let pairs: [(String, PrimitiveType)] = [
+            ("bool", .bool), ("byte", .byte), ("char", .char),
+            ("int8", .int8), ("uint8", .uint8),
+            ("int16", .int16), ("uint16", .uint16),
+            ("int32", .int32), ("uint32", .uint32),
+            ("int64", .int64), ("uint64", .uint64),
+            ("float32", .float32), ("float64", .float64),
+            ("string", .string), ("wstring", .wstring),
+        ]
+        for (raw, expected) in pairs {
+            #expect(PrimitiveType(rawROS: raw) == expected, "mismatch for \(raw)")
+        }
+    }
+
+    @Test("returns nil for non-primitive identifiers")
+    func returnsNilForNonPrimitive() {
+        #expect(PrimitiveType(rawROS: "Header") == nil)
+        #expect(PrimitiveType(rawROS: "geometry_msgs/Vector3") == nil)
+        #expect(PrimitiveType(rawROS: "") == nil)
+    }
+}

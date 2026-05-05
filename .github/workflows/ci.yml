@@ -23,6 +23,34 @@ jobs:
       - name: Lint
         run: swift format lint --recursive --strict --configuration .swift-format Package.swift Sources Tests
 
+  lint-link-only-imports:
+    name: Lint (link-only C targets — never import from Swift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject `import CZenohPico` / `import CCycloneDDS`
+        # CZenohPico and CCycloneDDS are link-only binary targets — they
+        # are consumed at the C level by CZenohBridge / CDDSBridge with
+        # platform-specific cSettings defines applied. On Apple, the
+        # `.xcframework`'s auto-synthesised modulemap means a stray
+        # `import CZenohPico` in Swift compiles silently; on Linux the
+        # source-build path has no synthesised modulemap, so the same
+        # import would fail there. Catch it at lint time across all
+        # platforms instead of letting one CI matrix entry fail
+        # confusingly. See https://github.com/youtalk/swift-ros2/issues/26.
+        #
+        # Pattern uses `grep -P` (PCRE) rather than `grep -E` so `\b`
+        # is the well-defined word-boundary it looks like, not the
+        # POSIX-ERE backspace escape (a GNU extension at best).
+        run: |
+          set -euo pipefail
+          if grep -rPn '^import C(ZenohPico|CycloneDDS)\b' Sources Tests; then
+            echo
+            echo "::error::Found a Swift `import` of a link-only C target above."
+            echo "::error::Use `import SwiftROS2Zenoh` / `import SwiftROS2DDS` to reach the bridges."
+            exit 1
+          fi
+
   build-macos:
     name: Build & Test (macOS)
     needs: [lint-swift-format]

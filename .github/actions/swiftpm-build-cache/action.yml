@@ -33,13 +33,25 @@ runs:
         # every cache entry — exactly the desired behavior because their
         # contents feed into swift build (zenoh-pico C source) and the
         # phase-7 build plugin (IDL inputs).
-        # `shasum -a 256` (BSD) is portable across macOS / Linux / Git Bash
-        # on Windows; `sha256sum` (GNU coreutils) is not part of macOS base.
+        # GitHub runner SHA-256 utility availability:
+        #   - Linux: `sha256sum` (GNU coreutils), no `shasum`.
+        #   - macOS: both `sha256sum` (Homebrew coreutils preinstalled)
+        #            and `shasum` (BSD, ships with the OS).
+        #   - Windows (Git Bash): `sha256sum` (msysgit), no `shasum`.
+        # `sha256sum` is the only one available on all three.
+        if command -v sha256sum >/dev/null 2>&1; then
+          HASH_CMD="sha256sum"
+        elif command -v shasum >/dev/null 2>&1; then
+          HASH_CMD="shasum -a 256"
+        else
+          echo "ERROR: no SHA-256 utility available on PATH" >&2
+          exit 1
+        fi
         DIGEST=$(git submodule status --recursive 2>/dev/null \
           | awk '{print $1}' \
           | tr -d ' -+' \
           | sort \
-          | shasum -a 256 \
+          | $HASH_CMD \
           | awk '{print $1}' \
           | cut -c1-16)
         if [[ -z "$DIGEST" ]]; then

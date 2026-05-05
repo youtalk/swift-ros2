@@ -163,6 +163,7 @@ var products: [Product] = [
     .library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]),
     .library(name: "SwiftROS2Gen", targets: ["SwiftROS2Gen"]),
     .executable(name: "swift-ros2-gen", targets: ["swift-ros2-gen"]),
+    .plugin(name: "SwiftROS2GenPlugin", targets: ["SwiftROS2GenPlugin"]),
 ]
 
 var targets: [Target] = [
@@ -276,6 +277,42 @@ var targets: [Target] = [
         dependencies: ["SwiftROS2Gen"],
         path: "Tests/SwiftROS2GenTests",
         resources: [.copy("Resources")]
+    ),
+
+    // SwiftPM build-tool plugin — invokes swift-ros2-gen on a downstream
+    // target's msg/ directory. Intentionally thin: handles only the
+    // single-package single-distro (jazzy) common case. Multi-distro,
+    // multi-package, .srv, and .action callers drop back to the CLI.
+    .plugin(
+        name: "SwiftROS2GenPlugin",
+        capability: .buildTool(),
+        dependencies: [
+            .target(name: "swift-ros2-gen")
+        ],
+        path: "Plugins/SwiftROS2GenPlugin"
+    ),
+
+    // Smoke target proving end-to-end SwiftROS2GenPlugin invocation:
+    // the plugin generates a Swift wrapper for `msg/Bool.msg` at build
+    // time, and `main.swift` prints the resulting type's typeInfo.
+    .executableTarget(
+        name: "PluginSmoke",
+        dependencies: ["SwiftROS2CDR", "SwiftROS2Messages"],
+        path: "Sources/Examples/PluginSmoke",
+        exclude: ["msg"],
+        plugins: [
+            .plugin(name: "SwiftROS2GenPlugin")
+        ]
+    ),
+
+    // Unit tests for the SwiftROS2GenPlugin static naming helper. SwiftPM
+    // does not expose plugin module sources to test targets, so the
+    // helper is duplicated into the test file as a literal copy. If the
+    // plugin's naming rule changes, both copies must change in lockstep.
+    .testTarget(
+        name: "SwiftROS2GenPluginTests",
+        dependencies: [],
+        path: "Tests/SwiftROS2GenPluginTests"
     ),
 ]
 

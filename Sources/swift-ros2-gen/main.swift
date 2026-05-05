@@ -29,6 +29,26 @@ struct SwiftROS2GenCommand: ParsableCommand {
     @Flag(name: .long, help: "Print what would be written; do not touch the filesystem.")
     var dryRun: Bool = false
 
+    @Option(
+        name: .long,
+        help:
+            "Repeatable. Additional `import <Module>` statement(s) to inject into every emitted Swift file. Used by SwiftROS2GenPlugin so generated files compiled outside the SwiftROS2Messages module can resolve `ROS2Message` / `ROS2MessageTypeInfo`."
+    )
+    var extraImport: [String] = []
+
+    func validate() throws {
+        // Reject untrusted whitespace / quotes / newlines in --extra-import
+        // before the value is spliced into emitted Swift `import` lines.
+        // ``ModuleIdentifier`` enforces the same rule the Pipeline boundary
+        // re-validates, but surfacing it here lets ArgumentParser print the
+        // CLI usage banner instead of an opaque GeneratorError.
+        for value in extraImport where !ModuleIdentifier.isValid(value) {
+            throw ValidationError(
+                "invalid --extra-import '\(value)' — expected a Swift module identifier (e.g. 'SwiftROS2Messages' or 'My.Nested.Module')"
+            )
+        }
+    }
+
     func run() throws {
         let outputRoot = URL(fileURLWithPath: output, isDirectory: true)
         let allowList: Set<String>? = types.map {
@@ -52,7 +72,7 @@ struct SwiftROS2GenCommand: ParsableCommand {
         }
         let files: [GeneratedFile]
         do {
-            files = try Pipeline.generateMulti(runs)
+            files = try Pipeline.generateMulti(runs, extraImports: extraImport)
         } catch let err as GeneratorError {
             FileHandle.standardError.write(Data("error: \(err)\n".utf8))
             throw ExitCode.failure

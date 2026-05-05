@@ -21,6 +21,7 @@ public enum GeneratorError: Error, CustomStringConvertible {
     case packageDirectoryMissing(URL)
     case parse(ParseError)
     case unresolvedNestedType(package: String, typeName: String)
+    case invalidExtraImport(String)
 
     public var description: String {
         switch self {
@@ -31,6 +32,54 @@ public enum GeneratorError: Error, CustomStringConvertible {
         case .unresolvedNestedType(let pkg, let type):
             return
                 "unresolved nested type '\(pkg)/\(type)' — pass a --input for '\(pkg)' on the same CLI invocation"
+        case .invalidExtraImport(let value):
+            return
+                "invalid --extra-import '\(value)' — expected a Swift module identifier (e.g. 'SwiftROS2Messages' or 'My.Nested.Module')"
+        }
+    }
+}
+
+/// Module-name validation shared by the CLI and the `Pipeline` so untrusted
+/// user input cannot be spliced verbatim into emitted `import` lines. A valid
+/// module identifier matches `[A-Za-z_][A-Za-z0-9_]*`, optionally dotted for
+/// nested modules (e.g. `Foo.Bar`). Whitespace, quotes, and newlines are all
+/// rejected.
+public enum ModuleIdentifier {
+    /// Returns `true` when `value` is a syntactically valid Swift module
+    /// identifier (single segment or dotted). Empty strings are rejected.
+    public static func isValid(_ value: String) -> Bool {
+        guard !value.isEmpty else { return false }
+        let segments = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard !segments.isEmpty else { return false }
+        for segment in segments {
+            if segment.isEmpty { return false }
+            let scalars = segment.unicodeScalars
+            guard let first = scalars.first else { return false }
+            let isHeadValid =
+                (first.value >= 0x41 && first.value <= 0x5A)  // A-Z
+                || (first.value >= 0x61 && first.value <= 0x7A)  // a-z
+                || first == "_"
+            if !isHeadValid { return false }
+            for scalar in scalars.dropFirst() {
+                let isTailValid =
+                    (scalar.value >= 0x41 && scalar.value <= 0x5A)  // A-Z
+                    || (scalar.value >= 0x61 && scalar.value <= 0x7A)  // a-z
+                    || (scalar.value >= 0x30 && scalar.value <= 0x39)  // 0-9
+                    || scalar == "_"
+                if !isTailValid { return false }
+            }
+        }
+        return true
+    }
+
+    /// Throws ``GeneratorError/invalidExtraImport(_:)`` for any entry that
+    /// isn't a valid module identifier. Called by the `Pipeline` boundary so
+    /// `extraImports` can be trusted by the emitter even when the CLI
+    /// validation layer is bypassed (e.g. when `Pipeline` is invoked directly
+    /// from a unit test).
+    public static func validateAll(_ values: [String]) throws {
+        for value in values where !isValid(value) {
+            throw GeneratorError.invalidExtraImport(value)
         }
     }
 }
@@ -65,8 +114,10 @@ public enum Pipeline {
     ///     vendor directories that contain unsupported message types.
     public static func generate(
         for input: PackageInput,
-        typesAllowList: Set<String>? = nil
+        typesAllowList: Set<String>? = nil,
+        extraImports: [String] = []
     ) throws -> [GeneratedFile] {
+        try ModuleIdentifier.validateAll(extraImports)
         let msgDir = input.directory.appendingPathComponent("msg", isDirectory: true)
         var isDir: ObjCBool = false
         guard
@@ -118,7 +169,8 @@ public enum Pipeline {
                     sourceLabel: label,
                     isNested: isNested,
                     structNameOverride: nameOverride,
-                    nestedNameOverrides: Pipeline.defaultSwiftNameOverrides
+                    nestedNameOverrides: Pipeline.defaultSwiftNameOverrides,
+                    extraImports: extraImports
                 )
                 let pascalPackage = pascal(input.name)
                 let structName = nameOverride ?? SwiftEmitter.swiftStructName(typeName: typeName)
@@ -186,7 +238,11 @@ extension Pipeline {
     /// ``IRBuilder/build(perDistro:)`` into a single distro-conditional IR.
     /// `unresolvedIRs` then carries one merged IR per `(package, typeName)`
     /// even though the source IDLs come from multiple distros.
-    public static func generateMulti(_ runs: [PackageRun]) throws -> [GeneratedFile] {
+    public static func generateMulti(
+        _ runs: [PackageRun],
+        extraImports: [String] = []
+    ) throws -> [GeneratedFile] {
+        try ModuleIdentifier.validateAll(extraImports)
         var unresolvedIRs: [(run: PackageRun, ir: MessageIR, sourceLabel: String)] = []
         var collectedServices: [ParsedService] = []
         var collectedActions: [ParsedAction] = []
@@ -414,7 +470,8 @@ extension Pipeline {
                 sourceLabel: entry.sourceLabel,
                 isNested: isNested,
                 structNameOverride: nameOverride,
-                nestedNameOverrides: nameOverrides
+                nestedNameOverrides: nameOverrides,
+                extraImports: extraImports
             )
             let pascalPackage = pascal(entry.ir.package)
             let structName =
@@ -448,7 +505,8 @@ extension Pipeline {
                 responseStructName: responseStructName,
                 requestHash: requestHash,
                 responseHash: responseHash,
-                sourceLabel: "\(svc.package)/srv/\(svc.typeName).srv"
+                sourceLabel: "\(svc.package)/srv/\(svc.typeName).srv",
+                extraImports: extraImports
             )
             let pascalPackage = pascal(svc.package)
             results.append(
@@ -471,7 +529,8 @@ extension Pipeline {
             let swift = SwiftEmitter.emit(
                 actionIR,
                 sourceLabel: label,
-                nestedNameOverrides: nameOverrides
+                nestedNameOverrides: nameOverrides,
+                extraImports: extraImports
             )
             let pascalPackage = pascal(act.package)
             results.append(

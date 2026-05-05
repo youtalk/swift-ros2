@@ -56,10 +56,21 @@ jobs:
       - name: Install CycloneDDS dev headers
         # `swift test --filter SwiftROS2GenHashOracleTests` still builds every
         # target in the package graph, including CDDSBridge which needs
-        # `dds/dds.h`. Install upstream CycloneDDS so pkg-config resolves.
+        # `dds/dds.h`. Install ros-jazzy-cyclonedds via the ROS apt repo so
+        # pkg-config resolves — match the regular Linux CI jobs' approach.
+        # We pin to jazzy regardless of `matrix.ros_distro` because we only
+        # need the headers to compile; the matrix distro is what we diff
+        # against via the Docker oracle, not what we link.
         run: |
+          sudo mkdir -p /usr/share/keyrings
+          curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            | sudo tee /usr/share/keyrings/ros-archive-keyring.gpg > /dev/null
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
-          sudo apt-get install -y libcyclonedds-dev pkg-config
+          sudo apt-get install -y ros-jazzy-cyclonedds pkg-config
+          # Export PKG_CONFIG_PATH for downstream steps so SwiftPM finds CycloneDDS.pc.
+          echo "PKG_CONFIG_PATH=/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
 
       - name: Resolve image digest
         id: digest

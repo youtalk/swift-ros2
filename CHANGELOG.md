@@ -29,10 +29,10 @@ All six are visibility demotions out of the public API surface — downstream co
 
 - **`TransportQoS` and `QoSPolicy` → `package`** (Candidate 1). Use `QoSProfile(reliability:, durability:, history:)` or one of the presets (`.sensorData`, `.reliableSensor`, `.latched`, `.servicesDefault`, `.actionDefault`).
 - **`DDSBridgeQoSConfig`, `DDSBridgeDiscoveryConfig`, `DDSBridgeDiscoveryMode` → `package`** (Candidate 2). Configure DDS via `TransportConfig.ddsMulticast(...)` / `TransportConfig.ddsUnicast(...)`.
-- **`ZenohClientProtocol`, `DDSClientProtocol`, and 10 related types → `package`** (Candidate 3): `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle`, `ZenohQueryableHandle`, `ZenohQueryHandle`, `ZenohSample`, `ZenohError`, `DDSWriterHandle`, `DDSReaderHandle`, `DDSError`. Use the stock `ZenohClient()` / `DDSClient()` — both remain `public`.
+- **`ZenohClientProtocol`, `DDSClientProtocol`, and 10 related types → `package`** (Candidate 3): `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle`, `ZenohQueryableHandle`, `ZenohQueryHandle`, `ZenohSample`, `ZenohError`, `DDSWriterHandle`, `DDSReaderHandle`, `DDSError`. Use the stock `ZenohClient()` / `DDSClient()` — both remain `public` — but the implementation-injection seam itself is gone: the cross-target plumbing that referenced these protocols (`TransportSession` / `TransportPublisher` / `TransportSubscriber` / the `ROS2Context.init(... session:)` 4-arg initializer / `*TransportSession` initializers) was demoted to `package` as a knock-on. Downstream code constructs a context with `ROS2Context(transport: TransportConfig)` and uses `node.createPublisher(...)` / `createSubscription(...)` / etc. to get the umbrella's public `ROS2Publisher` / `ROS2Subscription` / etc.
 - **`EntityManager` and `GIDManager` → `package`** (Candidate 4). `ROS2Context` / `ROS2Node` manage them automatically; no external instantiation needed.
-- **`ZenohTransportPublisher` concrete class → `internal`** (Candidate 5). Hold `any TransportPublisher` (the protocol stays public).
-- **`DeclaredKeyExpr`, `ZenohSubscriber`, `LivelinessToken` → `internal`** (Candidate 6). They were always meant to be accessed via their handle protocols.
+- **`ZenohTransportPublisher` concrete class → `internal`** (Candidate 5). The `TransportPublisher` protocol it conforms to was itself demoted to `package` as part of Candidate 3's knock-on; downstream code holds the umbrella's public `ROS2Publisher` from `node.createPublisher(...)`.
+- **`DeclaredKeyExpr`, `ZenohSubscriber`, `LivelinessToken` → `internal`** (Candidate 6). They were always meant to be accessed via their handle protocols (which were themselves demoted to `package` in Candidate 3).
 
 ## [0.9.0] - 2026-05-04
 

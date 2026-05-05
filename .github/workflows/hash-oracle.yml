@@ -124,7 +124,13 @@ jobs:
         env:
           SWIFT_ROS2_GEN_HASH_ORACLE_IMAGE: ${{ matrix.image }}
           SWIFT_ROS2_GEN_HASH_ORACLE_DISTRO: ${{ matrix.ros_distro }}
-        run: swift test --filter SwiftROS2GenHashOracleTests --parallel
+        # `swift test` builds and runs the full package's test bundle,
+        # which links libddsc.so.0 transitively via SwiftROS2DDS even
+        # though the filtered tests don't exercise it. Source the ROS
+        # environment so /opt/ros/jazzy/lib is on LD_LIBRARY_PATH.
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          swift test --filter SwiftROS2GenHashOracleTests --parallel
 
       - name: Diagnose dump on failure
         if: failure()

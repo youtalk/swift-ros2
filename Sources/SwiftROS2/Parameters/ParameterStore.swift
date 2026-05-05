@@ -143,12 +143,12 @@ extension ParameterStore {
         {
             return "parameter '\(name)' expects \(descriptor.type), got \(valueType)"
         }
-        if case let .integer(v) = value, let r = descriptor.integerRange {
+        if case .integer(let v) = value, let r = descriptor.integerRange {
             if v < r.lowerBound || v > r.upperBound {
                 return "parameter '\(name)' value \(v) out of range \(r)"
             }
         }
-        if case let .double(v) = value, let r = descriptor.floatingPointRange {
+        if case .double(let v) = value, let r = descriptor.floatingPointRange {
             if v < r.lowerBound || v > r.upperBound {
                 return "parameter '\(name)' value \(v) out of range \(r)"
             }

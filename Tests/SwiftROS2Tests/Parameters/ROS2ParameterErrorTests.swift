@@ -12,7 +12,7 @@ final class ROS2ParameterErrorTests: XCTestCase {
     func testInvalidTypeCarriesExpectedAndGot() {
         let e: ROS2ParameterError = .invalidType(
             name: "rate", expected: .integer, got: .string)
-        guard case let .invalidType(name, expected, got) = e else {
+        guard case .invalidType(let name, let expected, let got) = e else {
             XCTFail("wrong case")
             return
         }

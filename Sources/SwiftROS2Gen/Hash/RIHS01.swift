@@ -1,4 +1,3 @@
-import Crypto
 import Foundation
 
 /// Computes the RIHS01 type-hash for a ROS 2 message IR.

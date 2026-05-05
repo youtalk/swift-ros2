@@ -252,12 +252,14 @@ var targets: [Target] = [
         path: "Tests/SwiftROS2TransportTests"
     ),
 
-    // Code generator library — IDL → Swift ROS2Message conformances
+    // Code generator library — IDL → Swift ROS2Message conformances.
+    // SHA-256 (used by RIHS01) is implemented in pure Swift inside this
+    // target so non-Apple CI matrix entries — Windows in particular —
+    // don't pay the cost of compiling swift-crypto's BoringSSL on every
+    // run. See Sources/SwiftROS2Gen/Hash/SHA256.swift.
     .target(
         name: "SwiftROS2Gen",
-        dependencies: [
-            .product(name: "Crypto", package: "swift-crypto")
-        ],
+        dependencies: [],
         path: "Sources/SwiftROS2Gen"
     ),
 
@@ -493,8 +495,7 @@ if canBuildDDS {
 let isDocsBuild = ProcessInfo.processInfo.environment["SWIFT_ROS2_DOCS_BUILD"] == "1"
 
 var packageDependencies: [Package.Dependency] = [
-    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
-    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0")
 ]
 if isDocsBuild {
     packageDependencies.append(.package(url: "https://github.com/apple/swift-docc-plugin", from: "1.3.0"))

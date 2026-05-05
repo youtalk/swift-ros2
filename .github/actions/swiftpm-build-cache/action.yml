@@ -1,0 +1,54 @@
+name: SwiftPM build cache
+description: |
+  Cache SwiftPM's .build/ directory keyed by Package state, source
+  contents, and submodule HEAD SHAs. Per-job scope. Honors a
+  DISABLE_BUILD_CACHE=1 env escape hatch.
+
+inputs:
+  job-suffix:
+    description: |
+      Discriminator for jobs that share an OS+matrix slot (e.g. the three
+      macOS jobs: build-test / api-stability / docs). Empty string is
+      acceptable for jobs that already have a unique runner.os+matrix-key.
+    required: false
+    default: default
+  matrix-key:
+    description: |
+      Per-matrix discriminator (e.g. linux-jazzy-x86_64, android-aarch64).
+      Empty string for non-matrix jobs.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Compute submodule SHA digest
+      id: submodules
+      shell: bash
+      run: |
+        # Hash all submodule HEAD SHAs into a stable 16-hex digest.
+        # Any submodule pointer move (vendor/zenoh-pico,
+        # vendor/common_interfaces-*, vendor/rcl_interfaces-*) invalidates
+        # every cache entry — exactly the desired behavior because their
+        # contents feed into swift build (zenoh-pico C source) and the
+        # phase-7 build plugin (IDL inputs).
+        DIGEST=$(git submodule status --recursive 2>/dev/null \
+          | awk '{print $1}' \
+          | tr -d ' -+' \
+          | sort \
+          | sha256sum \
+          | awk '{print $1}' \
+          | cut -c1-16)
+        if [[ -z "$DIGEST" ]]; then
+          # No submodules registered — fall back to a fixed sentinel so
+          # the cache key is still valid.
+          DIGEST="nosubmodules"
+        fi
+        echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+    - name: Cache SwiftPM .build
+      if: ${{ env.DISABLE_BUILD_CACHE != '1' }}
+      uses: actions/cache@v4
+      with:
+        path: .build
+        key: swiftpm-build-${{ runner.os }}-${{ inputs.matrix-key }}-${{ inputs.job-suffix }}-${{ steps.submodules.outputs.digest }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**/*.swift', 'Sources/**/*.c', 'Sources/**/*.h', 'Sources/**/*.cpp', 'Sources/**/*.m', 'Tests/**/*.swift', 'Tests/**/*.c', 'Tests/**/*.h') }}

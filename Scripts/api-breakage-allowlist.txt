@@ -42,3 +42,13 @@ API breakage: constructor PointCloud2.init(header:height:width:fields:isBigendia
 API breakage: constructor Range.init(header:radiationType:fieldOfView:minRange:maxRange:range:variance:) has removed default argument from parameter 1
 API breakage: var NavSatStatus.statusGbassFix has been removed
 API breakage: var PointCloud2.pointCount has been removed
+
+# 1.0.0: API freeze — internalize Candidates 5 and 6 (ZenohTransportPublisher
+# concrete class; DeclaredKeyExpr / ZenohSubscriber / LivelinessToken concrete
+# classes inside SwiftROS2Zenoh). Candidates 1–4 demote types to `package`
+# rather than `internal` and do not surface as diagnostic-reported breakages.
+# All six demotions are documented in CHANGELOG ## [1.0.0] / MIGRATION.md.
+API breakage: class ZenohTransportPublisher has been removed
+API breakage: class DeclaredKeyExpr has been removed
+API breakage: class ZenohSubscriber has been removed
+API breakage: class LivelinessToken has been removed

@@ -53,6 +53,14 @@ jobs:
           echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
           /opt/swift/usr/bin/swift --version
 
+      - name: Install CycloneDDS dev headers
+        # `swift test --filter SwiftROS2GenHashOracleTests` still builds every
+        # target in the package graph, including CDDSBridge which needs
+        # `dds/dds.h`. Install upstream CycloneDDS so pkg-config resolves.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcyclonedds-dev pkg-config
+
       - name: Resolve image digest
         id: digest
         run: |

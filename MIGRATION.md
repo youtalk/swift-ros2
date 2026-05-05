@@ -7,7 +7,8 @@
 | 0.6.0 | 0.6.1 | **One:** the placeholder `ROS2Service` protocol in `SwiftROS2Messages` was renamed to `ROS2ServiceType` so the umbrella's typed Service Server class can take the simpler `ROS2Service<S>` name in 0.7.0. |
 | 0.6.x | 0.7.x | **One** if upgrading from 0.6.0 directly: the rename above. From 0.6.1 → 0.7.x there are no breaking changes — the Services API is purely additive. |
 | 0.7.x | 0.8.0 | **None.** Actions are purely additive — `ROS2Action`, `ROS2ActionServer`, `ROS2ActionClient`, `ActionGoalHandle`, `ActionResult`, `ActionGoalStatus`, `ActionError` are new. `ROS2ActionTypeInfo` gained five optional hash fields with source-compatible defaults (Phase 1). |
-| 0.8.x | 1.0.0 | Limited to the candidates below, decided after 0.8.0 ships based on a downstream survey. |
+| 0.8.x | 0.9.0 | **None.** `swift-ros2-gen` (CLI + SwiftPM build plugin + hash-oracle CI) is purely additive — no existing public API changed. |
+| 0.9.x | 1.0.0 | Limited to the candidates below, decided after 0.9.0 ships based on the downstream survey. |
 | 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
@@ -80,9 +81,48 @@ The umbrella exposes ``ActionGoalStatus`` (an `Int8`-backed enum) for the status
 
 ---
 
-## 0.8 → 1.0 — candidate change list
+## 0.8 → 0.9 — `swift-ros2-gen`
 
-> **Status:** the actual 1.0 break list is decided **after 0.7.0 ships**, based on a downstream-consumer survey (Conduit and any other known users). Each candidate below describes what *might* change, why it is being considered, and the recommended action you can take during 0.7.x to avoid surprise.
+0.9.0 ships the `swift-ros2-gen` code generator end-to-end: CLI (with `.msg` / `.srv` / `.action` support and multi-distro merging), a single-distro `.msg`-only SwiftPM build plugin, and a `verify-hash-oracle` CI job. Every change is additive — no existing public symbol was renamed, removed, or had its shape changed.
+
+### Adding code generation to a downstream Apple project
+
+```swift
+// Package.swift — opt the target into the SwiftROS2Gen build plugin
+.target(
+    name: "my_msgs",  // snake_case / lowercase — becomes the ROS package segment in typeInfo.typeName
+    dependencies: [
+        .product(name: "SwiftROS2", package: "swift-ros2"),
+    ],
+    plugins: [
+        .plugin(name: "SwiftROS2GenPlugin", package: "swift-ros2"),
+    ]
+),
+```
+
+There is no configuration file. Drop the `.msg` files into the target's directory under `msg/` and build — the plugin walks `msg/` directly, hands every file to `swift-ros2-gen` with `<target-name>=<dir>@jazzy`, and writes the generated Swift under SwiftPM's per-target work directory.
+
+The plugin handles only the single-package single-distro (jazzy) `.msg` case. `.srv` and `.action` files in the target directory are skipped with a build warning. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly. A working setup lives at [`Sources/Examples/PluginSmoke/`](Sources/Examples/PluginSmoke).
+
+### Verifying type hashes against a live ROS 2 install
+
+`--verify-hashes` takes a Docker image as its argument value (the verifier shells into the image and reads canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files). The verifier resolves nested-type references, so every transitively-referenced package must appear on `--input`:
+
+```bash
+swift run swift-ros2-gen --verify-hashes osrf/ros:jazzy-desktop \
+    --input "builtin_interfaces=vendor/rcl_interfaces-jazzy/builtin_interfaces@jazzy" \
+    --input "std_msgs=vendor/common_interfaces-jazzy/std_msgs@jazzy" \
+    --input "geometry_msgs=vendor/common_interfaces-jazzy/geometry_msgs@jazzy" \
+    --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@jazzy"
+```
+
+Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the named Docker image — there is no recorded baseline shipped in the package. The matching CI job is `verify-hash-oracle` in [`hash-oracle.yml`](.github/workflows/hash-oracle.yml); it is path-filtered on pull requests (only fires when generator / generated-source / vendored-IDL paths change) and unconditionally on `main` pushes.
+
+---
+
+## 0.9 → 1.0 — candidate change list
+
+> **Status:** the actual 1.0 break list is decided **after 0.9.0 ships**, based on a downstream-consumer survey (Conduit and any other known users). Each candidate below describes what *might* change, why it is being considered, and the recommended action you can take during 0.9.x to avoid surprise.
 
 ### Candidate 1 — `TransportQoS` and `QoSPolicy`
 
@@ -149,15 +189,9 @@ The umbrella exposes ``ActionGoalStatus`` (an `Int8`-backed enum) for the status
 - **Recommended action:** drop direct references.
 - **Compatibility shim?** None planned.
 
-### Candidate 7 — Action public declarations with no implementation
+### Candidate 7 — Action public declarations with no implementation *(obsolete since 0.8.0)*
 
-- **Targets:** `ROS2ActionTypeInfo`, `ROS2Action` in `SwiftROS2Messages`.
-- **1.0 plan:** remove (or make `internal`).
-- **Rationale:** placeholders with no implementation. Freezing them would constrain the eventual Action API design.
-- **Replacement:** none (the feature is not provided today).
-- **Impact surface:** code that names these types or conforms to them.
-- **Recommended action:** remove any references — they do not do anything yet.
-- **Compatibility shim?** None.
+The 0.7.0 plan had assumed `ROS2ActionTypeInfo` and `ROS2Action` in `SwiftROS2Messages` would either be removed or made `internal` for 1.0. Both are now real, fully-implemented protocols backing the `ROS2ActionServer<H>` / `ROS2ActionClient<A>` umbrella that shipped in 0.8.0 (#77–#82). They will remain `public` in 1.0.0 — no action required from downstream code.
 
 > **Note:** the analogous Service placeholders (`ROS2ServiceTypeInfo`, `ROS2ServiceType`) were retained in 0.7.0 once the typed `ROS2Service<S>` / `ROS2Client<S>` umbrella landed — they are now real, implemented protocols, not placeholders.
 

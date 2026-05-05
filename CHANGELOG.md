@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+## [0.9.0] - 2026-05-04
+
+### Added
+
+- **`swift-ros2-gen` — IDL → Swift code generator (8-phase rollout).** A standalone CLI (`swift run swift-ros2-gen`) that reads ROS 2 `.msg` / `.srv` / `.action` IDL and emits `ROS2Message` / `ROS2ServiceType` / `ROS2Action` Swift sources with `CDRCodable` encoders and recorded `RIHS01_*` type hashes. Single-distro and multi-distro inputs both supported; multi-distro generation merges into one source file that branches on `encoder.isLegacySchema` / `decoder.isLegacySchema` for cross-distro field differences (e.g. `sensor_msgs/Range.variance`).
+  - **Phase 1** — `swift-ros2-gen` skeleton + std_msgs migration (#84).
+  - **Phase 2** — nested type references + geometry_msgs migration (#85).
+  - **Phase 3** — fixed / variable arrays, constants, default values + UUID + action_msgs migration (#86).
+  - **Phase 4** — distro-conditional generation + sensor_msgs migration (#87).
+  - **Phase 5** — `.srv` support + std_srvs regeneration (#88).
+  - **Phase 6** — `.action` support + per-action wrapper synthesis (`SendGoal_Request/Response`, `GetResult_Request/Response`, `FeedbackMessage`) + Fibonacci migration (#89).
+  - **Phase 7** — SwiftPM build plugin (`SwiftROS2GenPlugin`) + `PluginSmoke` example target showing how to consume regenerated bindings from a downstream package (#90).
+  - **Phase 8** — `verify-hash-oracle` CI job in [`hash-oracle.yml`](.github/workflows/hash-oracle.yml) that diffs generated `RIHS01_*` hashes against the canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files inside an `osrf/ros:<distro>-desktop` Docker image (jazzy required, kilted / rolling continue-on-error) and a matching `--verify-hashes <docker-image>` CLI flag for local pre-flight checks (#91).
+
+### Changed
+
+- (intentionally empty — codegen is purely additive; no public API changed.)
+
 ## [0.8.0] - 2026-05-03
 
 ### Added

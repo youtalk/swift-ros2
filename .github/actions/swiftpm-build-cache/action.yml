@@ -26,17 +26,20 @@ runs:
       id: submodules
       shell: bash
       run: |
+        set -euo pipefail
         # Hash all submodule HEAD SHAs into a stable 16-hex digest.
         # Any submodule pointer move (vendor/zenoh-pico,
         # vendor/common_interfaces-*, vendor/rcl_interfaces-*) invalidates
         # every cache entry — exactly the desired behavior because their
         # contents feed into swift build (zenoh-pico C source) and the
         # phase-7 build plugin (IDL inputs).
+        # `shasum -a 256` (BSD) is portable across macOS / Linux / Git Bash
+        # on Windows; `sha256sum` (GNU coreutils) is not part of macOS base.
         DIGEST=$(git submodule status --recursive 2>/dev/null \
           | awk '{print $1}' \
           | tr -d ' -+' \
           | sort \
-          | sha256sum \
+          | shasum -a 256 \
           | awk '{print $1}' \
           | cut -c1-16)
         if [[ -z "$DIGEST" ]]; then
@@ -51,4 +54,4 @@ runs:
       uses: actions/cache@v4
       with:
         path: .build
-        key: swiftpm-build-${{ runner.os }}-${{ inputs.matrix-key }}-${{ inputs.job-suffix }}-${{ steps.submodules.outputs.digest }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**/*.swift', 'Sources/**/*.c', 'Sources/**/*.h', 'Sources/**/*.cpp', 'Sources/**/*.m', 'Tests/**/*.swift', 'Tests/**/*.c', 'Tests/**/*.h') }}
+        key: swiftpm-build-${{ runner.os }}-${{ inputs.matrix-key }}-${{ inputs.job-suffix }}-${{ steps.submodules.outputs.digest }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**/*.swift', 'Sources/**/*.c', 'Sources/**/*.h', 'Sources/**/*.modulemap', 'Sources/**/*.msg', 'Sources/**/*.srv', 'Sources/**/*.action', 'Tests/**/*.swift', 'Tests/**/*.c', 'Tests/**/*.h') }}

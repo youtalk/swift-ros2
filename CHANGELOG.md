@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Phase 5** — `.srv` support + std_srvs regeneration (#88).
   - **Phase 6** — `.action` support + per-action wrapper synthesis (`SendGoal_Request/Response`, `GetResult_Request/Response`, `FeedbackMessage`) + Fibonacci migration (#89).
   - **Phase 7** — SwiftPM build plugin (`SwiftROS2GenPlugin`) + `PluginSmoke` example target showing how to consume regenerated bindings from a downstream package (#90).
-  - **Phase 8** — hash-oracle CI job (compares generated hashes against a recorded baseline of live `ros2 topic info --verbose` output) and `--verify-hashes` CLI flag for local pre-flight checks (#91).
+  - **Phase 8** — `verify-hash-oracle` CI job in [`hash-oracle.yml`](.github/workflows/hash-oracle.yml) that diffs generated `RIHS01_*` hashes against the canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files inside an `osrf/ros:<distro>-desktop` Docker image (jazzy required, kilted / rolling continue-on-error) and a matching `--verify-hashes <docker-image>` CLI flag for local pre-flight checks (#91).
 
 ### Changed
 

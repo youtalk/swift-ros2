@@ -83,14 +83,14 @@ The umbrella exposes ``ActionGoalStatus`` (an `Int8`-backed enum) for the status
 
 ## 0.8 → 0.9 — `swift-ros2-gen`
 
-0.9.0 ships the `swift-ros2-gen` code generator end-to-end: CLI, multi-distro merging, `.msg` / `.srv` / `.action` support, a SwiftPM build plugin, and a hash-oracle CI job. Every change is additive — no existing public symbol was renamed, removed, or had its shape changed.
+0.9.0 ships the `swift-ros2-gen` code generator end-to-end: CLI (with `.msg` / `.srv` / `.action` support and multi-distro merging), a single-distro `.msg`-only SwiftPM build plugin, and a `verify-hash-oracle` CI job. Every change is additive — no existing public symbol was renamed, removed, or had its shape changed.
 
 ### Adding code generation to a downstream Apple project
 
 ```swift
 // Package.swift — opt the target into the SwiftROS2Gen build plugin
 .target(
-    name: "MyMessages",
+    name: "my_msgs",  // snake_case / lowercase — becomes the ROS package segment in typeInfo.typeName
     dependencies: [
         .product(name: "SwiftROS2", package: "swift-ros2"),
     ],
@@ -100,16 +100,23 @@ The umbrella exposes ``ActionGoalStatus`` (an `Int8`-backed enum) for the status
 ),
 ```
 
-Drop a `swift-ros2-gen.yml` configuration file at the root of the target's directory listing the `.msg` / `.srv` / `.action` files (or whole package directories) to consume. The plugin runs `swift-ros2-gen` per build, writes generated sources into `.build/plugins/outputs/...`, and SwiftPM picks them up automatically. See `Examples/PluginSmoke/` for a working reference.
+There is no configuration file. Drop the `.msg` files into the target's directory under `msg/` and build — the plugin walks `msg/` directly, hands every file to `swift-ros2-gen` with `<target-name>=<dir>@jazzy`, and writes the generated Swift under SwiftPM's per-target work directory.
+
+The plugin handles only the single-package single-distro (jazzy) `.msg` case. `.srv` and `.action` files in the target directory are skipped with a build warning. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly. A working setup lives at [`Sources/Examples/PluginSmoke/`](Sources/Examples/PluginSmoke).
 
 ### Verifying type hashes against a live ROS 2 install
 
+`--verify-hashes` takes a Docker image as its argument value (the verifier shells into the image and reads canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files). The verifier resolves nested-type references, so every transitively-referenced package must appear on `--input`:
+
 ```bash
-swift run swift-ros2-gen --verify-hashes \
-    --input "sensor_msgs=/opt/ros/jazzy/share/sensor_msgs@jazzy"
+swift run swift-ros2-gen --verify-hashes osrf/ros:jazzy-desktop \
+    --input "builtin_interfaces=vendor/rcl_interfaces-jazzy/builtin_interfaces@jazzy" \
+    --input "std_msgs=vendor/common_interfaces-jazzy/std_msgs@jazzy" \
+    --input "geometry_msgs=vendor/common_interfaces-jazzy/geometry_msgs@jazzy" \
+    --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@jazzy"
 ```
 
-Compares the regenerated `RIHS01_*` hashes against the hash baseline shipped with the package. The matching CI job (`gen-hash-oracle`) runs on every PR.
+Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the named Docker image — there is no recorded baseline shipped in the package. The matching CI job is `verify-hash-oracle` in [`hash-oracle.yml`](.github/workflows/hash-oracle.yml); it is path-filtered on pull requests (only fires when generator / generated-source / vendored-IDL paths change) and unconditionally on `main` pushes.
 
 ---
 

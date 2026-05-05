@@ -280,7 +280,7 @@ public struct MyMsg: ROS2Message {
 }
 ```
 
-As of 0.9.0 the [`swift-ros2-gen`](#generate-swift-bindings-from-idl) code generator is the recommended way to produce these conformances — hand-written conformances like the example above become optional. The generator emits the same shape from `.msg` / `.srv` / `.action` files automatically and records `RIHS01_*` type hashes from a live ROS 2 install.
+As of 0.9.0 the [`swift-ros2-gen`](#generate-swift-bindings-from-idl) code generator is the recommended way to produce these conformances — hand-written conformances like the example above become optional. The generator emits the same shape from `.msg` / `.srv` / `.action` files automatically; `RIHS01_*` type hashes are computed in-process from the parsed IDL, then optionally cross-checked against a live ROS 2 install via `--verify-hashes`.
 
 ## Generate Swift bindings from IDL
 
@@ -288,11 +288,15 @@ As of 0.9.0 the [`swift-ros2-gen`](#generate-swift-bindings-from-idl) code gener
 
 ### One-shot CLI
 
+`sensor_msgs` types reference `std_msgs/Header`, `builtin_interfaces/Time`, and several `geometry_msgs` types — pass every transitively-referenced package on `--input` so nested-type resolution succeeds:
+
 ```bash
 swift run swift-ros2-gen \
-    --input "std_msgs=Vendor/common_interfaces-jazzy/std_msgs@jazzy" \
-    --input "sensor_msgs=Vendor/common_interfaces-humble/sensor_msgs@humble" \
-    --input "sensor_msgs=Vendor/common_interfaces-jazzy/sensor_msgs@jazzy" \
+    --input "builtin_interfaces=vendor/rcl_interfaces-jazzy/builtin_interfaces@jazzy" \
+    --input "std_msgs=vendor/common_interfaces-jazzy/std_msgs@jazzy" \
+    --input "geometry_msgs=vendor/common_interfaces-jazzy/geometry_msgs@jazzy" \
+    --input "sensor_msgs=vendor/common_interfaces-humble/sensor_msgs@humble" \
+    --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@jazzy" \
     --output Sources/MyMessages/Generated
 ```
 
@@ -314,17 +318,20 @@ For projects that want generated bindings to stay in sync with their IDL on ever
 )
 ```
 
-Drop the IDL into the target's directory under `msg/`, then build. The plugin uses the SwiftPM target name as the ROS package segment in the generated `typeInfo.typeName`, so the target name should match the intended ROS 2 package name (snake_case / lowercase) — `my_msgs`, not `MyMsgs`.
+Drop the IDL into the target's directory under `msg/`, then build. There is no configuration file — the plugin walks `msg/` directly, hands every `.msg` to `swift-ros2-gen` with `<target-name>=<dir>@jazzy`, and writes the output under SwiftPM's per-target work directory. The target name becomes the ROS package segment in the generated `typeInfo.typeName`, so name the target snake_case / lowercase — `my_msgs`, not `MyMsgs`.
 
-The plugin handles the single-package single-distro (jazzy) case. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly (see [`CLAUDE.md`](CLAUDE.md) for the full CLI grammar). See `Examples/PluginSmoke/` in this repo for a working setup.
+The plugin handles the single-package single-distro (jazzy) `.msg` case only. `.srv` and `.action` files in the target directory are skipped with a build warning. For multi-distro merging, multi-package builds, `.srv`, `.action`, or an explicit `--types` allow-list, invoke `swift run swift-ros2-gen` directly (`--help` lists every flag). A working setup lives at [`Sources/Examples/PluginSmoke/`](Sources/Examples/PluginSmoke).
 
 ### Verifying generated hashes against live ROS 2
 
-The repo ships a hash-oracle CI job that catches drift between the generated `RIHS01_*` type hashes and the actual hashes a running ROS 2 install reports. Reproduce locally with:
+The repo ships a hash-oracle CI job ([`.github/workflows/hash-oracle.yml`](.github/workflows/hash-oracle.yml), `verify-hash-oracle`, path-filtered to fire only when generator / generated-source / vendored-IDL paths change). It diffs each generated `RIHS01_*` against the canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files inside an `osrf/ros:<distro>-desktop` Docker image — there is no recorded baseline shipped in the package; the oracle is the live image. Reproduce locally with the same command CI runs (`--verify-hashes` takes a Docker image as its value, and the verifier resolves nested-type references, so every transitively-referenced package must appear on `--input`):
 
 ```bash
-swift run swift-ros2-gen --verify-hashes \
-    --input "sensor_msgs=/opt/ros/jazzy/share/sensor_msgs@jazzy"
+swift run swift-ros2-gen --verify-hashes osrf/ros:jazzy-desktop \
+    --input "builtin_interfaces=vendor/rcl_interfaces-jazzy/builtin_interfaces@jazzy" \
+    --input "std_msgs=vendor/common_interfaces-jazzy/std_msgs@jazzy" \
+    --input "geometry_msgs=vendor/common_interfaces-jazzy/geometry_msgs@jazzy" \
+    --input "sensor_msgs=vendor/common_interfaces-jazzy/sensor_msgs@jazzy"
 ```
 
 ## Versioning
@@ -339,7 +346,7 @@ Each release has a corresponding [GitHub release](https://github.com/youtalk/swi
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **0.9.0**  | 2026-05-04 | **`swift-ros2-gen`** — IDL → Swift code generator (CLI + SwiftPM build plugin) covering `.msg` / `.srv` / `.action`, multi-distro merging with `isLegacySchema` branches, and a hash-oracle CI job that pins `RIHS01_*` hashes against a recorded baseline. 8 PR rollout (Phase 1–8). |
+| **0.9.0**  | 2026-05-04 | **`swift-ros2-gen`** — IDL → Swift code generator (CLI + SwiftPM build plugin) covering `.msg` / `.srv` / `.action`, multi-distro merging with `isLegacySchema` branches, and a `verify-hash-oracle` CI job that diffs generated `RIHS01_*` hashes against the canonical `share/<pkg>/{msg,srv,action}/<Type>.json` files inside an `osrf/ros:<distro>-desktop` Docker image. 8 PR rollout (Phase 1–8). |
 | 0.8.0      | 2026-05-03 | **Actions + DDS on Windows** — typed `ROS2ActionServer<H>` / `ROS2ActionClient<A>` with `async`/`await`, feedback `AsyncStream`, status updates, cancellation; built-in `example_interfaces/action/Fibonacci`; full DDS path on Windows x86_64 via vcpkg (`CYCLONEDDS_DIR`). 6 PR rollout for Actions. |
 | 0.7.0      | 2026-05-01 | **Services** — typed `ROS2Service<S>` / `ROS2Client<S>` over both Zenoh (queryable + `get`) and DDS (rq/rr topics + sample-identity prefix); built-in `std_srvs/srv/Trigger`; DocC catalog with getting-started articles; CI `docs-build` job; per-target line-coverage gate. |
 | 0.6.0      | 2026-04-24 | **Android support** — arm64-v8a + x86_64 via the Swift 6.3.1 Android SDK; `zenoh-pico` source build with `ZENOH_ANDROID` (Bionic unix backend, vendored `pthread_cancel` / `_z_task_cancel` stubs); `SWIFT_ROS2_TARGET_OS` env override required for any cross-compile (allow-list-validated, fails the manifest compile on typos); `build-android` matrix (×2 ABIs) added to CI on `ubuntu-24.04` with NDK r27c. Zenoh only — DDS-on-Android tracked as future work. |

@@ -244,7 +244,7 @@ import SwiftROS2DDS        — DDSClient (CycloneDDS FFI through CDDSBridge)
 
 The architecture is documented in more detail under [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-> **Link-only C targets.** `CZenohPico` and `CCycloneDDS` are link-only binary targets — they are consumed at the C level by `CZenohBridge` / `CDDSBridge` (with platform-specific preprocessor defines applied through `cSettings`) and **never `import`ed from Swift directly**. On Apple, `.xcframework`'s auto-synthesised modulemap means `import CZenohPico` happens to compile silently — but the equivalent on a future Linux `.artifactbundle` would not, so a CI lint guards against any `^import C(ZenohPico|CycloneDDS)\b` from leaking in. Reach the C bridges via `import SwiftROS2Zenoh` / `import SwiftROS2DDS`.
+> **Link-only C targets.** `CZenohPico` and `CCycloneDDS` are link-only binary targets — they are consumed at the C level by `CZenohBridge` / `CDDSBridge` (with platform-specific preprocessor defines applied through `cSettings`) and **never `import`ed from Swift directly**. On Apple, `.xcframework`'s auto-synthesised modulemap means `import CZenohPico` happens to compile silently — but the equivalent on a future Linux `.artifactbundle` would not, so a CI lint (`grep -P '^import C(ZenohPico|CycloneDDS)\b'` over `Sources` and `Tests`) guards against any such import from leaking in. Reach the C bridges via `import SwiftROS2Zenoh` / `import SwiftROS2DDS`.
 
 ### Built-in message types
 

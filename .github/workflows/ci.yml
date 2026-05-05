@@ -38,9 +38,13 @@ jobs:
         # import would fail there. Catch it at lint time across all
         # platforms instead of letting one CI matrix entry fail
         # confusingly. See https://github.com/youtalk/swift-ros2/issues/26.
+        #
+        # Pattern uses `grep -P` (PCRE) rather than `grep -E` so `\b`
+        # is the well-defined word-boundary it looks like, not the
+        # POSIX-ERE backspace escape (a GNU extension at best).
         run: |
           set -euo pipefail
-          if grep -rEn '^import C(ZenohPico|CycloneDDS)\b' Sources Tests; then
+          if grep -rPn '^import C(ZenohPico|CycloneDDS)\b' Sources Tests; then
             echo
             echo "::error::Found a Swift `import` of a link-only C target above."
             echo "::error::Use `import SwiftROS2Zenoh` / `import SwiftROS2DDS` to reach the bridges."

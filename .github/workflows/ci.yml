@@ -112,6 +112,10 @@ jobs:
           submodules: recursive
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+      - name: Cache SwiftPM .build
+        uses: ./.github/actions/swiftpm-build-cache
+        with:
+          job-suffix: docs
       - name: Generate DocC
         run: swift package generate-documentation --target SwiftROS2
       - name: Check DocC coverage

@@ -58,6 +58,10 @@ extension ROS2ParameterValue {
 }
 
 extension ROS2ParameterDescriptor {
+    // The wire `IntegerRange.step` is `uint64`; our `integerStep` is
+    // `Int64?` to match Swift convention. We round-trip through the bit
+    // pattern so the encode/decode pair is lossless even for negative
+    // step values (which are nonsensical but valid on the wire).
     init(wire: SwiftROS2Messages.ParameterDescriptor) {
         let floating = wire.floatingPointRange.first
         let integer = wire.integerRange.first

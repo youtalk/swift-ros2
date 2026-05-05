@@ -49,21 +49,21 @@ extension ROS2Node {
     @discardableResult
     public func setParameter(
         _ p: ROS2Parameter
-    ) async throws -> ROS2SetParametersResult {
+    ) async -> ROS2SetParametersResult {
         await parameterStore.set(p)
     }
 
     @discardableResult
     public func setParameters(
         _ ps: [ROS2Parameter]
-    ) async throws -> [ROS2SetParametersResult] {
+    ) async -> [ROS2SetParametersResult] {
         await parameterStore.setMany(ps)
     }
 
     @discardableResult
     public func setParametersAtomically(
         _ ps: [ROS2Parameter]
-    ) async throws -> ROS2SetParametersResult {
+    ) async -> ROS2SetParametersResult {
         await parameterStore.setAtomically(ps)
     }
 

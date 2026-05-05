@@ -40,11 +40,11 @@ final class NodeParametersTests: XCTestCase {
             descriptor: ROS2ParameterDescriptor(
                 name: "rate", type: .integer, integerRange: 1...120))
 
-        let ok = try await node.setParameter(
+        let ok = await node.setParameter(
             ROS2Parameter(name: "rate", value: .integer(60)))
         XCTAssertTrue(ok.successful)
 
-        let bad = try await node.setParameter(
+        let bad = await node.setParameter(
             ROS2Parameter(name: "rate", value: .integer(999)))
         XCTAssertFalse(bad.successful)
     }

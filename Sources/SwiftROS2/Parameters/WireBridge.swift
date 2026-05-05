@@ -104,3 +104,13 @@ extension ROS2ParameterDescriptor {
         return w
     }
 }
+
+extension ROS2Parameter {
+    init(wire: SwiftROS2Messages.Parameter) {
+        self.init(name: wire.name, value: ROS2ParameterValue(wire: wire.value))
+    }
+
+    func toWire() -> SwiftROS2Messages.Parameter {
+        SwiftROS2Messages.Parameter(name: name, value: value.toWire())
+    }
+}

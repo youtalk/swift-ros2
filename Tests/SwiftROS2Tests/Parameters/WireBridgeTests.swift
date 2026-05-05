@@ -135,4 +135,13 @@ final class WireBridgeTests: XCTestCase {
         XCTAssertEqual(wire.integerRange.count, 0)
         XCTAssertEqual(ROS2ParameterDescriptor(wire: wire), swift)
     }
+
+    func testParameterRoundTrip() {
+        let swift = ROS2Parameter(name: "rate", value: .integer(30))
+        let wire = swift.toWire()
+        XCTAssertEqual(wire.name, "rate")
+        XCTAssertEqual(wire.value.type, 2)
+        XCTAssertEqual(wire.value.integerValue, 30)
+        XCTAssertEqual(ROS2Parameter(wire: wire), swift)
+    }
 }

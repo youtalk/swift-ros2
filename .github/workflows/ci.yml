@@ -196,6 +196,10 @@ jobs:
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           export PKG_CONFIG_PATH="/opt/ros/${{ matrix.ros_distro }}/lib/${{ matrix.arch }}-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
           bash Scripts/build-linux-deps.sh
+      - name: Cache SwiftPM .build
+        uses: ./.github/actions/swiftpm-build-cache
+        with:
+          matrix-key: linux-${{ matrix.ros_distro }}-${{ matrix.arch }}
       - name: Build
         run: |
           source /opt/ros/${{ matrix.ros_distro }}/setup.bash

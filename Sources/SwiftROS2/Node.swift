@@ -33,6 +33,8 @@ public final class ROS2Node: @unchecked Sendable {
     private var actionClients: [AnyObject] = []
     private let lock = NSLock()
 
+    let parameterStore: ParameterStore = ParameterStore()
+
     init(
         name: String,
         namespace: String,

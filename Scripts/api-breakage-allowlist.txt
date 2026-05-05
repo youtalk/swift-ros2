@@ -1,54 +1,16 @@
-# API breakages intentionally introduced post-0.6.1 (pre-1.0).
+# API breakages intentionally introduced after the latest released tag.
 #
-# Each line is matched verbatim against the diagnostic message emitted by
-# `swift package diagnose-api-breaking-changes`. Append new entries as
-# breakages land; remove entries once a release tag is cut whose baseline
+# CI resolves the baseline dynamically — the highest stable semver tag in the
+# repo (e.g. `1.0.0` today, `1.1.0` once 1.1 ships) — and runs
+# `swift package diagnose-api-breaking-changes` against it. That way removals
+# of APIs added on the 1.x line (e.g. a symbol introduced in 1.1.0 then
+# deleted before 1.2.0) are still caught — they would not have been if the
+# baseline stayed pinned to 1.0.0 forever.
+#
+# Each line below is matched verbatim against a diagnostic message; comments
+# and blank lines are ignored. Append entries when intentional breakages land
+# during a release cycle; drop them again once a tag is cut whose baseline
 # already includes them.
 #
-# 0.7.0: ROS 2 Services landing — see CHANGELOG ## [0.7.0] (2026-05-01).
-API breakage: func TransportSession.createServiceServer(name:serviceTypeName:requestTypeHash:responseTypeHash:qos:handler:) has been added as a protocol requirement
-API breakage: func TransportSession.createServiceClient(name:serviceTypeName:requestTypeHash:responseTypeHash:qos:) has been added as a protocol requirement
-API breakage: enumelement TransportError.requestTimeout has been added as a new enum case
-API breakage: enumelement TransportError.requestCancelled has been added as a new enum case
-API breakage: enumelement TransportError.serviceHandlerFailed has been added as a new enum case
-API breakage: enumelement ZenohError.queryReplyError has been added as a new enum case
-
-# 0.8.0: ROS 2 Actions landing — phase 3 of 6 added action-shaped TransportError
-# cases. The new TransportSession.createActionServer / createActionClient
-# requirements ship with default implementations that throw
-# `TransportError.unsupportedFeature`, so they do not surface here.
-API breakage: enumelement TransportError.goalRejected has been added as a new enum case
-API breakage: enumelement TransportError.goalUnknown has been added as a new enum case
-API breakage: enumelement TransportError.actionServerUnavailable has been added as a new enum case
-
-# 0.9.0: swift-ros2-gen phase 4 — sensor_msgs regenerated; API surface diverged
-# from hand-written 0.6.x version (Data → [UInt8] for byte-payload fields,
-# removed convenience defaults on big initializers, NavSatStatus typo fix
-# `statusGbassFix` → `statusGbasFix`, PointCloud2.pointCount removed because
-# the generator does not emit derived properties).
-API breakage: var CompressedImage.data has declared type change from Foundation.Data to [Swift.UInt8]
-API breakage: accessor CompressedImage.data.Get() has return type change from Foundation.Data to [Swift.UInt8]
-API breakage: accessor CompressedImage.data.Set() has parameter 0 type change from Foundation.Data to [Swift.UInt8]
-API breakage: constructor CompressedImage.init(header:format:data:) has removed default argument from parameter 2
-API breakage: var Image.data has declared type change from Foundation.Data to [Swift.UInt8]
-API breakage: accessor Image.data.Get() has return type change from Foundation.Data to [Swift.UInt8]
-API breakage: accessor Image.data.Set() has parameter 0 type change from Foundation.Data to [Swift.UInt8]
-API breakage: constructor Image.init(header:height:width:encoding:isBigendian:step:data:) has removed default argument from parameter 6
-API breakage: constructor NavSatFix.init(header:status:latitude:longitude:altitude:positionCovariance:positionCovarianceType:) has removed default argument from parameter 6
-API breakage: var PointCloud2.data has declared type change from Foundation.Data to [Swift.UInt8]
-API breakage: accessor PointCloud2.data.Get() has return type change from Foundation.Data to [Swift.UInt8]
-API breakage: accessor PointCloud2.data.Set() has parameter 0 type change from Foundation.Data to [Swift.UInt8]
-API breakage: constructor PointCloud2.init(header:height:width:fields:isBigendian:pointStep:rowStep:data:isDense:) has removed default argument from parameter 7
-API breakage: constructor Range.init(header:radiationType:fieldOfView:minRange:maxRange:range:variance:) has removed default argument from parameter 1
-API breakage: var NavSatStatus.statusGbassFix has been removed
-API breakage: var PointCloud2.pointCount has been removed
-
-# 1.0.0: API freeze — internalize Candidates 5 and 6 (ZenohTransportPublisher
-# concrete class; DeclaredKeyExpr / ZenohSubscriber / LivelinessToken concrete
-# classes inside SwiftROS2Zenoh). Candidates 1–4 demote types to `package`
-# rather than `internal` and do not surface as diagnostic-reported breakages.
-# All six demotions are documented in CHANGELOG ## [1.0.0] / MIGRATION.md.
-API breakage: class ZenohTransportPublisher has been removed
-API breakage: class DeclaredKeyExpr has been removed
-API breakage: class ZenohSubscriber has been removed
-API breakage: class LivelinessToken has been removed
+# Removals of public APIs are SemVer-breaking on the 1.x line — adding an
+# entry here is a signal that a 2.0 bump is required.

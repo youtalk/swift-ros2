@@ -105,20 +105,31 @@ jobs:
           if-no-files-found: ignore
 
   check-api-stability:
-    name: Check (API stability vs 0.6.1)
+    name: Check (API stability vs latest release)
     needs: [lint-swift-format]
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0  # full history so the 0.6.1 tag is reachable
+          fetch-depth: 0  # full history so all semver tags are reachable
+      - name: Resolve latest stable release tag
+        id: baseline
+        run: |
+          set -euo pipefail
+          tag=$(git tag -l '[0-9]*.[0-9]*.[0-9]*' | awk '!/-/' | sort -V | tail -n1)
+          if [[ -z "$tag" ]]; then
+            echo "No stable semver tag found" >&2
+            exit 1
+          fi
+          echo "Baseline: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - name: Swift version
         run: swift --version
       - name: Diagnose API breaking changes
-        run: bash Scripts/diagnose-api-breaking-changes.sh 0.6.1 Scripts/api-breakage-allowlist.txt
+        run: bash Scripts/diagnose-api-breaking-changes.sh "${{ steps.baseline.outputs.tag }}" Scripts/api-breakage-allowlist.txt
 
   build-docs:
     name: Build (DocC)

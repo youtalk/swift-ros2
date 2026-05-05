@@ -75,6 +75,9 @@ public struct ParameterDescriptor: ROS2Message, Equatable, Sendable {
         self.dynamicTyping = try decoder.readBool()
         do {
             let count = try decoder.readSequenceCount()
+            guard count <= 1 else {
+                throw CDRDecodingError.sequenceTooLarge(elements: UInt32(count), max: 1)
+            }
             var out: [FloatingPointRange] = []
             out.reserveCapacity(count)
             for _ in 0..<count {
@@ -84,6 +87,9 @@ public struct ParameterDescriptor: ROS2Message, Equatable, Sendable {
         }
         do {
             let count = try decoder.readSequenceCount()
+            guard count <= 1 else {
+                throw CDRDecodingError.sequenceTooLarge(elements: UInt32(count), max: 1)
+            }
             var out: [IntegerRange] = []
             out.reserveCapacity(count)
             for _ in 0..<count {

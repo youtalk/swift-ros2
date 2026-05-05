@@ -371,6 +371,10 @@ jobs:
           swift sdk list
       - name: Swift version
         run: swift --version
+      - name: Cache SwiftPM .build
+        uses: ./.github/actions/swiftpm-build-cache
+        with:
+          matrix-key: android-${{ matrix.abi }}
       - name: Build
         # SWIFT_ROS2_TARGET_OS — Package.swift reads this to pick the
         # Android arm when cross-compiling from a Linux host, since

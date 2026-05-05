@@ -28,7 +28,7 @@ import SwiftROS2Transport
 // MARK: - Declared Key Expression
 
 /// Represents a declared key expression for efficient reuse
-public class DeclaredKeyExpr {
+class DeclaredKeyExpr {
     private var handle: OpaquePointer?
     private weak var session: ZenohClient?
 
@@ -54,7 +54,7 @@ public class DeclaredKeyExpr {
 // MARK: - Subscriber
 
 /// Represents an active subscription
-public class ZenohSubscriber {
+class ZenohSubscriber {
     private var handle: OpaquePointer?
     private weak var session: ZenohClient?
     private var handler: (ZenohSample) -> Void
@@ -73,7 +73,7 @@ public class ZenohSubscriber {
     }
 
     /// Closes the subscription
-    public func close() throws {
+    func close() throws {
         guard let h = handle else {
             throw ZenohError.internalError("Subscriber already closed")
         }
@@ -108,7 +108,7 @@ public class ZenohSubscriber {
 // MARK: - Liveliness Token
 
 /// Represents an active liveliness token for ROS 2 discovery
-public class LivelinessToken {
+class LivelinessToken {
     private var handle: OpaquePointer?
     private weak var session: ZenohClient?
 
@@ -118,7 +118,7 @@ public class LivelinessToken {
     }
 
     /// Closes the liveliness token
-    public func close() throws {
+    func close() throws {
         guard let h = handle else {
             throw ZenohError.internalError("Liveliness token already closed")
         }

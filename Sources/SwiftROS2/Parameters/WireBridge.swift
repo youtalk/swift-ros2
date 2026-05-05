@@ -56,3 +56,51 @@ extension ROS2ParameterValue {
         return w
     }
 }
+
+extension ROS2ParameterDescriptor {
+    init(wire: SwiftROS2Messages.ParameterDescriptor) {
+        let floating = wire.floatingPointRange.first
+        let integer = wire.integerRange.first
+        self.init(
+            name: wire.name,
+            type: ROS2ParameterType(rawValue: wire.type) ?? .notSet,
+            description: wire.description,
+            additionalConstraints: wire.additionalConstraints,
+            readOnly: wire.readOnly,
+            dynamicTyping: wire.dynamicTyping,
+            floatingPointRange: floating.map { $0.fromValue...$0.toValue },
+            floatingPointStep: floating.map { $0.step },
+            integerRange: integer.map { $0.fromValue...$0.toValue },
+            integerStep: integer.map { Int64(bitPattern: $0.step) }
+        )
+    }
+
+    func toWire() -> SwiftROS2Messages.ParameterDescriptor {
+        var w = SwiftROS2Messages.ParameterDescriptor()
+        w.name = name
+        w.type = type.rawValue
+        w.description = description
+        w.additionalConstraints = additionalConstraints
+        w.readOnly = readOnly
+        w.dynamicTyping = dynamicTyping
+        if let r = floatingPointRange {
+            w.floatingPointRange = [
+                SwiftROS2Messages.FloatingPointRange(
+                    fromValue: r.lowerBound,
+                    toValue: r.upperBound,
+                    step: floatingPointStep ?? 0.0
+                )
+            ]
+        }
+        if let r = integerRange {
+            w.integerRange = [
+                SwiftROS2Messages.IntegerRange(
+                    fromValue: r.lowerBound,
+                    toValue: r.upperBound,
+                    step: integerStep.map { UInt64(bitPattern: $0) } ?? 0
+                )
+            ]
+        }
+        return w
+    }
+}

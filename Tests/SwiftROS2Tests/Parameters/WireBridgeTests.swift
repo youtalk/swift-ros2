@@ -79,4 +79,60 @@ final class WireBridgeTests: XCTestCase {
         wire.type = 99
         XCTAssertEqual(ROS2ParameterValue(wire: wire), .notSet)
     }
+
+    func testDescriptorRoundTripWithIntegerRange() {
+        let swift = ROS2ParameterDescriptor(
+            name: "rate",
+            type: .integer,
+            description: "publish rate",
+            additionalConstraints: "Hz only",
+            readOnly: false,
+            dynamicTyping: false,
+            integerRange: 1...120,
+            integerStep: 2
+        )
+        let wire = swift.toWire()
+        XCTAssertEqual(wire.name, "rate")
+        XCTAssertEqual(wire.type, 2)
+        XCTAssertEqual(wire.description, "publish rate")
+        XCTAssertEqual(wire.additionalConstraints, "Hz only")
+        XCTAssertFalse(wire.readOnly)
+        XCTAssertFalse(wire.dynamicTyping)
+        XCTAssertEqual(wire.floatingPointRange.count, 0)
+        XCTAssertEqual(wire.integerRange.count, 1)
+        XCTAssertEqual(wire.integerRange[0].fromValue, 1)
+        XCTAssertEqual(wire.integerRange[0].toValue, 120)
+        XCTAssertEqual(wire.integerRange[0].step, 2)
+
+        let back = ROS2ParameterDescriptor(wire: wire)
+        XCTAssertEqual(back, swift)
+    }
+
+    func testDescriptorRoundTripWithFloatingPointRange() {
+        let swift = ROS2ParameterDescriptor(
+            name: "gain",
+            type: .double,
+            floatingPointRange: 0.0...1.0,
+            floatingPointStep: 0.1
+        )
+        let wire = swift.toWire()
+        XCTAssertEqual(wire.floatingPointRange.count, 1)
+        XCTAssertEqual(wire.floatingPointRange[0].fromValue, 0.0)
+        XCTAssertEqual(wire.floatingPointRange[0].toValue, 1.0)
+        XCTAssertEqual(wire.floatingPointRange[0].step, 0.1)
+        XCTAssertEqual(wire.integerRange.count, 0)
+
+        let back = ROS2ParameterDescriptor(wire: wire)
+        XCTAssertEqual(back, swift)
+    }
+
+    func testDescriptorRoundTripEmpty() {
+        let swift = ROS2ParameterDescriptor()
+        let wire = swift.toWire()
+        XCTAssertEqual(wire.name, "")
+        XCTAssertEqual(wire.type, 0)
+        XCTAssertEqual(wire.floatingPointRange.count, 0)
+        XCTAssertEqual(wire.integerRange.count, 0)
+        XCTAssertEqual(ROS2ParameterDescriptor(wire: wire), swift)
+    }
 }

@@ -95,3 +95,64 @@ extension ParameterStore {
         return seen.sorted()
     }
 }
+
+extension ParameterStore {
+    @discardableResult
+    func set(_ p: ROS2Parameter) -> ROS2SetParametersResult {
+        guard var entry = entries[p.name] else {
+            return .failure(reason: "parameter '\(p.name)' is not declared")
+        }
+        if let reason = validate(name: p.name, value: p.value, descriptor: entry.descriptor) {
+            return .failure(reason: reason)
+        }
+        entry.value = p.value
+        entries[p.name] = entry
+        return .success()
+    }
+
+    func setMany(_ ps: [ROS2Parameter]) -> [ROS2SetParametersResult] {
+        ps.map { set($0) }
+    }
+
+    func setAtomically(_ ps: [ROS2Parameter]) -> ROS2SetParametersResult {
+        let snapshot = entries
+        for p in ps {
+            let r = set(p)
+            if !r.successful {
+                entries = snapshot
+                return r
+            }
+        }
+        return .success()
+    }
+
+    /// Returns nil if the value is acceptable, otherwise a human-readable reason.
+    private func validate(
+        name: String,
+        value: ROS2ParameterValue,
+        descriptor: ROS2ParameterDescriptor
+    ) -> String? {
+        if descriptor.readOnly {
+            return "parameter '\(name)' is read-only"
+        }
+        let valueType = value.parameterType
+        if !descriptor.dynamicTyping
+            && descriptor.type != .notSet
+            && valueType != descriptor.type
+            && valueType != .notSet
+        {
+            return "parameter '\(name)' expects \(descriptor.type), got \(valueType)"
+        }
+        if case let .integer(v) = value, let r = descriptor.integerRange {
+            if v < r.lowerBound || v > r.upperBound {
+                return "parameter '\(name)' value \(v) out of range \(r)"
+            }
+        }
+        if case let .double(v) = value, let r = descriptor.floatingPointRange {
+            if v < r.lowerBound || v > r.upperBound {
+                return "parameter '\(name)' value \(v) out of range \(r)"
+            }
+        }
+        return nil
+    }
+}

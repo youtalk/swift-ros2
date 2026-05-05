@@ -112,4 +112,123 @@ final class ParameterStoreTests: XCTestCase {
         _ = try await s.declare(name: "b.d.e", value: .integer(3), descriptor: d)
         return s
     }
+
+    func testSetExistingValue() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "rate", value: .integer(30),
+            descriptor: ROS2ParameterDescriptor(name: "rate", type: .integer))
+        let r = await store.set(
+            ROS2Parameter(name: "rate", value: .integer(60)))
+        XCTAssertTrue(r.successful)
+        let p = try await store.get(name: "rate")
+        XCTAssertEqual(p.value, .integer(60))
+    }
+
+    func testSetUnknownFails() async {
+        let store = ParameterStore()
+        let r = await store.set(
+            ROS2Parameter(name: "rate", value: .integer(30)))
+        XCTAssertFalse(r.successful)
+        XCTAssertTrue(r.reason.contains("rate"))
+    }
+
+    func testSetReadOnlyFails() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "k", value: .string("v"),
+            descriptor: ROS2ParameterDescriptor(
+                name: "k", type: .string, readOnly: true))
+        let r = await store.set(
+            ROS2Parameter(name: "k", value: .string("w")))
+        XCTAssertFalse(r.successful)
+        XCTAssertTrue(r.reason.contains("read"))
+    }
+
+    func testSetWrongTypeFailsWhenNotDynamic() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "rate", value: .integer(30),
+            descriptor: ROS2ParameterDescriptor(name: "rate", type: .integer))
+        let r = await store.set(
+            ROS2Parameter(name: "rate", value: .string("nope")))
+        XCTAssertFalse(r.successful)
+    }
+
+    func testSetWrongTypeAllowedWhenDynamic() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "k", value: .integer(0),
+            descriptor: ROS2ParameterDescriptor(
+                name: "k", type: .integer, dynamicTyping: true))
+        let r = await store.set(
+            ROS2Parameter(name: "k", value: .string("hi")))
+        XCTAssertTrue(r.successful)
+    }
+
+    func testSetIntegerOutOfRange() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "rate", value: .integer(30),
+            descriptor: ROS2ParameterDescriptor(
+                name: "rate", type: .integer, integerRange: 1...120))
+        let r = await store.set(
+            ROS2Parameter(name: "rate", value: .integer(999)))
+        XCTAssertFalse(r.successful)
+        XCTAssertTrue(r.reason.contains("range"))
+    }
+
+    func testSetDoubleOutOfRange() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "g", value: .double(0.5),
+            descriptor: ROS2ParameterDescriptor(
+                name: "g", type: .double, floatingPointRange: 0.0...1.0))
+        let r = await store.set(
+            ROS2Parameter(name: "g", value: .double(2.0)))
+        XCTAssertFalse(r.successful)
+    }
+
+    func testSetManyReportsPerEntry() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "a", value: .integer(0),
+            descriptor: ROS2ParameterDescriptor(name: "a", type: .integer))
+        _ = try await store.declare(
+            name: "b", value: .integer(0),
+            descriptor: ROS2ParameterDescriptor(
+                name: "b", type: .integer, integerRange: 0...10))
+        let rs = await store.setMany([
+            ROS2Parameter(name: "a", value: .integer(5)),
+            ROS2Parameter(name: "b", value: .integer(999)),
+        ])
+        XCTAssertEqual(rs.count, 2)
+        XCTAssertTrue(rs[0].successful)
+        XCTAssertFalse(rs[1].successful)
+        // a should be applied even though b failed
+        let a = try await store.get(name: "a")
+        let b = try await store.get(name: "b")
+        XCTAssertEqual(a.value, .integer(5))
+        XCTAssertEqual(b.value, .integer(0))
+    }
+
+    func testSetAtomicallyRollsBack() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "a", value: .integer(0),
+            descriptor: ROS2ParameterDescriptor(name: "a", type: .integer))
+        _ = try await store.declare(
+            name: "b", value: .integer(0),
+            descriptor: ROS2ParameterDescriptor(
+                name: "b", type: .integer, integerRange: 0...10))
+        let r = await store.setAtomically([
+            ROS2Parameter(name: "a", value: .integer(5)),
+            ROS2Parameter(name: "b", value: .integer(999)),
+        ])
+        XCTAssertFalse(r.successful)
+        let a = try await store.get(name: "a")
+        let b = try await store.get(name: "b")
+        XCTAssertEqual(a.value, .integer(0), "a must have rolled back")
+        XCTAssertEqual(b.value, .integer(0))
+    }
 }

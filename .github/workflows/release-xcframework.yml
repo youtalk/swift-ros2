@@ -78,3 +78,42 @@ jobs:
             upload/CZenohPico.xcframework.zip.checksum \
             upload/CCycloneDDS.xcframework.zip \
             upload/CCycloneDDS.xcframework.zip.checksum
+
+      - name: Assert all expected assets present on the release
+        # Fail loudly if the release is missing any expected asset.
+        # The matrix `include:` shape used in build-xcframework can
+        # silently drop a variant before upload, leading to incomplete
+        # published bundles that look fine in workflow logs but break
+        # `swift build` for the downstream consumer hitting the
+        # missing slice. Caught late in #32 (Linux .artifactbundle);
+        # the same matrix shape is reused in the Android release
+        # pipeline (#29, #31). See https://github.com/youtalk/swift-ros2/issues/35.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          expected=(
+            CZenohPico.xcframework.zip
+            CZenohPico.xcframework.zip.checksum
+            CCycloneDDS.xcframework.zip
+            CCycloneDDS.xcframework.zip.checksum
+          )
+          actual=$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | sort)
+          echo "Actual assets on release $TAG:"
+          while IFS= read -r line; do echo "  $line"; done <<<"$actual"
+          missing=()
+          for name in "${expected[@]}"; do
+            if ! grep -Fxq "$name" <<<"$actual"; then
+              missing+=("$name")
+            fi
+          done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo
+            echo "::error::Release $TAG is missing ${#missing[@]} expected asset(s):"
+            printf '::error::  %s\n' "${missing[@]}"
+            echo "::error::This usually means the build-xcframework matrix dropped a variant before upload."
+            exit 1
+          fi
+          echo
+          echo "All ${#expected[@]} expected assets present on release $TAG."

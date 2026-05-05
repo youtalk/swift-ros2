@@ -24,19 +24,19 @@ public protocol DDSReaderHandle: AnyObject {
 // MARK: - DDS Configuration Types
 
 /// DDS discovery mode
-public enum DDSBridgeDiscoveryMode: Int32, Sendable {
+package enum DDSBridgeDiscoveryMode: Int32, Sendable {
     case multicast = 0
     case unicast = 1
     case hybrid = 2
 }
 
 /// DDS discovery configuration
-public struct DDSBridgeDiscoveryConfig: Sendable {
-    public let mode: DDSBridgeDiscoveryMode
-    public let unicastPeers: [String]
-    public let networkInterface: String?
+package struct DDSBridgeDiscoveryConfig: Sendable {
+    package let mode: DDSBridgeDiscoveryMode
+    package let unicastPeers: [String]
+    package let networkInterface: String?
 
-    public init(mode: DDSBridgeDiscoveryMode, unicastPeers: [String] = [], networkInterface: String? = nil) {
+    package init(mode: DDSBridgeDiscoveryMode, unicastPeers: [String] = [], networkInterface: String? = nil) {
         self.mode = mode
         self.unicastPeers = unicastPeers
         self.networkInterface = networkInterface
@@ -44,28 +44,28 @@ public struct DDSBridgeDiscoveryConfig: Sendable {
 }
 
 /// DDS QoS configuration for the bridge
-public struct DDSBridgeQoSConfig: Sendable {
-    public enum Reliability: Int32, Sendable {
+package struct DDSBridgeQoSConfig: Sendable {
+    package enum Reliability: Int32, Sendable {
         case bestEffort = 0
         case reliable = 1
     }
 
-    public enum Durability: Int32, Sendable {
+    package enum Durability: Int32, Sendable {
         case volatile = 0
         case transientLocal = 1
     }
 
-    public enum HistoryKind: Int32, Sendable {
+    package enum HistoryKind: Int32, Sendable {
         case keepLast = 0
         case keepAll = 1
     }
 
-    public let reliability: Reliability
-    public let durability: Durability
-    public let historyKind: HistoryKind
-    public let historyDepth: Int32
+    package let reliability: Reliability
+    package let durability: Durability
+    package let historyKind: HistoryKind
+    package let historyDepth: Int32
 
-    public init(
+    package init(
         reliability: Reliability = .bestEffort,
         durability: Durability = .volatile,
         historyKind: HistoryKind = .keepLast,
@@ -110,7 +110,7 @@ public enum DDSError: Error, LocalizedError {
 /// Consuming apps implement this by wrapping the CycloneDDS C bridge.
 /// swift-ros2's `DDSTransportSession` uses this protocol to create
 /// participants, writers, and publish CDR data.
-public protocol DDSClientProtocol: AnyObject {
+package protocol DDSClientProtocol: AnyObject {
     /// Whether DDS transport is available (compiled with DDS_AVAILABLE)
     var isAvailable: Bool { get }
 

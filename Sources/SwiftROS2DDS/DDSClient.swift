@@ -147,7 +147,7 @@ public final class DDSClient: DDSClientProtocol {
         dds_bridge_is_available()
     }
 
-    public func createSession(
+    package func createSession(
         domainId: Int32,
         discoveryConfig: DDSBridgeDiscoveryConfig
     ) throws {
@@ -230,7 +230,7 @@ public final class DDSClient: DDSClientProtocol {
         return String(cString: buf)
     }
 
-    public func createRawWriter(
+    package func createRawWriter(
         topicName: String,
         typeName: String,
         qos: DDSBridgeQoSConfig,
@@ -297,7 +297,7 @@ public final class DDSClient: DDSClientProtocol {
         box.close()
     }
 
-    public func createRawReader(
+    package func createRawReader(
         topicName: String,
         typeName: String,
         qos: DDSBridgeQoSConfig,

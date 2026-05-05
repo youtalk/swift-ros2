@@ -13,7 +13,7 @@ import Foundation
 import SwiftROS2Wire
 
 extension DDSTransportSession {
-    public func createServiceServer(
+    package func createServiceServer(
         name: String,
         serviceTypeName: String,
         requestTypeHash: String?,
@@ -82,7 +82,7 @@ extension DDSTransportSession {
         return server
     }
 
-    public func createServiceClient(
+    package func createServiceClient(
         name: String,
         serviceTypeName: String,
         requestTypeHash: String?,

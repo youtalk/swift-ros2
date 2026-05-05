@@ -5,7 +5,7 @@ import Foundation
 import SwiftROS2Wire
 
 extension ZenohTransportSession {
-    public func createPublisher(
+    package func createPublisher(
         topic: String,
         typeName: String,
         typeHash: String?,

@@ -84,7 +84,7 @@ public struct QoSProfile: Sendable, Equatable {
     // MARK: - Conversion
 
     /// Convert to transport-level QoS
-    public func toTransportQoS() -> TransportQoS {
+    package func toTransportQoS() -> TransportQoS {
         let rel: TransportQoS.Reliability = reliability == .reliable ? .reliable : .bestEffort
         let dur: TransportQoS.Durability = durability == .transientLocal ? .transientLocal : .volatile
         let hist: TransportQoS.History
@@ -96,7 +96,7 @@ public struct QoSProfile: Sendable, Equatable {
     }
 
     /// Convert to wire QoS policy
-    public func toQoSPolicy() -> QoSPolicy {
+    package func toQoSPolicy() -> QoSPolicy {
         let rel: QoSPolicy.Reliability = reliability == .reliable ? .reliable : .bestEffort
         let dur: QoSPolicy.Durability = durability == .transientLocal ? .transientLocal : .volatile
         let hist: QoSPolicy.HistoryPolicy

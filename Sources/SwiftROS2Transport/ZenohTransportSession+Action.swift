@@ -20,7 +20,7 @@ import Foundation
 import SwiftROS2Wire
 
 extension ZenohTransportSession {
-    public func createActionServer(
+    package func createActionServer(
         name: String,
         actionTypeName: String,
         roleTypeHashes: ActionRoleTypeHashes,
@@ -138,7 +138,7 @@ extension ZenohTransportSession {
         return server
     }
 
-    public func createActionClient(
+    package func createActionClient(
         name: String,
         actionTypeName: String,
         roleTypeHashes: ActionRoleTypeHashes,

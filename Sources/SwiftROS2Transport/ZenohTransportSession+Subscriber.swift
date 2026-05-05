@@ -5,7 +5,7 @@ import Foundation
 import SwiftROS2Wire
 
 extension ZenohTransportSession {
-    public func createSubscriber(
+    package func createSubscriber(
         topic: String,
         typeName: String,
         typeHash: String?,

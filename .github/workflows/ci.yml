@@ -35,6 +35,10 @@ jobs:
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - name: Swift version
         run: swift --version
+      - name: Cache SwiftPM .build
+        uses: ./.github/actions/swiftpm-build-cache
+        with:
+          job-suffix: build-test
       - name: Build
         run: swift build
       - name: Test (with coverage)

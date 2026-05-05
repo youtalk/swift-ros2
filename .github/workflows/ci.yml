@@ -286,6 +286,8 @@ jobs:
           ls "$CYCLONEDDS_DIR/include/dds/dds.h"
           ls "$CYCLONEDDS_DIR/lib/ddsc.lib"
           ls "$CYCLONEDDS_DIR/bin/ddsc.dll"
+      - name: Cache SwiftPM .build
+        uses: ./.github/actions/swiftpm-build-cache
       - name: Build
         run: swift build
       - name: Test

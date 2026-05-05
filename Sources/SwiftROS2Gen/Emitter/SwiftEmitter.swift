@@ -709,7 +709,7 @@ public enum SwiftEmitter {
             out += "            self.\(field.swiftName) = out\n"
             out += "        }\n"
             return out
-        case .sequence(let element, _):
+        case .sequence(let element, let upperBound):
             // Byte-payload fast path mirroring the encoder: pull the entire
             // sequence with a single `Data` slice and bridge to `[UInt8]`.
             if isUInt8Like(element) {
@@ -719,6 +719,15 @@ public enum SwiftEmitter {
             let elem = elementDecodeExpr(element, nestedNameOverrides: nestedNameOverrides)
             var out = "        do {\n"
             out += "            let count = try decoder.readSequenceCount()\n"
+            // Bounded sequences: reject wire payloads exceeding the IDL upper
+            // bound so on-the-wire data can't decode into an out-of-spec value.
+            // Mirrors the encoder-side precondition.
+            if let upper = upperBound {
+                out += "            guard count <= \(upper) else {\n"
+                out +=
+                    "                throw CDRDecodingError.sequenceTooLarge(elements: UInt32(count), max: \(upper))\n"
+                out += "            }\n"
+            }
             out += "            var out: [\(elemType)] = []\n"
             out += "            out.reserveCapacity(count)\n"
             out += "            for _ in 0..<count {\n"

@@ -1,10 +1,16 @@
-# API breakages intentionally introduced post-1.0.0.
+# API breakages intentionally introduced after the latest released tag.
 #
-# Each line is matched verbatim against the diagnostic message emitted by
-# `swift package diagnose-api-breaking-changes`. Append new entries as
-# breakages land; remove entries once a release tag is cut whose baseline
+# CI resolves the baseline dynamically — the highest stable semver tag in the
+# repo (e.g. `1.0.0` today, `1.1.0` once 1.1 ships) — and runs
+# `swift package diagnose-api-breaking-changes` against it. That way removals
+# of APIs added on the 1.x line (e.g. a symbol introduced in 1.1.0 then
+# deleted before 1.2.0) are still caught — they would not have been if the
+# baseline stayed pinned to 1.0.0 forever.
+#
+# Each line below is matched verbatim against a diagnostic message; comments
+# and blank lines are ignored. Append entries when intentional breakages land
+# during a release cycle; drop them again once a tag is cut whose baseline
 # already includes them.
 #
-# 1.0.0 is the API-frozen baseline — the 1.x line follows SemVer, so every
-# entry below represents a breaking change that requires bumping to 2.0.
-# Avoid adding entries unless a major-version bump is being prepared.
+# Removals of public APIs are SemVer-breaking on the 1.x line — adding an
+# entry here is a signal that a 2.0 bump is required.

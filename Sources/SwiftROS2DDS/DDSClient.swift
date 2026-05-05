@@ -269,7 +269,7 @@ public final class DDSClient: DDSClientProtocol {
         return DDSWriterHandleBox(writer)
     }
 
-    public func writeRawCDR(
+    package func writeRawCDR(
         writer: any DDSWriterHandle,
         data: Data,
         timestamp: UInt64
@@ -292,7 +292,7 @@ public final class DDSClient: DDSClientProtocol {
         }
     }
 
-    public func destroyWriter(_ writer: any DDSWriterHandle) {
+    package func destroyWriter(_ writer: any DDSWriterHandle) {
         guard let box = writer as? DDSWriterHandleBox else { return }
         box.close()
     }
@@ -350,7 +350,7 @@ public final class DDSClient: DDSClientProtocol {
         return DDSReaderHandleBox(reader, contextBox: contextBox)
     }
 
-    public func destroyReader(_ reader: any DDSReaderHandle) {
+    package func destroyReader(_ reader: any DDSReaderHandle) {
         guard let box = reader as? DDSReaderHandleBox else { return }
         box.close()
     }

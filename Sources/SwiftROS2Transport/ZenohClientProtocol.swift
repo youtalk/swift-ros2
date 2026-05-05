@@ -10,20 +10,20 @@ import Foundation
 // MARK: - Handle Protocols (type-erased C resource wrappers)
 
 /// Handle to a declared Zenoh key expression
-public protocol ZenohKeyExprHandle: AnyObject {}
+package protocol ZenohKeyExprHandle: AnyObject {}
 
 /// Handle to a Zenoh subscriber
-public protocol ZenohSubscriberHandle: AnyObject {
+package protocol ZenohSubscriberHandle: AnyObject {
     func close() throws
 }
 
 /// Handle to a Zenoh liveliness token
-public protocol ZenohLivelinessTokenHandle: AnyObject {
+package protocol ZenohLivelinessTokenHandle: AnyObject {
     func close() throws
 }
 
 /// Handle to a declared Zenoh queryable (Service Server side)
-public protocol ZenohQueryableHandle: AnyObject {
+package protocol ZenohQueryableHandle: AnyObject {
     func close() throws
 }
 
@@ -32,7 +32,7 @@ public protocol ZenohQueryableHandle: AnyObject {
 /// Consumed by the first call to `reply(payload:attachment:)` or
 /// `replyError(message:)`. After consumption further reply calls throw
 /// `ZenohError.invalidParameter`.
-public protocol ZenohQueryHandle: AnyObject, Sendable {
+package protocol ZenohQueryHandle: AnyObject, Sendable {
     /// The key expression the query was issued against.
     var keyExpr: String { get }
 
@@ -52,12 +52,12 @@ public protocol ZenohQueryHandle: AnyObject, Sendable {
 // MARK: - Zenoh Sample
 
 /// Data received by a Zenoh subscriber
-public struct ZenohSample: Sendable {
-    public let keyExpr: String
-    public let payload: Data
-    public let attachment: Data?
+package struct ZenohSample: Sendable {
+    package let keyExpr: String
+    package let payload: Data
+    package let attachment: Data?
 
-    public init(keyExpr: String, payload: Data, attachment: Data?) {
+    package init(keyExpr: String, payload: Data, attachment: Data?) {
         self.keyExpr = keyExpr
         self.payload = payload
         self.attachment = attachment
@@ -67,7 +67,7 @@ public struct ZenohSample: Sendable {
 // MARK: - Zenoh Error
 
 /// Errors from Zenoh operations
-public enum ZenohError: Error, LocalizedError {
+package enum ZenohError: Error, LocalizedError {
     case sessionCreationFailed(String)
     case sessionCloseFailed(String)
     case keyExprDeclarationFailed(String)
@@ -82,7 +82,7 @@ public enum ZenohError: Error, LocalizedError {
     /// `serviceHandlerFailed` without parsing prefixed strings.
     case queryReplyError(String)
 
-    public var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .sessionCreationFailed(let msg): return "Session creation failed: \(msg)"
         case .sessionCloseFailed(let msg): return "Session close failed: \(msg)"
@@ -114,7 +114,7 @@ public enum ZenohError: Error, LocalizedError {
 ///     // ...
 /// }
 /// ```
-public protocol ZenohClientProtocol: AnyObject {
+package protocol ZenohClientProtocol: AnyObject {
     /// Open a Zenoh session
     func open(locator: String) throws
 
@@ -167,7 +167,7 @@ public protocol ZenohClientProtocol: AnyObject {
 extension ZenohClientProtocol {
     /// Default stub — implementations that don't yet support queryables can
     /// fall back to this until they wire in the C bridge.
-    public func declareQueryable(
+    package func declareQueryable(
         _ keyExpr: String,
         handler: @escaping @Sendable (any ZenohQueryHandle) -> Void
     ) throws -> any ZenohQueryableHandle {
@@ -176,7 +176,7 @@ extension ZenohClientProtocol {
 
     /// Default stub — implementations that don't yet support get queries can
     /// fall back to this until they wire in the C bridge.
-    public func get(
+    package func get(
         keyExpr: String,
         payload: Data?,
         attachment: Data?,

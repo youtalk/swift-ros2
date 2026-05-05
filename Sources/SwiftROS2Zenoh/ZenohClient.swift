@@ -297,7 +297,7 @@ public class ZenohClient: ZenohClientProtocol {
     /// - Parameter keyExpr: The key expression string to declare
     /// - Returns: A handle conforming to ZenohKeyExprHandle
     /// - Throws: ZenohError if declaration fails
-    public func declareKeyExpr(_ keyExpr: String) throws -> any ZenohKeyExprHandle {
+    package func declareKeyExpr(_ keyExpr: String) throws -> any ZenohKeyExprHandle {
         guard let sess = session else {
             throw ZenohError.keyExprDeclarationFailed("Session not open")
         }
@@ -326,7 +326,7 @@ public class ZenohClient: ZenohClientProtocol {
     ///   - payload: The data to publish
     ///   - attachment: Optional attachment data (for ROS 2 metadata)
     /// - Throws: ZenohError if the put operation fails or the handle type is foreign
-    public func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws {
+    package func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws {
         guard let declared = keyExpr as? DeclaredKeyExpr else {
             throw ZenohError.invalidParameter("foreign key-expression handle")
         }
@@ -387,7 +387,7 @@ public class ZenohClient: ZenohClientProtocol {
     ///   - handler: Callback to invoke when samples are received
     /// - Returns: A handle conforming to ZenohSubscriberHandle
     /// - Throws: ZenohError if subscription fails
-    public func subscribe(
+    package func subscribe(
         keyExpr: String,
         handler: @escaping (ZenohSample) -> Void
     ) throws -> any ZenohSubscriberHandle {
@@ -427,7 +427,7 @@ public class ZenohClient: ZenohClientProtocol {
     /// - Parameter keyExpr: The liveliness token key expression (e.g., "@ros2_lv/0/...")
     /// - Returns: A handle conforming to ZenohLivelinessTokenHandle
     /// - Throws: ZenohError if declaration fails
-    public func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle {
+    package func declareLivelinessToken(_ keyExpr: String) throws -> any ZenohLivelinessTokenHandle {
         guard let sess = session else {
             throw ZenohError.internalError("Session not open")
         }
@@ -794,7 +794,7 @@ extension ZenohClient {
     // MARK: - Queryable
 
     /// Declares a queryable on the given key expression. Mirrors `subscribe`.
-    public func declareQueryable(
+    package func declareQueryable(
         _ keyExpr: String,
         handler: @escaping @Sendable (any ZenohQueryHandle) -> Void
     ) throws -> any ZenohQueryableHandle {
@@ -825,7 +825,7 @@ extension ZenohClient {
     // MARK: - Get
 
     /// Issues a query (Service Client side) against the given key expression.
-    public func get(
+    package func get(
         keyExpr: String,
         payload: Data?,
         attachment: Data?,

@@ -10,13 +10,13 @@ import Foundation
 // MARK: - Handle Protocols
 
 /// Handle to a DDS writer
-public protocol DDSWriterHandle: AnyObject {
+package protocol DDSWriterHandle: AnyObject {
     var isActive: Bool { get }
     func close()
 }
 
 /// Handle to a DDS reader
-public protocol DDSReaderHandle: AnyObject {
+package protocol DDSReaderHandle: AnyObject {
     var isActive: Bool { get }
     func close()
 }
@@ -81,7 +81,7 @@ package struct DDSBridgeQoSConfig: Sendable {
 // MARK: - DDS Error
 
 /// Errors from DDS operations
-public enum DDSError: Error, LocalizedError {
+package enum DDSError: Error, LocalizedError {
     case sessionCreationFailed(String)
     case sessionDestructionFailed(String)
     case writerCreationFailed(String)
@@ -90,7 +90,7 @@ public enum DDSError: Error, LocalizedError {
     case notConnected
     case notAvailable
 
-    public var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .sessionCreationFailed(let msg): return "DDS session creation failed: \(msg)"
         case .sessionDestructionFailed(let msg): return "DDS session destruction failed: \(msg)"
@@ -181,5 +181,5 @@ extension DDSClientProtocol {
     /// Default: optimistically report the publication as matched. Concrete
     /// conformers (e.g. CycloneDDS-backed bridges) should override this with
     /// `dds_get_publication_matched_status`.
-    public func isPublicationMatched(writer: any DDSWriterHandle) -> Bool { true }
+    package func isPublicationMatched(writer: any DDSWriterHandle) -> Bool { true }
 }

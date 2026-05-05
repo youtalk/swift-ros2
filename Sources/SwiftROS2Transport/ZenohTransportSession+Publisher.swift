@@ -105,17 +105,17 @@ extension ZenohTransportSession {
 // MARK: - Zenoh Transport Publisher
 
 /// TransportPublisher using Zenoh
-public final class ZenohTransportPublisher: TransportPublisher, @unchecked Sendable {
+final class ZenohTransportPublisher: TransportPublisher, @unchecked Sendable {
     private let client: any ZenohClientProtocol
     private var declaredKey: (any ZenohKeyExprHandle)?
     private var livelinessToken: (any ZenohLivelinessTokenHandle)?
     private let codec: ZenohWireCodec
     private let gid: [UInt8]
-    public let topic: String
+    let topic: String
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         return !closed && declaredKey != nil
@@ -137,7 +137,7 @@ public final class ZenohTransportPublisher: TransportPublisher, @unchecked Senda
         self.topic = topic
     }
 
-    public func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
+    func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
         lock.lock()
         guard !closed, let key = declaredKey else {
             lock.unlock()
@@ -161,7 +161,7 @@ public final class ZenohTransportPublisher: TransportPublisher, @unchecked Senda
         }
     }
 
-    public func close() throws {
+    func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

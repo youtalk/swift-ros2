@@ -231,7 +231,7 @@ jobs:
           grep -q "BoolMsg.typeInfo.typeName" plugin-smoke.out
 
   verify-plugin-arms:
-    name: Plugin manifest resolves on all arms
+    name: Check (Plugin manifest on all arms)
     needs: [lint-swift-format]
     runs-on: macos-26
     steps:

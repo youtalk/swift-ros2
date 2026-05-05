@@ -12,7 +12,7 @@ import SwiftROS2Wire
 /// Implementations provide the actual transport mechanism:
 /// - Zenoh: via zenoh-pico C-FFI
 /// - DDS: via CycloneDDS C-FFI
-public protocol TransportSession: AnyObject, Sendable {
+package protocol TransportSession: AnyObject, Sendable {
     var isConnected: Bool { get }
     var transportType: TransportType { get }
     var sessionId: String { get }
@@ -105,7 +105,7 @@ public protocol TransportSession: AnyObject, Sendable {
 
 extension TransportSession {
     /// Default — concrete sessions override in Phases 4 / 5.
-    public func createActionServer(
+    package func createActionServer(
         name: String,
         actionTypeName: String,
         roleTypeHashes: ActionRoleTypeHashes,
@@ -116,7 +116,7 @@ extension TransportSession {
     }
 
     /// Default — concrete sessions override in Phases 4 / 5.
-    public func createActionClient(
+    package func createActionClient(
         name: String,
         actionTypeName: String,
         roleTypeHashes: ActionRoleTypeHashes,
@@ -132,7 +132,7 @@ extension TransportSession {
 ///
 /// Conforming types are returned by ``TransportSession/createPublisher(topic:typeName:typeHash:qos:)``
 /// and must remain sendable across concurrency domains.
-public protocol TransportPublisher: Sendable {
+package protocol TransportPublisher: Sendable {
     func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws
     func close() throws
     var topic: String { get }
@@ -145,7 +145,7 @@ public protocol TransportPublisher: Sendable {
 ///
 /// Conforming types are returned by ``TransportSession/createSubscriber(topic:typeName:typeHash:qos:handler:)``
 /// and must remain sendable across concurrency domains.
-public protocol TransportSubscriber: Sendable {
+package protocol TransportSubscriber: Sendable {
     var topic: String { get }
     var isActive: Bool { get }
     func close() throws
@@ -158,7 +158,7 @@ public protocol TransportSubscriber: Sendable {
 /// The handler closure passed at creation time receives raw CDR request bytes
 /// and is expected to return raw CDR response bytes. The transport layer is
 /// untyped on purpose — `ROS2Service<S>` on top encodes / decodes typed values.
-public protocol TransportService: Sendable {
+package protocol TransportService: Sendable {
     var name: String { get }
     var isActive: Bool { get }
     func close() throws
@@ -168,7 +168,7 @@ public protocol TransportService: Sendable {
 ///
 /// `call` operates on raw CDR. The `ROS2Client<S>` layer encodes the typed
 /// request, invokes this method, and decodes the typed response.
-public protocol TransportClient: Sendable {
+package protocol TransportClient: Sendable {
     var name: String { get }
     var isActive: Bool { get }
     func waitForService(timeout: Duration) async throws
@@ -181,45 +181,42 @@ public protocol TransportClient: Sendable {
 
 // MARK: - Transport QoS
 
-/// Quality-of-service settings used internally by the transport layer.
-///
-/// End users should prefer the higher-level ``QoSProfile`` presets; `TransportQoS` is derived
-/// automatically from a `QoSProfile` when creating publishers and subscriptions.
-public struct TransportQoS: Sendable, Equatable {
-    public enum Reliability: String, Sendable {
+/// Package-internal QoS shape derived from `QoSProfile`. End users see only `QoSProfile`.
+package struct TransportQoS: Sendable, Equatable {
+    package enum Reliability: String, Sendable {
         case reliable
         case bestEffort = "best_effort"
     }
 
-    public enum Durability: String, Sendable {
+    package enum Durability: String, Sendable {
         case volatile
         case transientLocal = "transient_local"
     }
 
-    public enum History: Sendable, Equatable {
+    package enum History: Sendable, Equatable {
         case keepLast(Int)
         case keepAll
     }
 
-    public let reliability: Reliability
-    public let durability: Durability
-    public let history: History
+    package let reliability: Reliability
+    package let durability: Durability
+    package let history: History
 
-    public static let sensorData = TransportQoS(
+    package static let sensorData = TransportQoS(
         reliability: .reliable,
         durability: .volatile,
         history: .keepLast(10)
     )
 
-    public static let bestEffort = TransportQoS(
+    package static let bestEffort = TransportQoS(
         reliability: .bestEffort,
         durability: .volatile,
         history: .keepLast(1)
     )
 
-    public static let `default` = sensorData
+    package static let `default` = sensorData
 
-    public init(
+    package init(
         reliability: Reliability = .reliable,
         durability: Durability = .volatile,
         history: History = .keepLast(10)

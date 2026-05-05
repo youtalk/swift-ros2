@@ -7,14 +7,14 @@ import Foundation
 ///
 /// Each context has its own entity manager. IDs are used in liveliness
 /// tokens for ROS 2 discovery (makes topics visible in `ros2 topic list`).
-public final class EntityManager: @unchecked Sendable {
+package final class EntityManager: @unchecked Sendable {
     private var nextId: Int = 0
     private let lock = NSLock()
 
-    public init() {}
+    package init() {}
 
     /// Get the next unique entity ID
-    public func getNextEntityId() -> Int {
+    package func getNextEntityId() -> Int {
         lock.lock()
         defer { lock.unlock() }
         let id = nextId
@@ -23,7 +23,7 @@ public final class EntityManager: @unchecked Sendable {
     }
 
     /// Reset the counter (for testing)
-    public func reset() {
+    package func reset() {
         lock.lock()
         nextId = 0
         lock.unlock()

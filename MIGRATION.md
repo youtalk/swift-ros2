@@ -8,7 +8,7 @@
 | 0.6.x | 0.7.x | **One** if upgrading from 0.6.0 directly: the rename above. From 0.6.1 → 0.7.x there are no breaking changes — the Services API is purely additive. |
 | 0.7.x | 0.8.0 | **None.** Actions are purely additive — `ROS2Action`, `ROS2ActionServer`, `ROS2ActionClient`, `ActionGoalHandle`, `ActionResult`, `ActionGoalStatus`, `ActionError` are new. `ROS2ActionTypeInfo` gained five optional hash fields with source-compatible defaults (Phase 1). |
 | 0.8.x | 0.9.0 | **None.** `swift-ros2-gen` (CLI + SwiftPM build plugin + hash-oracle CI) is purely additive — no existing public API changed. |
-| 0.9.x | 1.0.0 | Limited to the candidates below, decided after 0.9.0 ships based on the downstream survey. |
+| 0.9.x | 1.0.0 | **Six visibility-only changes** — plumbing types pulled out of the public surface (`TransportQoS`, `QoSPolicy`, `DDSBridge*`, `ZenohClientProtocol`/`DDSClientProtocol` + 10 related, `EntityManager`/`GIDManager` → `package`; `ZenohTransportPublisher`, `DeclaredKeyExpr`/`ZenohSubscriber`/`LivelinessToken` → `internal`). End-user APIs (`ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, all message types) are unchanged. |
 | 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
@@ -120,78 +120,66 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 
 ---
 
-## 0.9 → 1.0 — candidate change list
-
-> **Status:** the actual 1.0 break list is decided **after 0.9.0 ships**, based on a downstream-consumer survey (Conduit and any other known users). Each candidate below describes what *might* change, why it is being considered, and the recommended action you can take during 0.9.x to avoid surprise.
+## 0.9 → 1.0 — actual change list
 
 ### Candidate 1 — `TransportQoS` and `QoSPolicy`
 
 - **Current location:** `Sources/SwiftROS2Transport/TransportSession.swift` (`TransportQoS`); `Sources/SwiftROS2Wire/WireCodec.swift` (`QoSPolicy`).
 - **Current declaration:** `public struct TransportQoS`, `public struct QoSPolicy`.
-- **1.0 plan:** make both `internal`.
+- **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
 - **Rationale:** both are derived representations of `QoSProfile`. End users do not need to construct them directly. Three parallel public QoS types (profile / transport / wire) inflate the API surface for no functional gain.
 - **Replacement:** `QoSProfile` (presets `.default`, `.sensorData`, `.reliableSensor`, `.latched`, `.servicesDefault`, or `init(reliability:durability:history:)`).
 - **Impact surface:** code that constructs `TransportQoS(...)` or `QoSPolicy(...)` directly. Detect with `grep -rn "TransportQoS(\|QoSPolicy(" your-project/`.
 - **Recommended action:** replace direct construction with `QoSProfile(...)`.
-- **Compatibility shim?** Likely not — the migration is mechanical.
 
 ### Candidate 2 — `DDSBridgeQoSConfig`, `DDSBridgeDiscoveryConfig`, `DDSBridgeDiscoveryMode`
 
 - **Current location:** `Sources/SwiftROS2Transport/DDSClientProtocol.swift`.
 - **Current declaration:** `public struct DDSBridgeQoSConfig`, `public struct DDSBridgeDiscoveryConfig`, `public enum DDSBridgeDiscoveryMode`.
-- **1.0 plan:** make `internal` (alongside Candidate 3).
+- **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
 - **Rationale:** these types only exist in the public API to appear in `DDSClientProtocol` parameters. `DDSBridgeDiscoveryMode` (Int32-raw) duplicates `TransportConfig.DDSDiscoveryMode` (String-raw) at the concept level.
 - **Replacement:** `TransportConfig.DDSDiscoveryMode` and `DDSPeer` continue to be the public configuration surface.
 - **Impact surface:** code that constructs `DDSBridgeQoSConfig(...)` or `DDSBridgeDiscoveryConfig(...)` directly. Grep for `DDSBridge`.
 - **Recommended action:** replace direct construction with `TransportConfig.ddsMulticast(...)` / `TransportConfig.ddsUnicast(...)`.
-- **Compatibility shim?** None planned.
 
 ### Candidate 3 — `ZenohClientProtocol`, `DDSClientProtocol`, and related public types
 
-- **Related types (8):** `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle`, `ZenohSample`, `ZenohError`, `DDSWriterHandle`, `DDSReaderHandle`, `DDSError` plus the 3 in Candidate 2.
+- **Related types (10):** `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle`, `ZenohQueryableHandle`, `ZenohQueryHandle`, `ZenohSample`, `ZenohError`, `DDSWriterHandle`, `DDSReaderHandle`, `DDSError`.
 - **Current location:** `Sources/SwiftROS2Transport/{Zenoh,DDS}ClientProtocol.swift`.
-- **1.0 plan:** make `internal`.
-- **Rationale:** these protocols exist so consumers can wrap the C bridge themselves and inject a custom client. In practice Conduit uses `ZenohClient()` / `DDSClient()` from `SwiftROS2Zenoh` / `SwiftROS2DDS` directly. The implementation-injection seam is over-budget for an actual freeze.
-- **Replacement:** stock `ZenohClient` / `DDSClient` for production use, plus an internal testing utility for unit tests.
-- **Impact surface:** code that conforms to `ZenohClientProtocol` / `DDSClientProtocol` (custom wrappers). Grep for `: ZenohClientProtocol\|: DDSClientProtocol`.
-- **Recommended action:** if you have a custom implementation, contact the maintainer during 0.7.x so the use case can be considered before the freeze.
-- **Compatibility shim?** Decided during the 0.7.0 → 1.0.0 survey.
+- **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
+- **Rationale:** these protocols exist so consumers can wrap the C bridge themselves and inject a custom client. In practice every known consumer uses the stock `ZenohClient()` / `DDSClient()` from `SwiftROS2Zenoh` / `SwiftROS2DDS` directly — both remain `public`. The implementation-injection seam is over-budget for the 1.0 freeze. As a knock-on effect, the cross-target plumbing that referenced these protocol types — `TransportSession` / `TransportPublisher` / `TransportSubscriber`, the `ROS2Context.init(... session:)` 4-arg initializer, and `*TransportSession` initializers — was demoted to `package` as well, since a `public` API can't take a `package` type as a parameter.
+- **Replacement:** the high-level public API. Construct a context with `ROS2Context(transport: TransportConfig)` (which now picks the correct stock `ZenohClient` / `DDSClient` internally based on `TransportConfig.type`); use `ROS2Publisher` / `ROS2Subscription` / `ROS2Service` / `ROS2Client` / `ROS2ActionServer` / `ROS2ActionClient` from `node.create*`. The injection seam (`session:`-shaped initializers, `TransportSession` / `TransportPublisher` / `TransportSubscriber` protocols) is no longer reachable from outside the package.
+- **Impact surface:** code that conforms to `ZenohClientProtocol` / `DDSClientProtocol` (custom wrappers), constructs a `*TransportSession` directly, or holds `any TransportPublisher` / `any TransportSubscriber`. Grep for `: ZenohClientProtocol\|: DDSClientProtocol\|TransportSession(\|any TransportPublisher\|any TransportSubscriber`.
+- **Recommended action:** drop the custom conformance / direct session construction and use `ROS2Context(transport:)` plus `node.createPublisher(...)` / `createSubscription(...)` / `createService(...)` / etc.
 
 ### Candidate 4 — `EntityManager`, `GIDManager`
 
 - **Current location:** `Sources/SwiftROS2Transport/{EntityManager,GIDManager}.swift`.
 - **Current declaration:** `public final class`.
-- **1.0 plan:** make `internal`.
+- **1.0 change:** demoted to `package` (Swift 5.9+ access modifier — invisible to downstream consumers, still reachable from the other targets and tests in this SPM package).
 - **Rationale:** library-internal entity-id allocator and GID storage. No external construction required.
 - **Replacement:** none required (`ROS2Context` and `ROS2Node` own these internally).
 - **Impact surface:** code that constructs `EntityManager()` or `GIDManager()` directly.
 - **Recommended action:** drop direct instantiation.
-- **Compatibility shim?** None planned.
 
 ### Candidate 5 — `ZenohTransportPublisher` (concrete class)
 
 - **Current location:** `Sources/SwiftROS2Transport/ZenohTransportSession+Publisher.swift`.
 - **Current declaration:** `public final class ZenohTransportPublisher: TransportPublisher`.
-- **1.0 plan:** make `internal`.
-- **Rationale:** the protocol `TransportPublisher` already exists; the concrete class does not need to be public too.
-- **Replacement:** the `TransportPublisher` protocol (which itself follows Candidate 3 if that group is also internalized).
-- **Impact surface:** code that names `ZenohTransportPublisher` directly (e.g. as a stored type).
-- **Recommended action:** replace with `any TransportPublisher`.
-- **Compatibility shim?** None planned.
+- **1.0 change:** demoted to `internal` (no cross-target references, so plain `internal` suffices).
+- **Rationale:** the protocol `TransportPublisher` already exists, and the umbrella's `ROS2Publisher` is the supported public type that wraps it; the concrete Zenoh class never needed to be public.
+- **Replacement:** the umbrella's public `ROS2Publisher`, returned by `node.createPublisher(...)`. The `TransportPublisher` protocol itself was also demoted to `package` (knock-on from Candidate 3) — downstream code can't name it from outside the SPM package.
+- **Impact surface:** code that names `ZenohTransportPublisher` directly (e.g. as a stored type), or that holds `any TransportPublisher` from outside the package.
+- **Recommended action:** replace with `ROS2Publisher` from `node.createPublisher(...)`.
 
 ### Candidate 6 — `DeclaredKeyExpr`, `ZenohSubscriber`, `LivelinessToken`
 
 - **Current location:** `Sources/SwiftROS2Zenoh/ZenohClient.swift`.
-- **1.0 plan:** make `internal`.
+- **1.0 change:** demoted to `internal` (no cross-target references, so plain `internal` suffices).
 - **Rationale:** internal concrete classes of `ZenohClient`. They should be accessed only through the corresponding handle protocols.
-- **Replacement:** `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle` (which themselves follow Candidate 3 if that group is also internalized).
+- **Replacement:** `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle` (which were themselves demoted to `package` in Candidate 3).
 - **Impact surface:** code that names these classes directly.
 - **Recommended action:** drop direct references.
-- **Compatibility shim?** None planned.
-
-### Candidate 7 — Action public declarations with no implementation *(obsolete since 0.8.0)*
-
-The 0.7.0 plan had assumed `ROS2ActionTypeInfo` and `ROS2Action` in `SwiftROS2Messages` would either be removed or made `internal` for 1.0. Both are now real, fully-implemented protocols backing the `ROS2ActionServer<H>` / `ROS2ActionClient<A>` umbrella that shipped in 0.8.0 (#77–#82). They will remain `public` in 1.0.0 — no action required from downstream code.
 
 > **Note:** the analogous Service placeholders (`ROS2ServiceTypeInfo`, `ROS2ServiceType`) were retained in 0.7.0 once the typed `ROS2Service<S>` / `ROS2Client<S>` umbrella landed — they are now real, implemented protocols, not placeholders.
 

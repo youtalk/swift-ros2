@@ -5,7 +5,7 @@ import Foundation
 import SwiftROS2Wire
 
 extension DDSTransportSession {
-    public func createPublisher(
+    package func createPublisher(
         topic: String,
         typeName: String,
         typeHash: String?,

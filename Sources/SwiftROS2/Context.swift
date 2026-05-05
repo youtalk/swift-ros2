@@ -33,8 +33,21 @@ public final class ROS2Context: @unchecked Sendable {
     ///   - transport: Transport configuration (Zenoh or DDS)
     ///   - distro: ROS 2 distribution for wire format (default: .jazzy)
     ///   - domainId: ROS 2 domain ID (default: 0)
-    ///   - session: Custom transport session (nil to use factory)
-    public init(
+    public convenience init(
+        transport: TransportConfig,
+        distro: ROS2Distro = .jazzy,
+        domainId: Int? = nil
+    ) async throws {
+        try await self.init(
+            transport: transport,
+            distro: distro,
+            domainId: domainId,
+            session: nil
+        )
+    }
+
+    /// Package-internal initializer for tests / custom transport sessions.
+    package init(
         transport: TransportConfig,
         distro: ROS2Distro = .jazzy,
         domainId: Int? = nil,

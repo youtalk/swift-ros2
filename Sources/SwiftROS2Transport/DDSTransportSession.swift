@@ -42,7 +42,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
 
     /// Create a DDS transport session
     /// - Parameter client: DDS client protocol implementation (wraps C bridge)
-    public init(client: any DDSClientProtocol) {
+    package init(client: any DDSClientProtocol) {
         self.client = client
     }
 

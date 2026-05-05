@@ -43,7 +43,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
     ///   - client: Zenoh client protocol implementation (wraps C bridge)
     ///   - entityManager: Entity ID generator (optional, creates new if nil)
     ///   - gidManager: GID manager (optional, creates new if nil)
-    public init(
+    package init(
         client: any ZenohClientProtocol,
         entityManager: EntityManager? = nil,
         gidManager: GIDManager? = nil

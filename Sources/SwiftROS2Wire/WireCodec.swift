@@ -8,7 +8,7 @@ import Foundation
 /// Implementations handle the specifics of key expression generation,
 /// liveliness token construction, and attachment building for different
 /// ROS 2 middleware implementations.
-public protocol WireCodec: Sendable {
+package protocol WireCodec: Sendable {
     /// Generate a key expression for a topic
     func makeKeyExpr(
         domainId: Int,
@@ -41,28 +41,28 @@ public protocol WireCodec: Sendable {
 }
 
 /// QoS policy for wire format encoding (transport-agnostic)
-public struct QoSPolicy: Sendable, Equatable {
-    public enum Reliability: Int, Sendable {
+package struct QoSPolicy: Sendable, Equatable {
+    package enum Reliability: Int, Sendable {
         case bestEffort = 0
         case reliable = 1
     }
 
-    public enum Durability: Int, Sendable {
+    package enum Durability: Int, Sendable {
         case transientLocal = 1
         case volatile = 2
     }
 
-    public enum HistoryPolicy: Int, Sendable {
+    package enum HistoryPolicy: Int, Sendable {
         case keepLast = 0
         case keepAll = 1
     }
 
-    public var reliability: Reliability
-    public var durability: Durability
-    public var historyPolicy: HistoryPolicy
-    public var historyDepth: Int
+    package var reliability: Reliability
+    package var durability: Durability
+    package var historyPolicy: HistoryPolicy
+    package var historyDepth: Int
 
-    public init(
+    package init(
         reliability: Reliability = .bestEffort,
         durability: Durability = .volatile,
         historyPolicy: HistoryPolicy = .keepLast,
@@ -77,7 +77,7 @@ public struct QoSPolicy: Sendable, Equatable {
     /// Encode QoS for liveliness token
     ///
     /// Format: `reliability:durability:history,depth:deadline:lifespan:liveliness`
-    public func toKeyExpr() -> String {
+    package func toKeyExpr() -> String {
         let relStr = reliability == .bestEffort ? "" : String(reliability.rawValue)
         let durStr = durability == .volatile ? "" : String(durability.rawValue)
         let histStr = historyPolicy == .keepLast ? "" : String(historyPolicy.rawValue)
@@ -87,30 +87,30 @@ public struct QoSPolicy: Sendable, Equatable {
 
     // MARK: - Presets
 
-    public static let `default` = QoSPolicy()
+    package static let `default` = QoSPolicy()
 
-    public static let sensorData = QoSPolicy(
+    package static let sensorData = QoSPolicy(
         reliability: .bestEffort,
         durability: .volatile,
         historyPolicy: .keepLast,
         historyDepth: 10
     )
 
-    public static let latched = QoSPolicy(
+    package static let latched = QoSPolicy(
         reliability: .reliable,
         durability: .transientLocal,
         historyPolicy: .keepLast,
         historyDepth: 1
     )
 
-    public static let reliableSensor = QoSPolicy(
+    package static let reliableSensor = QoSPolicy(
         reliability: .reliable,
         durability: .volatile,
         historyPolicy: .keepLast,
         historyDepth: 10
     )
 
-    public static let servicesDefault = QoSPolicy(
+    package static let servicesDefault = QoSPolicy(
         reliability: .reliable,
         durability: .volatile,
         historyPolicy: .keepLast,

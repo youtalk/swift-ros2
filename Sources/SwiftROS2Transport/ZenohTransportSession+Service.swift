@@ -18,7 +18,7 @@ import Foundation
 import SwiftROS2Wire
 
 extension ZenohTransportSession {
-    public func createServiceServer(
+    package func createServiceServer(
         name: String,
         serviceTypeName: String,
         requestTypeHash: String?,
@@ -68,7 +68,7 @@ extension ZenohTransportSession {
         return server
     }
 
-    public func createServiceClient(
+    package func createServiceClient(
         name: String,
         serviceTypeName: String,
         requestTypeHash: String?,

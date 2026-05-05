@@ -8,16 +8,16 @@ import Foundation
 /// The GID uniquely identifies a publisher and must be stable across
 /// publish calls within a session. Platform-specific persistence
 /// (Keychain on iOS/macOS, file on Linux) can be added later.
-public final class GIDManager: @unchecked Sendable {
-    public static let gidSize = 16
+package final class GIDManager: @unchecked Sendable {
+    package static let gidSize = 16
 
     private var cachedGid: [UInt8]?
     private let lock = NSLock()
 
-    public init() {}
+    package init() {}
 
     /// Get or create a 16-byte publisher GID
-    public func getOrCreateGid() -> [UInt8] {
+    package func getOrCreateGid() -> [UInt8] {
         lock.lock()
         defer { lock.unlock() }
 
@@ -31,7 +31,7 @@ public final class GIDManager: @unchecked Sendable {
     }
 
     /// Reset the GID (generates a new one on next access)
-    public func reset() {
+    package func reset() {
         lock.lock()
         cachedGid = nil
         lock.unlock()

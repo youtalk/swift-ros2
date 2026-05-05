@@ -14,7 +14,13 @@ Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics ove
 
 > The four CI badges above all reflect the same `ci.yml` workflow status (GitHub Actions does not expose per-matrix-job badges). Each label is the OS family that workflow exercises — when the badges are green, every Apple / Linux / Windows / Android matrix entry passed.
 
-Shipping as **0.9.0** — Apple xcframeworks (iOS / iPadOS / macOS / Mac Catalyst / visionOS), `zenoh-pico` source build on Linux / Windows / Android, `swift-ros2-gen` IDL → Swift code generator + SwiftPM build plugin.
+Shipping as **1.0.0** — Apple xcframeworks (iOS / iPadOS / macOS / Mac Catalyst / visionOS), `zenoh-pico` source build on Linux / Windows / Android, `swift-ros2-gen` IDL → Swift code generator + SwiftPM build plugin.
+
+## API stability
+
+swift-ros2 1.0.0 inaugurates the [SemVer](https://semver.org/spec/v2.0.0.html) 1.x line: no minor or patch release on 1.x will break the public API. Breaking changes require a 2.0 bump.
+
+The frozen public surface covers `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, the concrete `ZenohClient` / `DDSClient`, and every `ROS2Message` / `ROS2ServiceType` / `ROS2Action` type. Internal plumbing (`TransportQoS`, `QoSPolicy`, `DDSBridge*`, `ZenohClientProtocol` / `DDSClientProtocol`, `EntityManager`, `GIDManager`, etc.) was pulled out of the public surface at the 1.0 cut — see [`MIGRATION.md`](MIGRATION.md) for the full list and migration recipes.
 
 ## Why
 
@@ -70,7 +76,7 @@ In practice this means almost every consumer device that someone might want to a
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.9.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "1.0.0"),
 ],
 targets: [
     .target(
@@ -116,7 +122,7 @@ $env:Path = "$env:CYCLONEDDS_DIR\bin;$env:Path"
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "0.9.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2.git", from: "1.0.0"),
 ],
 targets: [
     .target(

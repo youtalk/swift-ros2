@@ -147,7 +147,7 @@ public final class DDSClient: DDSClientProtocol {
         dds_bridge_is_available()
     }
 
-    public func createSession(
+    package func createSession(
         domainId: Int32,
         discoveryConfig: DDSBridgeDiscoveryConfig
     ) throws {
@@ -230,7 +230,7 @@ public final class DDSClient: DDSClientProtocol {
         return String(cString: buf)
     }
 
-    public func createRawWriter(
+    package func createRawWriter(
         topicName: String,
         typeName: String,
         qos: DDSBridgeQoSConfig,
@@ -269,7 +269,7 @@ public final class DDSClient: DDSClientProtocol {
         return DDSWriterHandleBox(writer)
     }
 
-    public func writeRawCDR(
+    package func writeRawCDR(
         writer: any DDSWriterHandle,
         data: Data,
         timestamp: UInt64
@@ -292,12 +292,12 @@ public final class DDSClient: DDSClientProtocol {
         }
     }
 
-    public func destroyWriter(_ writer: any DDSWriterHandle) {
+    package func destroyWriter(_ writer: any DDSWriterHandle) {
         guard let box = writer as? DDSWriterHandleBox else { return }
         box.close()
     }
 
-    public func createRawReader(
+    package func createRawReader(
         topicName: String,
         typeName: String,
         qos: DDSBridgeQoSConfig,
@@ -350,7 +350,7 @@ public final class DDSClient: DDSClientProtocol {
         return DDSReaderHandleBox(reader, contextBox: contextBox)
     }
 
-    public func destroyReader(_ reader: any DDSReaderHandle) {
+    package func destroyReader(_ reader: any DDSReaderHandle) {
         guard let box = reader as? DDSReaderHandleBox else { return }
         box.close()
     }

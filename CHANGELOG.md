@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+## [1.0.0] - 2026-05-05
+
+### Added
+
+- **API stability promise.** swift-ros2 1.0.0 inaugurates the SemVer 1.x line — no breaking changes will land in 1.x without a 2.0 bump. See `MIGRATION.md` for the compatibility table.
+
+### Changed
+
+- **Public surface freeze.** Six visibility-only changes pull plumbing types out of the public API. End-user types (`ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, all message and service types) are unchanged. The concrete `ZenohClient` and `DDSClient` remain public.
+
+### Removed
+
+- (none — all removals are visibility demotions, covered under "Breaking changes" below.)
+
+### Breaking changes
+
+All six are visibility demotions out of the public API surface — downstream consumers can no longer name these types from outside the package. Inside the package, Candidates 1–4 use Swift 5.9's `package` access (cross-target visibility) and Candidates 5–6 use plain `internal` (single-target).
+
+- **`TransportQoS` and `QoSPolicy` → `package`** (Candidate 1). Use `QoSProfile(reliability:, durability:, history:)` or one of the presets (`.sensorData`, `.reliableSensor`, `.latched`, `.servicesDefault`, `.actionDefault`).
+- **`DDSBridgeQoSConfig`, `DDSBridgeDiscoveryConfig`, `DDSBridgeDiscoveryMode` → `package`** (Candidate 2). Configure DDS via `TransportConfig.ddsMulticast(...)` / `TransportConfig.ddsUnicast(...)`.
+- **`ZenohClientProtocol`, `DDSClientProtocol`, and 10 related types → `package`** (Candidate 3): `ZenohKeyExprHandle`, `ZenohSubscriberHandle`, `ZenohLivelinessTokenHandle`, `ZenohQueryableHandle`, `ZenohQueryHandle`, `ZenohSample`, `ZenohError`, `DDSWriterHandle`, `DDSReaderHandle`, `DDSError`. Use the stock `ZenohClient()` / `DDSClient()` — both remain `public` — but the implementation-injection seam itself is gone: the cross-target plumbing that referenced these protocols (`TransportSession` / `TransportPublisher` / `TransportSubscriber` / the `ROS2Context.init(... session:)` 4-arg initializer / `*TransportSession` initializers) was demoted to `package` as a knock-on. Downstream code constructs a context with `ROS2Context(transport: TransportConfig)` and uses `node.createPublisher(...)` / `createSubscription(...)` / etc. to get the umbrella's public `ROS2Publisher` / `ROS2Subscription` / etc.
+- **`EntityManager` and `GIDManager` → `package`** (Candidate 4). `ROS2Context` / `ROS2Node` manage them automatically; no external instantiation needed.
+- **`ZenohTransportPublisher` concrete class → `internal`** (Candidate 5). The `TransportPublisher` protocol it conforms to was itself demoted to `package` as part of Candidate 3's knock-on; downstream code holds the umbrella's public `ROS2Publisher` from `node.createPublisher(...)`.
+- **`DeclaredKeyExpr`, `ZenohSubscriber`, `LivelinessToken` → `internal`** (Candidate 6). They were always meant to be accessed via their handle protocols (which were themselves demoted to `package` in Candidate 3).
+
 ## [0.9.0] - 2026-05-04
 
 ### Added

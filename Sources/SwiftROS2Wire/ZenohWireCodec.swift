@@ -163,7 +163,7 @@ public struct ZenohWireCodec: WireCodec {
     ///   so the token never contains a `//` segment.
     /// - `serviceName` may carry a leading slash; ``TypeNameConverter/mangleTopicPath(namespace:topic:)``
     ///   normalizes it.
-    public func makeServiceLivelinessToken(
+    package func makeServiceLivelinessToken(
         entityKind: ServiceEntityKind,
         domainId: Int,
         sessionId: String,
@@ -213,7 +213,7 @@ public struct ZenohWireCodec: WireCodec {
     /// per action) so a peer that sees a single token knows the full action is
     /// available — the other four roles are guaranteed to be co-declared by
     /// the action server / client implementation in Phases 4–5.
-    public func makeActionLivelinessToken(
+    package func makeActionLivelinessToken(
         entityKind: ActionEntityKind,
         domainId: Int,
         sessionId: String,
@@ -247,7 +247,7 @@ public struct ZenohWireCodec: WireCodec {
     /// Generate liveliness token for ROS 2 discovery
     ///
     /// Format: `@ros2_lv/<domain>/<session>/<node>/<entity>/MP/%/%/<node_name>/<topic>/<type>/<hash>/<qos>`
-    public func makeLivelinessToken(
+    package func makeLivelinessToken(
         domainId: Int,
         sessionId: String,
         nodeId: String,

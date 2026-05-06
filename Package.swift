@@ -79,7 +79,7 @@ let windowsCycloneDDSDir: String? = {
 // can only when `CYCLONEDDS_DIR` is set; Android never can.
 let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.0.0"
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.1.0"
 
 // Non-unix zenoh-pico platform backends shared between the Linux and
 // Android arms — both use the unix backend inside `src/system/unix`.
@@ -148,7 +148,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "f528edc8548b1a782d57b09a06fe0949ab070362aed5c6ba187a0f156524afb8"
+            checksum: "411c02b29491ec398456f86b901dc433ca88f8e4d3eb5aea2122aa09081104f0"
         )
     }
 }()
@@ -359,7 +359,7 @@ if canBuildDDS {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "94d98deb20f84da7c897059b32e4ae6a8002b8d845d566d416a5738c890ee52f"
+                checksum: "8f4a70ba1a943a0c3ab8a866842a9c1915f231c31a436bbd5584babdf25bd156"
             )
         }
     }()

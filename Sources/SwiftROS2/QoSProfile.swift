@@ -59,6 +59,15 @@ public struct QoSProfile: Sendable, Equatable {
         history: .keepLast(1)
     )
 
+    /// `rmw_qos_profile_parameter_events` — reliable, transient-local,
+    /// keep-last 1000. Used by the `/parameter_events` topic so a late-
+    /// joining subscriber sees recent events. Do not reduce the depth.
+    public static let parameterEvents = QoSProfile(
+        reliability: .reliable,
+        durability: .transientLocal,
+        history: .keepLast(1000)
+    )
+
     /// Default for services
     public static let servicesDefault = QoSProfile(
         reliability: .reliable,

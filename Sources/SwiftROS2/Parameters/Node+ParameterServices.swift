@@ -89,13 +89,16 @@ extension ROS2Node {
     static func handleSetParameters(
         _ request: SetParametersRequest, store: ParameterStore
     ) async -> SetParametersResponse {
-        _ = store
-        return SetParametersResponse(
-            results: request.parameters.map { _ in
-                SetParametersResult(
-                    successful: false,
-                    reason: "phase 3 task 5 not implemented yet")
-            })
+        var results: [SwiftROS2Messages.SetParametersResult] = []
+        results.reserveCapacity(request.parameters.count)
+        for wireParam in request.parameters {
+            let swiftParam = ROS2Parameter(wire: wireParam)
+            let r = await store.set(swiftParam)
+            results.append(
+                SwiftROS2Messages.SetParametersResult(
+                    successful: r.successful, reason: r.reason))
+        }
+        return SetParametersResponse(results: results)
     }
 
     static func handleSetParametersAtomically(

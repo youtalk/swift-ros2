@@ -74,4 +74,49 @@ final class ParameterServicesTests: XCTestCase {
         XCTAssertEqual(resp.values[1].doubleValue, 0.5)
         XCTAssertEqual(resp.values[2].type, 0)  // PARAMETER_NOT_SET — missing name
     }
+
+    func testSetParametersAcceptsValidWritesAndReportsRangeFailure() async throws {
+        let (_, node) = try await makeContextAndNode()
+        _ = try await node.declareParameter(
+            "rate",
+            default: Int64(30),
+            descriptor: ROS2ParameterDescriptor(
+                name: "rate", type: .integer, integerRange: 1...120))
+        _ = try await node.declareParameter("alpha", default: 0.5)
+        try await node.startParameterServices()
+
+        let cli = try await node.createClient(
+            SetParametersSrv.self, name: "/talker/set_parameters")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        var goodInt = SwiftROS2Messages.ParameterValue()
+        goodInt.type = 2
+        goodInt.integerValue = 60
+        var badInt = SwiftROS2Messages.ParameterValue()
+        badInt.type = 2
+        badInt.integerValue = 999  // outside 1...120
+        var goodDouble = SwiftROS2Messages.ParameterValue()
+        goodDouble.type = 3
+        goodDouble.doubleValue = 0.75
+
+        let resp = try await cli.call(
+            SetParametersRequest(parameters: [
+                Parameter(name: "rate", value: goodInt),
+                Parameter(name: "rate", value: badInt),
+                Parameter(name: "alpha", value: goodDouble),
+                Parameter(name: "missing", value: goodInt),
+            ]),
+            timeout: .seconds(1))
+
+        XCTAssertEqual(resp.results.count, 4)
+        XCTAssertTrue(resp.results[0].successful)
+        XCTAssertFalse(resp.results[1].successful)
+        XCTAssertTrue(resp.results[2].successful)
+        XCTAssertFalse(resp.results[3].successful)  // not declared
+
+        let stored = try await node.getParameter("rate")
+        XCTAssertEqual(stored.value, .integer(60))
+        let alpha = try await node.getParameter("alpha")
+        XCTAssertEqual(alpha.value, .double(0.75))
+    }
 }

@@ -2,6 +2,9 @@
 // describe with validation. Service registration and ParameterEvent
 // publishing land in phases 3 and 4 respectively.
 
+import Foundation
+import SwiftROS2Messages
+
 struct ParameterEntry: Sendable, Equatable {
     var value: ROS2ParameterValue
     var descriptor: ROS2ParameterDescriptor
@@ -10,6 +13,20 @@ struct ParameterEntry: Sendable, Equatable {
 actor ParameterStore {
     private var entries: [String: ParameterEntry] = [:]
     private var servicesStarted = false
+
+    // Callback registries, keyed by a monotonic id so unregister-by-handle
+    // is O(1). Stored as ordered arrays (id, closure) so we can iterate in
+    // registration order without sorting on every call.
+    private typealias PreSetCallback = @Sendable (inout [ROS2Parameter]) -> Void
+    private typealias OnSetCallback = @Sendable ([ROS2Parameter]) -> ROS2SetParametersResult
+    private typealias PostSetCallback = @Sendable ([ROS2Parameter]) -> Void
+
+    private var preSetCallbacks: [(id: UInt64, fn: PreSetCallback)] = []
+    private var onSetCallbacks: [(id: UInt64, fn: OnSetCallback)] = []
+    private var postSetCallbacks: [(id: UInt64, fn: PostSetCallback)] = []
+    private var nextCallbackId: UInt64 = 1
+
+    private var eventEmitter: (@Sendable (ParameterEvent) -> Void)?
 
     init() {}
 
@@ -208,5 +225,60 @@ extension ParameterStore {
     /// caller's own cleanup) and the node is left in an un-started state.
     func resetServicesStarted() {
         servicesStarted = false
+    }
+}
+
+extension ParameterStore {
+    func registerPreSet(
+        _ cb: @escaping @Sendable (inout [ROS2Parameter]) -> Void
+    ) -> ROS2ParameterCallbackHandle {
+        let id = nextCallbackId
+        nextCallbackId &+= 1
+        preSetCallbacks.append((id, cb))
+        return ROS2ParameterCallbackHandle(id: id)
+    }
+
+    func registerOnSet(
+        _ cb: @escaping @Sendable ([ROS2Parameter]) -> ROS2SetParametersResult
+    ) -> ROS2ParameterCallbackHandle {
+        let id = nextCallbackId
+        nextCallbackId &+= 1
+        onSetCallbacks.append((id, cb))
+        return ROS2ParameterCallbackHandle(id: id)
+    }
+
+    func registerPostSet(
+        _ cb: @escaping @Sendable ([ROS2Parameter]) -> Void
+    ) -> ROS2ParameterCallbackHandle {
+        let id = nextCallbackId
+        nextCallbackId &+= 1
+        postSetCallbacks.append((id, cb))
+        return ROS2ParameterCallbackHandle(id: id)
+    }
+
+    /// Returns `true` if a callback with that handle was found and removed,
+    /// `false` if no such handle was registered (or it had already been
+    /// removed). Idempotent — repeated calls are safe.
+    @discardableResult
+    func unregisterCallback(_ handle: ROS2ParameterCallbackHandle) -> Bool {
+        if let idx = preSetCallbacks.firstIndex(where: { $0.id == handle.id }) {
+            preSetCallbacks.remove(at: idx)
+            return true
+        }
+        if let idx = onSetCallbacks.firstIndex(where: { $0.id == handle.id }) {
+            onSetCallbacks.remove(at: idx)
+            return true
+        }
+        if let idx = postSetCallbacks.firstIndex(where: { $0.id == handle.id }) {
+            postSetCallbacks.remove(at: idx)
+            return true
+        }
+        return false
+    }
+
+    func setEventEmitter(
+        _ emitter: (@Sendable (ParameterEvent) -> Void)?
+    ) {
+        self.eventEmitter = emitter
     }
 }

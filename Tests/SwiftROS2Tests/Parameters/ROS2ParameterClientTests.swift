@@ -208,4 +208,17 @@ final class ROS2ParameterClientTests: XCTestCase {
         let types = try await pc.getParameterTypes(["rate", "greeting", "missing"])
         XCTAssertEqual(types, [.integer, .string, .notSet])
     }
+
+    func testWaitForServiceSucceedsWhenAllSixAreUp() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient()
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        try await pc.waitForService(timeout: .seconds(2))
+    }
 }

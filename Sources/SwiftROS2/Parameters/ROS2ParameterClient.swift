@@ -136,3 +136,42 @@ extension ROS2ParameterClient {
         return resp.types.map { ROS2ParameterType(rawValue: $0) ?? .notSet }
     }
 }
+
+extension ROS2ParameterClient {
+    /// Wait until every one of the six underlying clients reports that a
+    /// matching service is reachable, or until `timeout` elapses. Polls
+    /// in parallel via a child task group.
+    public func waitForService(timeout: Duration) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for cli in allClients() {
+                group.addTask { try await cli() }
+            }
+            try await group.waitForAll()
+        }
+    }
+
+    /// Type-erases the six client `waitForService` calls into a list of
+    /// throwing closures so the task group iterates uniformly.
+    private func allClients() -> [@Sendable () async throws -> Void] {
+        [
+            { [getParametersClient] in
+                try await getParametersClient.waitForService(timeout: .seconds(5))
+            },
+            { [setParametersClient] in
+                try await setParametersClient.waitForService(timeout: .seconds(5))
+            },
+            { [setParametersAtomicallyClient] in
+                try await setParametersAtomicallyClient.waitForService(timeout: .seconds(5))
+            },
+            { [listParametersClient] in
+                try await listParametersClient.waitForService(timeout: .seconds(5))
+            },
+            { [describeParametersClient] in
+                try await describeParametersClient.waitForService(timeout: .seconds(5))
+            },
+            { [getParameterTypesClient] in
+                try await getParameterTypesClient.waitForService(timeout: .seconds(5))
+            },
+        ]
+    }
+}

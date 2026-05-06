@@ -408,23 +408,31 @@ Each release has a corresponding [GitHub release](https://github.com/youtalk/swi
 
 Past releases shipped roughly one breaking platform / transport / API change per week. The list below is what's queued — concrete deliverables, not aspirational vapor.
 
-### Near-term (the 1.0.0 gate)
+### Near-term (next 1.x minor)
 
-The headline 1.0.0 work — Services (0.7.0), Actions (0.8.0), and `swift-ros2-gen` (0.9.0) — has all landed. The 1.0.0 cut itself is a public-API freeze: plumbing types currently exposed (`TransportQoS`, `QoSPolicy`, `DDSBridge*`, `ZenohClientProtocol` / `DDSClientProtocol` and related handle types, `EntityManager` / `GIDManager`, `ZenohTransportPublisher`, `DeclaredKeyExpr` / `ZenohSubscriber` / `LivelinessToken`) get pulled out of the public surface. End-user APIs (`ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, all message / service / action types) are unchanged. See [`MIGRATION.md`](MIGRATION.md) for the full candidate list.
+1.0.0 froze the public API; 1.1.0 added the Parameter API. Up next on the 1.x line — purely additive features that keep the surface frozen.
 
-- **Expanded message catalog** — `nav_msgs`, `visualization_msgs`, `diagnostic_msgs`, more of `geometry_msgs`. Now generated via `swift-ros2-gen` rather than hand-rolled.
+- **Expanded message catalog** — `nav_msgs`, `visualization_msgs`, `diagnostic_msgs`, more of `geometry_msgs`. Generated via `swift-ros2-gen` rather than hand-rolled.
+- **TF / TF2** — `tf2_msgs` is already built-in (Phase 4); the missing piece is the runtime layer (`TransformBroadcaster`, `StaticTransformBroadcaster`, `Buffer` + `TransformListener`, lookup with timeout). API shape mirrors `tf2_ros` so robot code ports cleanly.
+- **Logging / `/rosout`** — `Logger` API on `ROS2Node` (`info` / `warn` / `error` / `debug`) that publishes `rcl_interfaces/msg/Log` to `/rosout` with `rmw_qos_profile_rosout` semantics, and bridges Foundation's `os.Logger` so existing code lights up the bus for free.
 
 ### Medium-term
 
-- **DDS on Android** — currently blocked on SwiftPM not orchestrating CycloneDDS's `ddsrt` CMake-configure-time header generation under the Android NDK toolchain. Likely path: prebuilt `.artifactbundle` distribution for Android, similar to the Apple xcframeworks but in the SPM artifact-bundle format. (DDS on Windows landed in 0.8.0 via the `vcpkg` + `CYCLONEDDS_DIR` approach.)
+- **DDS on Android** — currently blocked on SwiftPM not orchestrating CycloneDDS's `ddsrt` CMake-configure-time header generation under the Android NDK toolchain. Likely path: a prebuilt `.artifactbundle` for Android, similar to the Apple xcframeworks but in SPM artifact-bundle format. (DDS on Windows landed in 0.8.0 via the `vcpkg` + `CYCLONEDDS_DIR` approach.)
 - **XCDR2 wire format** — only XCDR v1 is implemented today. XCDR v2 is required for some Rolling-era message types. Additive (new init flag on `CDRDecoder`).
-- **Richer QoS profiles** — `.servicesDefault`, `.parameters`, `.systemDefault` to match `rcl`. Today any non-default QoS knob has to be set by hand on the underlying `TransportConfig`.
+- **Lifecycle Node** — `LifecycleNode` with the standard nine-state machine and `lifecycle_msgs` services (`change_state`, `get_state`, `get_available_states`, `get_available_transitions`, `get_transition_graph`). Wire-compatible with `ros2 lifecycle list/set/get`.
+- **Composition / intra-process** — same-process `Publisher` ↔ `Subscription` short-circuit (no serialize → wire → deserialize round-trip). Zenoh-side intra-session transport + DDS-side `iceoryx` / shared-memory transport.
+- **Discovery control** — honor `ROS_AUTOMATIC_DISCOVERY_RANGE` (`OFF` / `LOCALHOST` / `SUBNET` / `SYSTEM_DEFAULT`) and `ROS_STATIC_PEERS` env vars on context init for `rclcpp` parity.
 
 ### Stretch
 
 - **Linux static `.artifactbundle`** — replace the `pkg-config + setup.bash` dance with a self-contained download. Prototyped and rejected for 0.5.0; might revisit once the SPM + system-library story improves.
 - **`watchOS` / `tvOS` xcframework slices** — would require `Z_FEATURE_LINK_TCP` validation under those SDKs and a `Sendable` audit for `WCSession`-style flows.
 - **OpenXR-on-Android-arm bring-up** — extends the XR coverage row above beyond visionOS once a credible runtime exists for Quest / Pico headsets.
+- **Bag (rosbag2) read/write** — `mcap` is pure C and the most tractable backend for a Swift binding; sqlite3 backend is a longer poll. Record / replay for offline data collection.
+- **DDS Security** — auth / access-control / encryption via CycloneDDS's DDS Security plugins. Production deployments only; gated on real demand.
+- **Action server fan-out** — `cancel_all_goals` / streaming `goal_status_array` accumulators that 0.8.0 punted on. Additive on top of the existing `ROS2ActionServer<H>`.
+- **`xacro` / URDF parsing** — pure-Swift parser of the URDF subset Conduit-style apps actually need. No rendering, no kinematics — just the parse tree.
 
 ## Contributing
 

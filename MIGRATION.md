@@ -10,6 +10,7 @@
 | 0.8.x | 0.9.0 | **None.** `swift-ros2-gen` (CLI + SwiftPM build plugin + hash-oracle CI) is purely additive — no existing public API changed. |
 | 0.9.x | 1.0.0 | **Six visibility-only changes** — plumbing types pulled out of the public surface (`TransportQoS`, `QoSPolicy`, `DDSBridge*`, `ZenohClientProtocol`/`DDSClientProtocol` + 10 related, `EntityManager`/`GIDManager` → `package`; `ZenohTransportPublisher`, `DeclaredKeyExpr`/`ZenohSubscriber`/`LivelinessToken` → `internal`). End-user APIs (`ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, all message types) are unchanged. |
 | 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
+| 1.0.x | 1.1.0 | **None.** Parameter API (`ROS2Node.declareParameter` / `setParameter` / `setOnSetParametersCallback` / six standard parameter services / `/parameter_events` publisher / `ROS2ParameterClient`) is purely additive. |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -188,3 +189,48 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 ## 1.0 → 1.x compatibility contract
 
 After 1.0, no minor or patch release on the 1.x line will break the public API. Breaking changes require a major bump (2.0).
+
+---
+
+## 1.0 → 1.1 — Parameter API
+
+1.1.0 adds the ROS 2 Parameter API. Every existing 1.0.x symbol is unchanged; this section is just a tour of what's new so downstreams can adopt incrementally.
+
+### New Swift-public types
+
+- `ROS2ParameterValue` — sum type over the nine wire slots + `.notSet`.
+- `ROS2Parameter` — `name` + `value` pair.
+- `ROS2ParameterType` — Swift enum mirroring the wire `uint8` constants.
+- `ROS2ParameterDescriptor` — name, type, description, ranges, read-only / dynamic-typing flags.
+- `ROS2SetParametersResult`, `ROS2ListParametersResult` — Swift twins of the wire result structs.
+- `ROS2ParameterError` — typed errors for the throwing parameter APIs.
+- `ROS2ParameterCallbackHandle` — opaque token; keep it alive for the callback to remain active.
+- `ROS2ParameterClient` — high-level remote-node client.
+- `ROS2NodeOptions` — per-node creation toggles, currently `startParameterServices: Bool` (default `true`).
+- `QoSProfile.parameterEvents` — preset matching `rmw_qos_profile_parameter_events`.
+
+### New methods on `ROS2Node`
+
+```swift
+extension ROS2Node {
+    func declareParameter<T: ROS2ParameterConvertible>(_ name: String, default: T, descriptor: ROS2ParameterDescriptor, ignoreOverride: Bool) async throws -> T
+    func undeclareParameter(_ name: String) async throws
+    func hasParameter(_ name: String) async -> Bool
+    func listParameters(prefixes: [String], depth: UInt64) async -> ROS2ListParametersResult
+    func getParameter(_ name: String) async throws -> ROS2Parameter
+    func getParameterOrDefault<T: ROS2ParameterConvertible>(_ name: String, default: T) async -> T
+    func setParameter(_: ROS2Parameter) async -> ROS2SetParametersResult
+    func setParameters(_: [ROS2Parameter]) async -> [ROS2SetParametersResult]
+    func setParametersAtomically(_: [ROS2Parameter]) async -> ROS2SetParametersResult
+    func describeParameter(_ name: String) async throws -> ROS2ParameterDescriptor
+    func setPreSetParametersCallback(_:) async -> ROS2ParameterCallbackHandle
+    func setOnSetParametersCallback(_:) async -> ROS2ParameterCallbackHandle
+    func setPostSetParametersCallback(_:) async -> ROS2ParameterCallbackHandle
+    func removeParameterCallback(_:) async -> Bool
+    func createParameterClient(remoteNode: String, defaultTimeout: Duration) async throws -> ROS2ParameterClient
+}
+```
+
+### Adopting
+
+No code change is required to upgrade — `Context.createNode(...)` keeps its old signature and now also auto-registers the six parameter services (opt out via `ROS2NodeOptions(startParameterServices: false)` if you don't need them).

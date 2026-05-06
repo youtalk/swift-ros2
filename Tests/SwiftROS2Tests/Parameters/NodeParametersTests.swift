@@ -6,7 +6,11 @@ import XCTest
 final class NodeParametersTests: XCTestCase {
     private func makeContext() async throws -> ROS2Context {
         let config = TransportConfig.zenoh(locator: "tcp/mock:7447")
-        return try await ROS2Context(transport: config, session: MockTransportSession())
+        let mock = MockTransportSession()
+        // Phase-3 Task 10 auto-registers parameter services on createNode;
+        // give the mock an echo dispatcher so that registration succeeds.
+        mock.installEchoServiceTransport()
+        return try await ROS2Context(transport: config, session: mock)
     }
 
     func testDeclareAndGet() async throws {

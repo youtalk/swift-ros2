@@ -8,6 +8,9 @@ final class NodeLifecycleTests: XCTestCase {
         session: MockTransportSession = MockTransportSession()
     ) async throws -> (ROS2Context, MockTransportSession) {
         let config = TransportConfig.zenoh(locator: "tcp/mock:7447")
+        // Phase-3 Task 10 auto-registers parameter services on createNode;
+        // give the mock an echo dispatcher so that registration succeeds.
+        session.installEchoServiceTransport()
         let ctx = try await ROS2Context(transport: config, session: session)
         return (ctx, session)
     }

@@ -288,4 +288,29 @@ final class ParameterStoreTests: XCTestCase {
         let r = await store.list(prefixes: [], depth: UInt64.max)
         XCTAssertEqual(r.names, ["a"])
     }
+
+    func testEntryReturnsNilForUndeclared() async {
+        let store = ParameterStore()
+        let result = await store.entry(name: "missing")
+        XCTAssertNil(result)
+    }
+
+    func testEntryReturnsValueAndDescriptorForDeclared() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "rate",
+            value: .integer(30),
+            descriptor: ROS2ParameterDescriptor(name: "rate", type: .integer))
+        let entry = await store.entry(name: "rate")
+        XCTAssertEqual(entry?.value, .integer(30))
+        XCTAssertEqual(entry?.descriptor.type, .integer)
+    }
+
+    func testMarkServicesStartedIsOneShot() async {
+        let store = ParameterStore()
+        let first = await store.markServicesStarted()
+        let second = await store.markServicesStarted()
+        XCTAssertTrue(first)
+        XCTAssertFalse(second)
+    }
 }

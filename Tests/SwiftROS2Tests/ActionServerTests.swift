@@ -56,7 +56,8 @@ final class ActionServerTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         _ = try await node.createActionServer(
             FibonacciAction.self,
             name: "/fibonacci",
@@ -100,7 +101,8 @@ final class ActionServerTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         _ = try await node.createActionServer(
             FibonacciAction.self,
             name: "/fibonacci",

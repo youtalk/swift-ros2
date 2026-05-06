@@ -9,6 +9,7 @@ struct ParameterEntry: Sendable, Equatable {
 
 actor ParameterStore {
     private var entries: [String: ParameterEntry] = [:]
+    private var servicesStarted = false
 
     init() {}
 
@@ -171,5 +172,41 @@ extension ParameterStore {
             }
         }
         return nil
+    }
+}
+
+extension ParameterStore {
+    /// Non-throwing accessor used by the parameter-service handlers. The
+    /// throwing variants (`get`, `describe`) keep the rclcpp convention
+    /// for direct Swift callers; the wire services prefer to encode an
+    /// "absent" answer rather than surface an error to the caller.
+    func entry(name: String) -> (value: ROS2ParameterValue, descriptor: ROS2ParameterDescriptor)? {
+        guard let e = entries[name] else { return nil }
+        return (e.value, e.descriptor)
+    }
+
+    /// One-shot latch used by `Node.startParameterServices()` to claim
+    /// the right to register the six parameter services. Returns `true`
+    /// the first time it is called; subsequent calls return `false`.
+    ///
+    /// The latch is claimed *before* the six `createService` calls so
+    /// concurrent `startParameterServices()` invocations can't double-
+    /// register. If registration then fails partway through, the caller
+    /// must invoke `resetServicesStarted()` so a future retry can
+    /// re-claim the latch.
+    @discardableResult
+    func markServicesStarted() -> Bool {
+        if servicesStarted { return false }
+        servicesStarted = true
+        return true
+    }
+
+    /// Release the latch so a future `startParameterServices()` call can
+    /// re-claim it. Called by `Node.startParameterServices()` when one of
+    /// the six `createService` registrations throws — the partially-
+    /// registered services are torn down by `Node.destroy()` (or by the
+    /// caller's own cleanup) and the node is left in an un-started state.
+    func resetServicesStarted() {
+        servicesStarted = false
     }
 }

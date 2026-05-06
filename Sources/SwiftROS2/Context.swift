@@ -70,8 +70,28 @@ public final class ROS2Context: @unchecked Sendable {
         }
     }
 
-    /// Create a node in this context
-    public func createNode(name: String, namespace: String = "/") async throws -> ROS2Node {
+    /// Create a node in this context.
+    ///
+    /// Preserves the pre-1.1 binary signature; delegates to the
+    /// `options:`-aware overload with `ROS2NodeOptions.default`.
+    public func createNode(
+        name: String,
+        namespace: String = "/"
+    ) async throws -> ROS2Node {
+        try await createNode(name: name, namespace: namespace, options: .default)
+    }
+
+    /// Create a node in this context with explicit per-node options.
+    ///
+    /// `options` has no default to avoid an overload-resolution
+    /// ambiguity with the binary-stable `createNode(name:namespace:)`
+    /// shim above. Pass `.default` to opt in to the standard behaviour
+    /// (auto-register parameter services).
+    public func createNode(
+        name: String,
+        namespace: String = "/",
+        options: ROS2NodeOptions
+    ) async throws -> ROS2Node {
         let nodeId = entityManager.getNextEntityId()
         let node = ROS2Node(
             name: name,
@@ -82,6 +102,18 @@ public final class ROS2Context: @unchecked Sendable {
             entityManager: entityManager,
             gidManager: gidManager
         )
+        if options.startParameterServices {
+            // Register before the node is reachable from `shutdown` — if
+            // any of the six createService calls throws, close the services
+            // already created on this node before rethrowing so we don't
+            // leak transport handles into the caller's hands.
+            do {
+                try await node.startParameterServices()
+            } catch {
+                await node.destroy()
+                throw error
+            }
+        }
         appendNode(node)
         return node
     }

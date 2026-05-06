@@ -71,7 +71,12 @@ public final class ROS2Context: @unchecked Sendable {
     }
 
     /// Create a node in this context
-    public func createNode(name: String, namespace: String = "/") async throws -> ROS2Node {
+    public func createNode(
+        name: String,
+        namespace: String = "/",
+        options: ROS2NodeOptions = .default
+    ) async throws -> ROS2Node {
+        _ = options  // wired in phase-3 Task 10
         let nodeId = entityManager.getNextEntityId()
         let node = ROS2Node(
             name: name,

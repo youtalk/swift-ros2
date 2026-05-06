@@ -1,0 +1,129 @@
+// Phase 3 of the Parameter API: bind the six rcl_interfaces parameter
+// service handlers on a node's fully-qualified name. Handlers route
+// through the existing per-node ParameterStore created in phase 2.
+
+import SwiftROS2Messages
+
+extension ROS2Node {
+    /// Register the six standard parameter services on
+    /// `<fullyQualifiedName>/<service>`.
+    ///
+    /// `ROS2Context.createNode(...)` calls this automatically when
+    /// `ROS2NodeOptions.startParameterServices` is `true` (the default).
+    /// Calling it manually after opting out is supported. A repeated call
+    /// is a no-op.
+    public func startParameterServices() async throws {
+        guard await parameterStore.markServicesStarted() else { return }
+
+        let store = parameterStore  // captured by handler closures (actor → Sendable)
+        let fqn = fullyQualifiedName
+
+        _ = try await createService(
+            GetParametersSrv.self,
+            name: "\(fqn)/get_parameters",
+            qos: .servicesDefault
+        ) { req in
+            await Self.handleGetParameters(req, store: store)
+        }
+
+        _ = try await createService(
+            SetParametersSrv.self,
+            name: "\(fqn)/set_parameters",
+            qos: .servicesDefault
+        ) { req in
+            await Self.handleSetParameters(req, store: store)
+        }
+
+        _ = try await createService(
+            SetParametersAtomicallySrv.self,
+            name: "\(fqn)/set_parameters_atomically",
+            qos: .servicesDefault
+        ) { req in
+            await Self.handleSetParametersAtomically(req, store: store)
+        }
+
+        _ = try await createService(
+            ListParametersSrv.self,
+            name: "\(fqn)/list_parameters",
+            qos: .servicesDefault
+        ) { req in
+            await Self.handleListParameters(req, store: store)
+        }
+
+        _ = try await createService(
+            DescribeParametersSrv.self,
+            name: "\(fqn)/describe_parameters",
+            qos: .servicesDefault
+        ) { req in
+            await Self.handleDescribeParameters(req, store: store)
+        }
+
+        _ = try await createService(
+            GetParameterTypesSrv.self,
+            name: "\(fqn)/get_parameter_types",
+            qos: .servicesDefault
+        ) { req in
+            await Self.handleGetParameterTypes(req, store: store)
+        }
+    }
+
+    // MARK: - Handler stubs (filled in tasks 4–9)
+    //
+    // Each handler is a `static` async function so it doesn't capture `self`
+    // implicitly — only the Sendable `ParameterStore` actor crosses the
+    // closure boundary, which keeps the @Sendable handler closure clean.
+
+    static func handleGetParameters(
+        _ request: GetParametersRequest, store: ParameterStore
+    ) async -> GetParametersResponse {
+        _ = request
+        _ = store
+        return GetParametersResponse()
+    }
+
+    static func handleSetParameters(
+        _ request: SetParametersRequest, store: ParameterStore
+    ) async -> SetParametersResponse {
+        _ = store
+        return SetParametersResponse(
+            results: request.parameters.map { _ in
+                SetParametersResult(
+                    successful: false,
+                    reason: "phase 3 task 5 not implemented yet")
+            })
+    }
+
+    static func handleSetParametersAtomically(
+        _ request: SetParametersAtomicallyRequest, store: ParameterStore
+    ) async -> SetParametersAtomicallyResponse {
+        _ = request
+        _ = store
+        return SetParametersAtomicallyResponse(
+            result: SetParametersResult(
+                successful: false,
+                reason: "phase 3 task 6 not implemented yet"))
+    }
+
+    static func handleListParameters(
+        _ request: ListParametersRequest, store: ParameterStore
+    ) async -> ListParametersResponse {
+        _ = request
+        _ = store
+        return ListParametersResponse()
+    }
+
+    static func handleDescribeParameters(
+        _ request: DescribeParametersRequest, store: ParameterStore
+    ) async -> DescribeParametersResponse {
+        _ = request
+        _ = store
+        return DescribeParametersResponse()
+    }
+
+    static func handleGetParameterTypes(
+        _ request: GetParameterTypesRequest, store: ParameterStore
+    ) async -> GetParameterTypesResponse {
+        _ = store
+        return GetParameterTypesResponse(types: Array(repeating: 0, count: request.names.count))
+    }
+}

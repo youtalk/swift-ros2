@@ -143,7 +143,12 @@ extension ROS2Node {
     static func handleGetParameterTypes(
         _ request: GetParameterTypesRequest, store: ParameterStore
     ) async -> GetParameterTypesResponse {
-        _ = store
-        return GetParameterTypesResponse(types: Array(repeating: 0, count: request.names.count))
+        var types: [UInt8] = []
+        types.reserveCapacity(request.names.count)
+        for name in request.names {
+            let entry = await store.entry(name: name)
+            types.append(entry?.descriptor.type.rawValue ?? 0)
+        }
+        return GetParameterTypesResponse(types: types)
     }
 }

@@ -229,4 +229,23 @@ final class ParameterServicesTests: XCTestCase {
         XCTAssertEqual(resp.descriptors[1].name, "missing")
         XCTAssertEqual(resp.descriptors[1].type, 0)  // PARAMETER_NOT_SET
     }
+
+    func testGetParameterTypesReturnsTypesPerName() async throws {
+        let (_, node) = try await makeContextAndNode()
+        _ = try await node.declareParameter("rate", default: Int64(30))
+        _ = try await node.declareParameter("alpha", default: 0.5)
+        _ = try await node.declareParameter("flag", default: true)
+        try await node.startParameterServices()
+
+        let cli = try await node.createClient(
+            GetParameterTypesSrv.self, name: "/talker/get_parameter_types")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        let resp = try await cli.call(
+            GetParameterTypesRequest(names: ["rate", "alpha", "flag", "missing"]),
+            timeout: .seconds(1))
+
+        XCTAssertEqual(resp.types, [2, 3, 1, 0])
+        // Integer (2), Double (3), Bool (1), NOT_SET (0)
+    }
 }

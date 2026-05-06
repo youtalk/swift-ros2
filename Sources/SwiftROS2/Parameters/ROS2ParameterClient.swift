@@ -106,3 +106,33 @@ extension ROS2ParameterClient {
             successful: resp.result.successful, reason: resp.result.reason)
     }
 }
+
+extension ROS2ParameterClient {
+    public func listParameters(
+        prefixes: [String] = [], depth: UInt64 = 0, timeout: Duration? = nil
+    ) async throws -> ROS2ListParametersResult {
+        let req = ListParametersRequest(prefixes: prefixes, depth: depth)
+        let resp = try await listParametersClient.call(
+            req, timeout: timeout ?? defaultTimeout)
+        return ROS2ListParametersResult(
+            names: resp.result.names, prefixes: resp.result.prefixes)
+    }
+
+    public func describeParameters(
+        _ names: [String], timeout: Duration? = nil
+    ) async throws -> [ROS2ParameterDescriptor] {
+        let req = DescribeParametersRequest(names: names)
+        let resp = try await describeParametersClient.call(
+            req, timeout: timeout ?? defaultTimeout)
+        return resp.descriptors.map { ROS2ParameterDescriptor(wire: $0) }
+    }
+
+    public func getParameterTypes(
+        _ names: [String], timeout: Duration? = nil
+    ) async throws -> [ROS2ParameterType] {
+        let req = GetParameterTypesRequest(names: names)
+        let resp = try await getParameterTypesClient.call(
+            req, timeout: timeout ?? defaultTimeout)
+        return resp.types.map { ROS2ParameterType(rawValue: $0) ?? .notSet }
+    }
+}

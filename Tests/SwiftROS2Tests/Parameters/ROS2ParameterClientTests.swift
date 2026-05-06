@@ -152,4 +152,60 @@ final class ROS2ParameterClientTests: XCTestCase {
         let a = try await server.getParameter("a")
         XCTAssertEqual(a.value, .integer(1))
     }
+
+    func testListParameters() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient(
+            params: [("a.x", .integer(1)), ("a.y", .integer(2)), ("b", .integer(3))])
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        let r = try await pc.listParameters()
+        XCTAssertEqual(Set(r.names), ["a.x", "a.y", "b"])
+        XCTAssertEqual(Set(r.prefixes), ["a"])
+    }
+
+    func testDescribeParameters() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient()
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        _ = try await server.declareParameter(
+            "rate",
+            default: Int64(30),
+            descriptor: ROS2ParameterDescriptor(
+                name: "rate", type: .integer,
+                description: "tick rate",
+                integerRange: 1...120))
+        let descs = try await pc.describeParameters(["rate"])
+        XCTAssertEqual(descs.count, 1)
+        XCTAssertEqual(descs[0].name, "rate")
+        XCTAssertEqual(descs[0].type, .integer)
+        XCTAssertEqual(descs[0].description, "tick rate")
+        XCTAssertEqual(descs[0].integerRange, 1...120)
+    }
+
+    func testGetParameterTypes() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient(
+            params: [("rate", .integer(30)), ("greeting", .string("hi"))])
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        let types = try await pc.getParameterTypes(["rate", "greeting", "missing"])
+        XCTAssertEqual(types, [.integer, .string, .notSet])
+    }
 }

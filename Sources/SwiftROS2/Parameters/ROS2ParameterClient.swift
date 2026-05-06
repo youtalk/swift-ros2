@@ -1,0 +1,74 @@
+// Phase 5 of the Parameter API: a Swift-public client that talks to a
+// remote node's six rcl_interfaces parameter services. Each public method
+// is a thin wrapper: WireBridge encode → ROS2Client.call → WireBridge
+// decode. No transport-level work — every byte goes through the existing
+// ROS2Client / TransportClient stack.
+
+import Foundation
+import SwiftROS2Messages
+
+/// High-level client for a remote node's six parameter services.
+///
+/// Construct one via `ROS2Node.createParameterClient(remoteNode:)`.
+///
+/// ```swift
+/// let pc = try await node.createParameterClient(remoteNode: "/talker")
+/// try await pc.waitForService(timeout: .seconds(2))
+/// _ = try await pc.setParameters([
+///     ROS2Parameter(name: "rate", value: .integer(60))
+/// ])
+/// ```
+public final class ROS2ParameterClient: @unchecked Sendable {
+    public let remoteNodeName: String
+    public let defaultTimeout: Duration
+
+    private let getParametersClient: ROS2Client<GetParametersSrv>
+    private let setParametersClient: ROS2Client<SetParametersSrv>
+    private let setParametersAtomicallyClient: ROS2Client<SetParametersAtomicallySrv>
+    private let listParametersClient: ROS2Client<ListParametersSrv>
+    private let describeParametersClient: ROS2Client<DescribeParametersSrv>
+    private let getParameterTypesClient: ROS2Client<GetParameterTypesSrv>
+
+    private let lock = NSLock()
+    private var closed = false
+
+    public init(
+        node: ROS2Node,
+        remoteNodeName: String,
+        defaultTimeout: Duration = .seconds(5)
+    ) async throws {
+        self.remoteNodeName = remoteNodeName
+        self.defaultTimeout = defaultTimeout
+        self.getParametersClient = try await node.createClient(
+            GetParametersSrv.self, name: "\(remoteNodeName)/get_parameters")
+        self.setParametersClient = try await node.createClient(
+            SetParametersSrv.self, name: "\(remoteNodeName)/set_parameters")
+        self.setParametersAtomicallyClient = try await node.createClient(
+            SetParametersAtomicallySrv.self,
+            name: "\(remoteNodeName)/set_parameters_atomically")
+        self.listParametersClient = try await node.createClient(
+            ListParametersSrv.self, name: "\(remoteNodeName)/list_parameters")
+        self.describeParametersClient = try await node.createClient(
+            DescribeParametersSrv.self,
+            name: "\(remoteNodeName)/describe_parameters")
+        self.getParameterTypesClient = try await node.createClient(
+            GetParameterTypesSrv.self,
+            name: "\(remoteNodeName)/get_parameter_types")
+    }
+
+    public func close() async {
+        lock.lock()
+        if closed {
+            lock.unlock()
+            return
+        }
+        closed = true
+        lock.unlock()
+        getParametersClient.cancel()
+        setParametersClient.cancel()
+        setParametersAtomicallyClient.cancel()
+        listParametersClient.cancel()
+        describeParametersClient.cancel()
+        getParameterTypesClient.cancel()
+    }
+}

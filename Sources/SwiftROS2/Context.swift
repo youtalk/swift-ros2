@@ -107,6 +107,10 @@ public final class ROS2Context: @unchecked Sendable {
             // any of the six createService calls throws, close the services
             // already created on this node before rethrowing so we don't
             // leak transport handles into the caller's hands.
+            //
+            // `startParameterServices()` also installs the /parameter_events
+            // emitter, so the auto-start and manual-start paths leave the
+            // node in the same observable state.
             do {
                 try await node.startParameterServices()
             } catch {

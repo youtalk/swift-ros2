@@ -313,4 +313,20 @@ final class ParameterStoreTests: XCTestCase {
         XCTAssertTrue(first)
         XCTAssertFalse(second)
     }
+
+    func testRegisterCallbackReturnsUniqueHandle() async {
+        let store = ParameterStore()
+        let h1 = await store.registerOnSet { _ in .success() }
+        let h2 = await store.registerOnSet { _ in .success() }
+        XCTAssertNotEqual(h1, h2)
+    }
+
+    func testUnregisterCallbackReturnsTrueOnce() async {
+        let store = ParameterStore()
+        let h = await store.registerOnSet { _ in .success() }
+        let firstRemove = await store.unregisterCallback(h)
+        let secondRemove = await store.unregisterCallback(h)
+        XCTAssertTrue(firstRemove)
+        XCTAssertFalse(secondRemove)
+    }
 }

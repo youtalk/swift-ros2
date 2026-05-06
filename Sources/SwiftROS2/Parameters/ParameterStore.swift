@@ -2,6 +2,9 @@
 // describe with validation. Service registration and ParameterEvent
 // publishing land in phases 3 and 4 respectively.
 
+import Foundation
+import SwiftROS2Messages
+
 struct ParameterEntry: Sendable, Equatable {
     var value: ROS2ParameterValue
     var descriptor: ROS2ParameterDescriptor
@@ -10,6 +13,22 @@ struct ParameterEntry: Sendable, Equatable {
 actor ParameterStore {
     private var entries: [String: ParameterEntry] = [:]
     private var servicesStarted = false
+
+    // Callback registries, keyed by a monotonic id. Stored as ordered
+    // arrays (id, closure) so we can iterate in registration order.
+    // Unregister-by-handle is linear in the registry size; the registries
+    // typically hold a handful of callbacks, so the constant factor wins
+    // over a dictionary plus a separate ordering structure.
+    private typealias PreSetCallback = @Sendable (inout [ROS2Parameter]) -> Void
+    private typealias OnSetCallback = @Sendable ([ROS2Parameter]) -> ROS2SetParametersResult
+    private typealias PostSetCallback = @Sendable ([ROS2Parameter]) -> Void
+
+    private var preSetCallbacks: [(id: UInt64, fn: PreSetCallback)] = []
+    private var onSetCallbacks: [(id: UInt64, fn: OnSetCallback)] = []
+    private var postSetCallbacks: [(id: UInt64, fn: PostSetCallback)] = []
+    private var nextCallbackId: UInt64 = 1
+
+    private var eventEmitter: (@Sendable (ParameterEvent) -> Void)?
 
     init() {}
 
@@ -31,13 +50,15 @@ actor ParameterStore {
             throw ROS2ParameterError.invalidValue(name: name, reason: reason)
         }
         entries[name] = ParameterEntry(value: value, descriptor: descriptor)
+        emitNew([ROS2Parameter(name: name, value: value)])
         return value
     }
 
     func undeclare(name: String) throws {
-        guard entries.removeValue(forKey: name) != nil else {
+        guard let removed = entries.removeValue(forKey: name) else {
             throw ROS2ParameterError.notDeclared(name: name)
         }
+        emitDeleted([ROS2Parameter(name: name, value: removed.value)])
     }
 
     func has(name: String) -> Bool {
@@ -109,33 +130,101 @@ extension ParameterStore {
 extension ParameterStore {
     @discardableResult
     func set(_ p: ROS2Parameter) -> ROS2SetParametersResult {
-        guard var entry = entries[p.name] else {
-            return .failure(reason: "parameter '\(p.name)' is not declared")
-        }
-        if let reason = validate(
-            name: p.name, value: p.value, descriptor: entry.descriptor,
-            allowWriteToReadOnly: false)
-        {
-            return .failure(reason: reason)
-        }
-        entry.value = p.value
-        entries[p.name] = entry
-        return .success()
+        let results = setMany([p])
+        return results.first ?? .failure(reason: "no result")
     }
 
     func setMany(_ ps: [ROS2Parameter]) -> [ROS2SetParametersResult] {
-        ps.map { set($0) }
+        // Pre-set runs once on the full proposed list and may mutate it
+        // (inject co-dependent params, rewrite values, drop entries). The
+        // possibly-grown list is what we then iterate — so pre-set
+        // injections are not lost.
+        var batch = ps
+        for cb in preSetCallbacks { cb.fn(&batch) }
+
+        // Per-item descriptor validation. Failures are recorded individually
+        // and don't short-circuit the batch.
+        var results = Array(repeating: ROS2SetParametersResult.success(), count: batch.count)
+        var passingIndices: [Int] = []
+        for (i, p) in batch.enumerated() {
+            guard let entry = entries[p.name] else {
+                results[i] = .failure(reason: "parameter '\(p.name)' is not declared")
+                continue
+            }
+            if let reason = validate(
+                name: p.name, value: p.value, descriptor: entry.descriptor,
+                allowWriteToReadOnly: false)
+            {
+                results[i] = .failure(reason: reason)
+                continue
+            }
+            passingIndices.append(i)
+        }
+
+        guard !passingIndices.isEmpty else { return results }
+
+        // On-set runs once on the items that cleared validation. A veto
+        // marks every passing slot as failed and skips the writes — this
+        // lets a callback enforce cross-parameter invariants for the call.
+        let candidates = passingIndices.map { batch[$0] }
+        for cb in onSetCallbacks {
+            let r = cb.fn(candidates)
+            if !r.successful {
+                for i in passingIndices { results[i] = r }
+                return results
+            }
+        }
+
+        // Apply the writes for every passing item.
+        var applied: [ROS2Parameter] = []
+        for i in passingIndices {
+            let p = batch[i]
+            guard var entry = entries[p.name] else { continue }
+            entry.value = p.value
+            entries[p.name] = entry
+            applied.append(p)
+        }
+        if !applied.isEmpty {
+            for cb in postSetCallbacks { cb.fn(applied) }
+            emitChanged(applied)
+        }
+        return results
     }
 
     func setAtomically(_ ps: [ROS2Parameter]) -> ROS2SetParametersResult {
-        let snapshot = entries
-        for p in ps {
-            let r = set(p)
-            if !r.successful {
-                entries = snapshot
-                return r
+        var batch = ps
+        for cb in preSetCallbacks { cb.fn(&batch) }
+        // Validate every item against its descriptor first; any failure
+        // aborts the batch with the offending reason.
+        for p in batch {
+            guard let entry = entries[p.name] else {
+                return .failure(reason: "parameter '\(p.name)' is not declared")
+            }
+            if let reason = validate(
+                name: p.name, value: p.value, descriptor: entry.descriptor,
+                allowWriteToReadOnly: false)
+            {
+                return .failure(reason: reason)
             }
         }
+        // On-set chain: first failure short-circuits the whole batch.
+        for cb in onSetCallbacks {
+            let r = cb.fn(batch)
+            if !r.successful { return r }
+        }
+        // Snapshot for safe rollback (defensive — validation passed for every
+        // item, so the writes should never throw).
+        let snapshot = entries
+        for p in batch {
+            guard var entry = entries[p.name] else {
+                entries = snapshot
+                return .failure(reason: "parameter '\(p.name)' disappeared mid-batch")
+            }
+            entry.value = p.value
+            entries[p.name] = entry
+        }
+        for cb in postSetCallbacks { cb.fn(batch) }
+        emitChanged(batch)
         return .success()
     }
 
@@ -208,5 +297,100 @@ extension ParameterStore {
     /// caller's own cleanup) and the node is left in an un-started state.
     func resetServicesStarted() {
         servicesStarted = false
+    }
+}
+
+extension ParameterStore {
+    func registerPreSet(
+        _ cb: @escaping @Sendable (inout [ROS2Parameter]) -> Void
+    ) -> ROS2ParameterCallbackHandle {
+        let id = nextCallbackId
+        nextCallbackId &+= 1
+        preSetCallbacks.append((id, cb))
+        return ROS2ParameterCallbackHandle(id: id)
+    }
+
+    func registerOnSet(
+        _ cb: @escaping @Sendable ([ROS2Parameter]) -> ROS2SetParametersResult
+    ) -> ROS2ParameterCallbackHandle {
+        let id = nextCallbackId
+        nextCallbackId &+= 1
+        onSetCallbacks.append((id, cb))
+        return ROS2ParameterCallbackHandle(id: id)
+    }
+
+    func registerPostSet(
+        _ cb: @escaping @Sendable ([ROS2Parameter]) -> Void
+    ) -> ROS2ParameterCallbackHandle {
+        let id = nextCallbackId
+        nextCallbackId &+= 1
+        postSetCallbacks.append((id, cb))
+        return ROS2ParameterCallbackHandle(id: id)
+    }
+
+    /// Returns `true` if a callback with that handle was found and removed,
+    /// `false` if no such handle was registered (or it had already been
+    /// removed). Idempotent — repeated calls are safe.
+    @discardableResult
+    func unregisterCallback(_ handle: ROS2ParameterCallbackHandle) -> Bool {
+        if let idx = preSetCallbacks.firstIndex(where: { $0.id == handle.id }) {
+            preSetCallbacks.remove(at: idx)
+            return true
+        }
+        if let idx = onSetCallbacks.firstIndex(where: { $0.id == handle.id }) {
+            onSetCallbacks.remove(at: idx)
+            return true
+        }
+        if let idx = postSetCallbacks.firstIndex(where: { $0.id == handle.id }) {
+            postSetCallbacks.remove(at: idx)
+            return true
+        }
+        return false
+    }
+
+    func setEventEmitter(
+        _ emitter: (@Sendable (ParameterEvent) -> Void)?
+    ) {
+        self.eventEmitter = emitter
+    }
+}
+
+extension ParameterStore {
+    /// Build a `ParameterEvent` from per-bucket lists and fan it out via the
+    /// installed emitter (if any). The `node` field is filled by the emitter
+    /// closure on the Node side — the store doesn't know its own FQN.
+    private func emit(
+        new: [ROS2Parameter] = [],
+        changed: [ROS2Parameter] = [],
+        deleted: [ROS2Parameter] = []
+    ) {
+        guard let emitter = eventEmitter else { return }
+        guard !(new.isEmpty && changed.isEmpty && deleted.isEmpty) else { return }
+        let now = nowAsTime()
+        let event = ParameterEvent(
+            stamp: now,
+            node: "",  // filled in by the Node-side emitter wrapper
+            newParameters: new.map { $0.toWire() },
+            changedParameters: changed.map { $0.toWire() },
+            deletedParameters: deleted.map { $0.toWire() }
+        )
+        emitter(event)
+    }
+
+    func emitChanged(_ params: [ROS2Parameter]) { emit(changed: params) }
+    func emitNew(_ params: [ROS2Parameter]) { emit(new: params) }
+    func emitDeleted(_ params: [ROS2Parameter]) { emit(deleted: params) }
+
+    private func nowAsTime() -> Time {
+        let sec = Date().timeIntervalSince1970
+        // builtin_interfaces/Time.sec is `int32`. Clamping (rather than
+        // converting) keeps long-lived nodes from trapping past Y2038 — the
+        // resulting timestamp is wrong, but the node stays up. ROS itself
+        // is going to have to deal with the overflow upstream regardless.
+        let clamped = min(max(sec, Double(Int32.min)), Double(Int32.max))
+        let secInt = Int32(clamped)
+        let frac = clamped - Double(secInt)
+        let nanos = UInt32(min(max(frac * 1_000_000_000, 0.0), 999_999_999.0))
+        return Time(sec: secInt, nanosec: nanos)
     }
 }

@@ -29,6 +29,17 @@ final class QoSProfileTests: XCTestCase {
         XCTAssertEqual(QoSProfile.servicesDefault.durability, .volatile)
     }
 
+    func testParameterEventsPreset() {
+        let q = QoSProfile.parameterEvents
+        XCTAssertEqual(q.reliability, .reliable)
+        XCTAssertEqual(q.durability, .transientLocal)
+        if case .keepLast(let depth) = q.history {
+            XCTAssertEqual(depth, 1000)
+        } else {
+            XCTFail("expected keepLast(1000), got \(q.history)")
+        }
+    }
+
     func testDefaultIsSensorData() {
         XCTAssertEqual(QoSProfile.default, QoSProfile.sensorData)
     }

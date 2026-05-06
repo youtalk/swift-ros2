@@ -9,6 +9,7 @@ struct ParameterEntry: Sendable, Equatable {
 
 actor ParameterStore {
     private var entries: [String: ParameterEntry] = [:]
+    private var servicesStarted = false
 
     init() {}
 
@@ -171,5 +172,27 @@ extension ParameterStore {
             }
         }
         return nil
+    }
+}
+
+extension ParameterStore {
+    /// Non-throwing accessor used by the parameter-service handlers. The
+    /// throwing variants (`get`, `describe`) keep the rclcpp convention
+    /// for direct Swift callers; the wire services prefer to encode an
+    /// "absent" answer rather than surface an error to the caller.
+    func entry(name: String) -> (value: ROS2ParameterValue, descriptor: ROS2ParameterDescriptor)? {
+        guard let e = entries[name] else { return nil }
+        return (e.value, e.descriptor)
+    }
+
+    /// One-shot latch used by `Node.startParameterServices()` to guard
+    /// against double-registration (e.g. a caller that opted out of
+    /// auto-start and then later calls the public method twice).
+    /// Returns `true` exactly once per store instance.
+    @discardableResult
+    func markServicesStarted() -> Bool {
+        if servicesStarted { return false }
+        servicesStarted = true
+        return true
     }
 }

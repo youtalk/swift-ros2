@@ -76,6 +76,12 @@ extension ROS2Node {
             await parameterStore.resetServicesStarted()
             throw error
         }
+
+        // Wire the /parameter_events emitter here (rather than in
+        // Context.createNode) so a manual `startParameterServices()` after
+        // an opt-out construction also gets event publishing — keeping
+        // the two start paths consistent.
+        await installParameterEventEmitter()
     }
 
     // MARK: - Service handlers

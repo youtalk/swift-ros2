@@ -14,9 +14,11 @@ actor ParameterStore {
     private var entries: [String: ParameterEntry] = [:]
     private var servicesStarted = false
 
-    // Callback registries, keyed by a monotonic id so unregister-by-handle
-    // is O(1). Stored as ordered arrays (id, closure) so we can iterate in
-    // registration order without sorting on every call.
+    // Callback registries, keyed by a monotonic id. Stored as ordered
+    // arrays (id, closure) so we can iterate in registration order.
+    // Unregister-by-handle is linear in the registry size; the registries
+    // typically hold a handful of callbacks, so the constant factor wins
+    // over a dictionary plus a separate ordering structure.
     private typealias PreSetCallback = @Sendable (inout [ROS2Parameter]) -> Void
     private typealias OnSetCallback = @Sendable ([ROS2Parameter]) -> ROS2SetParametersResult
     private typealias PostSetCallback = @Sendable ([ROS2Parameter]) -> Void
@@ -133,28 +135,60 @@ extension ParameterStore {
     }
 
     func setMany(_ ps: [ROS2Parameter]) -> [ROS2SetParametersResult] {
-        var out: [ROS2SetParametersResult] = []
-        out.reserveCapacity(ps.count)
-        var applied: [ROS2Parameter] = []
-        for p in ps {
-            // Per-item pre-set: callback may mutate the single-element list.
-            var batch: [ROS2Parameter] = [p]
-            for cb in preSetCallbacks { cb.fn(&batch) }
-            // batch is normally one element; we proceed with batch[0] if it
-            // remained, otherwise treat as a no-op success (rclcpp parity).
-            guard let proposed = batch.first else {
-                out.append(.success())
+        // Pre-set runs once on the full proposed list and may mutate it
+        // (inject co-dependent params, rewrite values, drop entries). The
+        // possibly-grown list is what we then iterate — so pre-set
+        // injections are not lost.
+        var batch = ps
+        for cb in preSetCallbacks { cb.fn(&batch) }
+
+        // Per-item descriptor validation. Failures are recorded individually
+        // and don't short-circuit the batch.
+        var results = Array(repeating: ROS2SetParametersResult.success(), count: batch.count)
+        var passingIndices: [Int] = []
+        for (i, p) in batch.enumerated() {
+            guard let entry = entries[p.name] else {
+                results[i] = .failure(reason: "parameter '\(p.name)' is not declared")
                 continue
             }
-            let r = applySingle(proposed)
-            if r.successful { applied.append(proposed) }
-            out.append(r)
+            if let reason = validate(
+                name: p.name, value: p.value, descriptor: entry.descriptor,
+                allowWriteToReadOnly: false)
+            {
+                results[i] = .failure(reason: reason)
+                continue
+            }
+            passingIndices.append(i)
+        }
+
+        guard !passingIndices.isEmpty else { return results }
+
+        // On-set runs once on the items that cleared validation. A veto
+        // marks every passing slot as failed and skips the writes — this
+        // lets a callback enforce cross-parameter invariants for the call.
+        let candidates = passingIndices.map { batch[$0] }
+        for cb in onSetCallbacks {
+            let r = cb.fn(candidates)
+            if !r.successful {
+                for i in passingIndices { results[i] = r }
+                return results
+            }
+        }
+
+        // Apply the writes for every passing item.
+        var applied: [ROS2Parameter] = []
+        for i in passingIndices {
+            let p = batch[i]
+            guard var entry = entries[p.name] else { continue }
+            entry.value = p.value
+            entries[p.name] = entry
+            applied.append(p)
         }
         if !applied.isEmpty {
             for cb in postSetCallbacks { cb.fn(applied) }
             emitChanged(applied)
         }
-        return out
+        return results
     }
 
     func setAtomically(_ ps: [ROS2Parameter]) -> ROS2SetParametersResult {
@@ -191,27 +225,6 @@ extension ParameterStore {
         }
         for cb in postSetCallbacks { cb.fn(batch) }
         emitChanged(batch)
-        return .success()
-    }
-
-    /// Validate + on-set + write a single proposed parameter. Returns the
-    /// SetParametersResult.
-    private func applySingle(_ p: ROS2Parameter) -> ROS2SetParametersResult {
-        guard var entry = entries[p.name] else {
-            return .failure(reason: "parameter '\(p.name)' is not declared")
-        }
-        if let reason = validate(
-            name: p.name, value: p.value, descriptor: entry.descriptor,
-            allowWriteToReadOnly: false)
-        {
-            return .failure(reason: reason)
-        }
-        for cb in onSetCallbacks {
-            let r = cb.fn([p])
-            if !r.successful { return r }
-        }
-        entry.value = p.value
-        entries[p.name] = entry
         return .success()
     }
 
@@ -370,8 +383,14 @@ extension ParameterStore {
 
     private func nowAsTime() -> Time {
         let sec = Date().timeIntervalSince1970
-        let secInt = Int32(sec)
-        let nanos = UInt32((sec - Double(secInt)) * 1_000_000_000)
+        // builtin_interfaces/Time.sec is `int32`. Clamping (rather than
+        // converting) keeps long-lived nodes from trapping past Y2038 — the
+        // resulting timestamp is wrong, but the node stays up. ROS itself
+        // is going to have to deal with the overflow upstream regardless.
+        let clamped = min(max(sec, Double(Int32.min)), Double(Int32.max))
+        let secInt = Int32(clamped)
+        let frac = clamped - Double(secInt)
+        let nanos = UInt32(min(max(frac * 1_000_000_000, 0.0), 999_999_999.0))
         return Time(sec: secInt, nanosec: nanos)
     }
 }

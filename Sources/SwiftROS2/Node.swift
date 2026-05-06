@@ -35,6 +35,7 @@ public final class ROS2Node: @unchecked Sendable {
 
     let parameterStore: ParameterStore = ParameterStore()
     private var parameterEventPublisher: ROS2Publisher<ParameterEvent>?
+    private var parameterEventPublisherTask: Task<ROS2Publisher<ParameterEvent>, Error>?
 
     init(
         name: String,
@@ -396,10 +397,13 @@ public final class ROS2Node: @unchecked Sendable {
 }
 
 extension ROS2Node {
-    /// Called from `ROS2Context.createNode` when parameter services are
-    /// enabled. Installs the per-node emitter so the store's `declare` /
-    /// `set*` / `undeclare` operations route the resulting `ParameterEvent`
-    /// out the `/parameter_events` topic.
+    /// Installs the per-node emitter so the store's `declare` / `set*` /
+    /// `undeclare` operations route the resulting `ParameterEvent` out the
+    /// `/parameter_events` topic. Called from `startParameterServices()`
+    /// so the emitter is wired whether the node was created with
+    /// `ROS2NodeOptions.startParameterServices = true` (auto-start path)
+    /// or whether the caller opted out and later invoked
+    /// `node.startParameterServices()` manually.
     internal func installParameterEventEmitter() async {
         let fqn = self.fullyQualifiedName
         await parameterStore.setEventEmitter { [weak self] event in
@@ -423,29 +427,51 @@ extension ROS2Node {
         }
     }
 
+    /// Single-flight publisher creation. Concurrent callers share the same
+    /// in-flight `Task`, so `createPublisher` runs at most once and we
+    /// never end up with a "loser" publisher leaked into `publishers`.
     private func ensureParameterEventPublisher() async throws -> ROS2Publisher<ParameterEvent> {
+        // Fast path: already created.
         lock.lock()
         if let p = parameterEventPublisher {
             lock.unlock()
             return p
         }
-        lock.unlock()
-        let pub = try await createPublisher(
-            ParameterEvent.self,
-            topic: "/parameter_events",
-            qos: .parameterEvents
-        )
-        lock.lock()
-        // Race: another caller may have created one between unlock + create.
-        if let existing = parameterEventPublisher {
+        // Slow path: piggyback on an in-flight creation if one is running,
+        // otherwise become the creator.
+        if let inflight = parameterEventPublisherTask {
             lock.unlock()
-            try? pub.closePublisher()
-            return existing
+            return try await inflight.value
         }
-        parameterEventPublisher = pub
+        let task = Task<ROS2Publisher<ParameterEvent>, Error> { [weak self] in
+            guard let self = self else { throw ParameterEventPublisherError.nodeDeallocated }
+            return try await self.createPublisher(
+                ParameterEvent.self,
+                topic: "/parameter_events",
+                qos: .parameterEvents
+            )
+        }
+        parameterEventPublisherTask = task
         lock.unlock()
-        return pub
+
+        do {
+            let pub = try await task.value
+            lock.lock()
+            parameterEventPublisher = pub
+            parameterEventPublisherTask = nil
+            lock.unlock()
+            return pub
+        } catch {
+            lock.lock()
+            parameterEventPublisherTask = nil
+            lock.unlock()
+            throw error
+        }
     }
+}
+
+private enum ParameterEventPublisherError: Error {
+    case nodeDeallocated
 }
 
 // Internal protocols for type-erased cleanup

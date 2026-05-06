@@ -1,9 +1,9 @@
 // Phase 4 of the Parameter API: callback registration entry points on
 // `ROS2Node`. Three flavours mirroring rclcpp — pre-set (proposes
 // mutations to the incoming list), on-set (vetoes), post-set (observes).
-// Each returns an opaque `ROS2ParameterCallbackHandle` the caller must
-// retain for the callback to remain active. Detach explicitly with
-// `removeParameterCallback(_:)`.
+// Each returns an opaque `ROS2ParameterCallbackHandle`. The store retains
+// the closure; callbacks stay active until `removeParameterCallback(_:)`
+// is called — dropping the returned handle does **not** detach.
 
 extension ROS2Node {
     /// Register a pre-set callback. Runs first, on the store's actor,

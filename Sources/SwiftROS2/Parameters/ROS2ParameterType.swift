@@ -1,3 +1,7 @@
+/// Discriminator for the ten ROS 2 parameter value categories.
+///
+/// Raw values match the `rcl_interfaces/msg/ParameterType` constants used
+/// over the wire (`PARAMETER_NOT_SET = 0` … `PARAMETER_STRING_ARRAY = 9`).
 public enum ROS2ParameterType: UInt8, Sendable, CaseIterable {
     case notSet = 0
     case bool = 1

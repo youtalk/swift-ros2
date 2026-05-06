@@ -1,3 +1,9 @@
+/// Typed errors thrown by the throwing parameter APIs (`declareParameter`,
+/// `undeclareParameter`, `getParameter`, `describeParameter`).
+///
+/// Non-throwing APIs such as `setParameter` surface failures via
+/// `ROS2SetParametersResult` instead; the `reason` string there is built
+/// from the same vocabulary as these cases.
 public enum ROS2ParameterError: Error, Sendable, Equatable {
     case alreadyDeclared(name: String)
     case notDeclared(name: String)

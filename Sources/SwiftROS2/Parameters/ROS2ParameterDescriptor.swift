@@ -1,3 +1,10 @@
+/// Descriptor metadata that travels with a declared parameter.
+///
+/// Mirrors `rcl_interfaces/msg/ParameterDescriptor` but uses Swift-idiomatic
+/// `ClosedRange` plus optional `step` instead of the wire's bounded ≤ 1
+/// `[FloatingPointRange]` / `[IntegerRange]` sequences. The `step` fields
+/// are advisory — they cross the wire for tools to consume but are not
+/// enforced by `ParameterStore` (matching rclcpp behavior).
 public struct ROS2ParameterDescriptor: Sendable, Equatable {
     public var name: String
     public var type: ROS2ParameterType

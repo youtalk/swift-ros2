@@ -21,6 +21,14 @@ actor ParameterStore {
         guard entries[name] == nil else {
             throw ROS2ParameterError.alreadyDeclared(name: name)
         }
+        // Validate the initial value against the descriptor — the same rules
+        // that gate set(_:) apply at declare time. readOnly is intentionally
+        // skipped here: declare IS the one legal write to a read-only param.
+        if let reason = validate(
+            name: name, value: value, descriptor: descriptor, allowWriteToReadOnly: true)
+        {
+            throw ROS2ParameterError.invalidValue(name: name, reason: reason)
+        }
         entries[name] = ParameterEntry(value: value, descriptor: descriptor)
         return value
     }
@@ -78,8 +86,9 @@ extension ParameterStore {
         } else {
             suffix = name.dropFirst(prefix.count + 1)  // skip "<prefix>."
         }
-        let separators = suffix.filter { $0 == "." }.count
-        return separators < Int(depth)
+        // Stay in UInt64-land so a depth > Int.max can't trap on the cast.
+        let separators = UInt64(suffix.filter { $0 == "." }.count)
+        return separators < depth
     }
 
     private func collectPrefixes(_ names: [String]) -> [String] {
@@ -102,7 +111,10 @@ extension ParameterStore {
         guard var entry = entries[p.name] else {
             return .failure(reason: "parameter '\(p.name)' is not declared")
         }
-        if let reason = validate(name: p.name, value: p.value, descriptor: entry.descriptor) {
+        if let reason = validate(
+            name: p.name, value: p.value, descriptor: entry.descriptor,
+            allowWriteToReadOnly: false)
+        {
             return .failure(reason: reason)
         }
         entry.value = p.value
@@ -127,12 +139,17 @@ extension ParameterStore {
     }
 
     /// Returns nil if the value is acceptable, otherwise a human-readable reason.
+    ///
+    /// `floatingPointStep` and `integerStep` from the descriptor are NOT
+    /// enforced here — they are advisory metadata for tools (rqt_param,
+    /// `ros2 param describe`). rclcpp follows the same convention.
     private func validate(
         name: String,
         value: ROS2ParameterValue,
-        descriptor: ROS2ParameterDescriptor
+        descriptor: ROS2ParameterDescriptor,
+        allowWriteToReadOnly: Bool
     ) -> String? {
-        if descriptor.readOnly {
+        if descriptor.readOnly && !allowWriteToReadOnly {
             return "parameter '\(name)' is read-only"
         }
         let valueType = value.parameterType

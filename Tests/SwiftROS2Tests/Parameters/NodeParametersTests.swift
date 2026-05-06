@@ -71,4 +71,18 @@ final class NodeParametersTests: XCTestCase {
         let v = await node.getParameterOrDefault("missing", default: Int64(7))
         XCTAssertEqual(v, 7)
     }
+
+    func testDeclareOverridesNonEmptyDescriptorName() async throws {
+        // If the caller passes a descriptor whose .name disagrees with the
+        // declared key, the key wins — describeParameter must then report
+        // the same name we declared under.
+        let ctx = try await makeContext()
+        let node = try await ctx.createNode(name: "node_params_name_override")
+        _ = try await node.declareParameter(
+            "rate",
+            default: Int64(30),
+            descriptor: ROS2ParameterDescriptor(name: "fps", type: .integer))
+        let d = try await node.describeParameter("rate")
+        XCTAssertEqual(d.name, "rate")
+    }
 }

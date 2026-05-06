@@ -1,3 +1,12 @@
+/// Protocol that lets a Swift native type be used wherever a
+/// `ROS2ParameterValue` is expected (e.g. `declareParameter("rate", default: 30)`
+/// without wrapping in `.integer(30)`).
+///
+/// Conformances ship for `Bool`, `Int`, `Int64`, `Double`, `String`, and
+/// `[UInt8]`. The other array element types (`[Bool]`, `[Int64]`,
+/// `[Double]`, `[String]`) get the same `parameterValue` getter and
+/// throwing init via plain extensions because Swift does not allow
+/// multiple conditional conformances of `Array` to the same protocol.
 public protocol ROS2ParameterConvertible {
     init(parameterValue: ROS2ParameterValue) throws
     var parameterValue: ROS2ParameterValue { get }
@@ -56,7 +65,13 @@ extension Int: ROS2ParameterConvertible {
         guard case .integer(let v) = parameterValue else {
             throw mismatch(parameterValue, expected: .integer)
         }
-        self = Int(v)
+        // On 32-bit platforms `Int(v)` traps for out-of-range values; use
+        // Int(exactly:) so overflow surfaces as a typed error.
+        guard let narrowed = Int(exactly: v) else {
+            throw ROS2ParameterError.invalidValue(
+                name: "", reason: "integer \(v) does not fit in Int on this platform")
+        }
+        self = narrowed
     }
     public var parameterValue: ROS2ParameterValue { .integer(Int64(self)) }
 }

@@ -10,7 +10,11 @@ extension ROS2Node {
         ignoreOverride: Bool = false  // reserved for phase 6 YAML override layer
     ) async throws -> T {
         var d = descriptor
-        if d.name.isEmpty { d.name = name }
+        // Always pin the descriptor's name to the declared name. If the caller
+        // supplied a non-empty name that differs, we silently override rather
+        // than throwing — the parameter's storage key is the canonical name
+        // and a divergent descriptor.name would later confuse describeParameter.
+        d.name = name
         if d.type == .notSet { d.type = T.parameterType }
         let stored = try await parameterStore.declare(
             name: name, value: value.parameterValue, descriptor: d)

@@ -79,6 +79,11 @@ extension ROS2ParameterDescriptor {
         )
     }
 
+    // Step is meaningful only paired with a range. The wire's `IntegerRange` /
+    // `FloatingPointRange` carries from/to/step together — there is no slot
+    // for a free-standing step. If the caller sets a step but no range,
+    // the step is intentionally not encoded; document via the type rather
+    // than asserting at runtime.
     func toWire() -> SwiftROS2Messages.ParameterDescriptor {
         var w = SwiftROS2Messages.ParameterDescriptor()
         w.name = name

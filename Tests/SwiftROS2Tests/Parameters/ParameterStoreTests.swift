@@ -231,4 +231,61 @@ final class ParameterStoreTests: XCTestCase {
         XCTAssertEqual(a.value, .integer(0), "a must have rolled back")
         XCTAssertEqual(b.value, .integer(0))
     }
+
+    // MARK: - declare-time validation (added in PR #103 review)
+
+    func testDeclareRejectsTypeMismatch() async {
+        let store = ParameterStore()
+        do {
+            _ = try await store.declare(
+                name: "rate", value: .string("30"),
+                descriptor: ROS2ParameterDescriptor(name: "rate", type: .integer))
+            XCTFail("expected invalidValue")
+        } catch let e as ROS2ParameterError {
+            guard case .invalidValue = e else {
+                XCTFail("wrong case: \(e)")
+                return
+            }
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
+    }
+
+    func testDeclareRejectsOutOfRangeDefault() async {
+        let store = ParameterStore()
+        do {
+            _ = try await store.declare(
+                name: "rate", value: .integer(999),
+                descriptor: ROS2ParameterDescriptor(
+                    name: "rate", type: .integer, integerRange: 1...120))
+            XCTFail("expected invalidValue")
+        } catch let e as ROS2ParameterError {
+            guard case .invalidValue = e else {
+                XCTFail("wrong case: \(e)")
+                return
+            }
+        } catch {
+            XCTFail("wrong error: \(error)")
+        }
+    }
+
+    func testDeclareAllowsReadOnlyInitialValue() async throws {
+        // declare IS the one legal write to a read-only parameter.
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "k", value: .string("v"),
+            descriptor: ROS2ParameterDescriptor(
+                name: "k", type: .string, readOnly: true))
+        let p = try await store.get(name: "k")
+        XCTAssertEqual(p.value, .string("v"))
+    }
+
+    func testListWithDepthGreaterThanIntMaxDoesNotTrap() async throws {
+        let store = ParameterStore()
+        _ = try await store.declare(
+            name: "a", value: .integer(0),
+            descriptor: ROS2ParameterDescriptor(name: "a", type: .integer))
+        let r = await store.list(prefixes: [], depth: UInt64.max)
+        XCTAssertEqual(r.names, ["a"])
+    }
 }

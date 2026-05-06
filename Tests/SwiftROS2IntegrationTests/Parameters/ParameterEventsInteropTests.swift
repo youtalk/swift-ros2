@@ -6,8 +6,10 @@ import XCTest
 
 final class ParameterEventsInteropTests: XCTestCase {
     func testParameterEventsConsumableByROS2TopicEcho() async throws {
-        guard let _ = ProcessInfo.processInfo.environment["LINUX_IP"]
-        else { throw XCTSkip("Set LINUX_IP to run this test") }
+        // Match the gating used by the other LAN-gated tests in this
+        // target: skip on missing OR empty LINUX_IP.
+        guard let ip = ProcessInfo.processInfo.environment["LINUX_IP"], !ip.isEmpty
+        else { throw XCTSkip("Set LINUX_IP to run this test (e.g., LINUX_IP=192.168.1.85)") }
 
         let ctx = try await ROS2Context(
             transport: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0),
@@ -23,7 +25,7 @@ final class ParameterEventsInteropTests: XCTestCase {
         // Spawn a docker `ros2 topic echo --once` in the background. It
         // returns the next message and exits.
         let p = Process()
-        p.launchPath = "/usr/bin/env"
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = [
             "docker", "exec", "ros_jazzy_zenoh", "bash", "-c",
             "source /opt/ros/jazzy/setup.bash && export RMW_IMPLEMENTATION=rmw_zenoh_cpp && timeout 8 ros2 topic echo --once /parameter_events",

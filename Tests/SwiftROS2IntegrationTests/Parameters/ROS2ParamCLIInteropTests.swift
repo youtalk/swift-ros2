@@ -4,9 +4,16 @@ import SwiftROS2Messages
 import SwiftROS2Transport
 import XCTest
 
-/// LAN-gated `ros2 param` CLI interop. Runs against a docker stack defined
-/// in `support/docker/compose.yml` (Zenoh) and `compose-dds.yml` (DDS).
-/// Skips when `LINUX_IP` is unset.
+/// LAN-gated `ros2 param` CLI interop. Skips when `LINUX_IP` is unset
+/// or empty. Requires two running docker containers on the host:
+///   - `ros_jazzy_zenoh` — ROS 2 Jazzy + `rmw_zenoh_cpp` + an active
+///     `rmw_zenohd` peering at `tcp/127.0.0.1:7447`.
+///   - `ros_jazzy_dds`   — ROS 2 Jazzy + `rmw_cyclonedds_cpp` reachable
+///     on the chosen `ROS_DOMAIN_ID`.
+///
+/// The compose files for these containers live in the downstream Conduit
+/// repository under `support/docker/`; swift-ros2 itself does not ship a
+/// docker stack. Bring the containers up there before running the tests.
 final class ROS2ParamCLIInteropTests: XCTestCase {
     private func skipIfNoLinuxIP() throws -> String {
         guard let ip = ProcessInfo.processInfo.environment["LINUX_IP"], !ip.isEmpty
@@ -18,7 +25,7 @@ final class ROS2ParamCLIInteropTests: XCTestCase {
     /// on non-zero exit code with stderr in the message.
     private func dockerExec(container: String, _ shell: String) throws -> String {
         let p = Process()
-        p.launchPath = "/usr/bin/env"
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = ["docker", "exec", container, "bash", "-c", shell]
         let out = Pipe()
         let err = Pipe()

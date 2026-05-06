@@ -282,6 +282,44 @@ final class ParameterServicesTests: XCTestCase {
         XCTAssertEqual(resp.values.first?.integerValue, 30)
     }
 
+    func testSetParametersServiceEmitsEvent() async throws {
+        // Phase-4 Task 8: confirm the wire `set_parameters` service routes
+        // through the same store path that emits a /parameter_events
+        // publication. We need the session handle to inspect publishers,
+        // so don't reuse the helper that drops it.
+        let mock = MockTransportSession()
+        mock.installEchoServiceTransport()
+        let ctx = try await ROS2Context(
+            transport: .zenoh(locator: "tcp/mock:7447"), session: mock)
+        let node = try await ctx.createNode(name: "talker")
+        defer {
+            Task {
+                await node.destroy()
+                await ctx.shutdown()
+            }
+        }
+        _ = try await node.declareParameter("rate", default: Int64(30))
+
+        let cli = try await node.createClient(
+            SetParametersSrv.self, name: "/talker/set_parameters")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        var v = SwiftROS2Messages.ParameterValue()
+        v.type = 2
+        v.integerValue = 99
+        _ = try await cli.call(
+            SetParametersRequest(parameters: [
+                Parameter(name: "rate", value: v)
+            ]),
+            timeout: .seconds(2)
+        )
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let pub = mock.publishers.first { $0.topic.hasSuffix("/parameter_events") }
+        XCTAssertNotNil(pub)
+        // declare emits one, set_parameters emits a second.
+        XCTAssertGreaterThanOrEqual(pub?.publishedPayloads.count ?? 0, 2)
+    }
+
     func testOptOutSkipsRegistration() async throws {
         let mock = MockTransportSession()
         mock.installEchoServiceTransport()

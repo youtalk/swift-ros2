@@ -126,6 +126,75 @@ extension ParameterStore {
 extension ParameterStore {
     @discardableResult
     func set(_ p: ROS2Parameter) -> ROS2SetParametersResult {
+        let results = setMany([p])
+        return results.first ?? .failure(reason: "no result")
+    }
+
+    func setMany(_ ps: [ROS2Parameter]) -> [ROS2SetParametersResult] {
+        var out: [ROS2SetParametersResult] = []
+        out.reserveCapacity(ps.count)
+        var applied: [ROS2Parameter] = []
+        for p in ps {
+            // Per-item pre-set: callback may mutate the single-element list.
+            var batch: [ROS2Parameter] = [p]
+            for cb in preSetCallbacks { cb.fn(&batch) }
+            // batch is normally one element; we proceed with batch[0] if it
+            // remained, otherwise treat as a no-op success (rclcpp parity).
+            guard let proposed = batch.first else {
+                out.append(.success())
+                continue
+            }
+            let r = applySingle(proposed)
+            if r.successful { applied.append(proposed) }
+            out.append(r)
+        }
+        if !applied.isEmpty {
+            for cb in postSetCallbacks { cb.fn(applied) }
+            emitChanged(applied)
+        }
+        return out
+    }
+
+    func setAtomically(_ ps: [ROS2Parameter]) -> ROS2SetParametersResult {
+        var batch = ps
+        for cb in preSetCallbacks { cb.fn(&batch) }
+        // Validate every item against its descriptor first; any failure
+        // aborts the batch with the offending reason.
+        for p in batch {
+            guard let entry = entries[p.name] else {
+                return .failure(reason: "parameter '\(p.name)' is not declared")
+            }
+            if let reason = validate(
+                name: p.name, value: p.value, descriptor: entry.descriptor,
+                allowWriteToReadOnly: false)
+            {
+                return .failure(reason: reason)
+            }
+        }
+        // On-set chain: first failure short-circuits the whole batch.
+        for cb in onSetCallbacks {
+            let r = cb.fn(batch)
+            if !r.successful { return r }
+        }
+        // Snapshot for safe rollback (defensive — validation passed for every
+        // item, so the writes should never throw).
+        let snapshot = entries
+        for p in batch {
+            guard var entry = entries[p.name] else {
+                entries = snapshot
+                return .failure(reason: "parameter '\(p.name)' disappeared mid-batch")
+            }
+            entry.value = p.value
+            entries[p.name] = entry
+        }
+        for cb in postSetCallbacks { cb.fn(batch) }
+        emitChanged(batch)
+        return .success()
+    }
+
+    /// Validate + on-set + write a single proposed parameter. Returns the
+    /// SetParametersResult.
+    private func applySingle(_ p: ROS2Parameter) -> ROS2SetParametersResult {
         guard var entry = entries[p.name] else {
             return .failure(reason: "parameter '\(p.name)' is not declared")
         }
@@ -135,24 +204,12 @@ extension ParameterStore {
         {
             return .failure(reason: reason)
         }
+        for cb in onSetCallbacks {
+            let r = cb.fn([p])
+            if !r.successful { return r }
+        }
         entry.value = p.value
         entries[p.name] = entry
-        return .success()
-    }
-
-    func setMany(_ ps: [ROS2Parameter]) -> [ROS2SetParametersResult] {
-        ps.map { set($0) }
-    }
-
-    func setAtomically(_ ps: [ROS2Parameter]) -> ROS2SetParametersResult {
-        let snapshot = entries
-        for p in ps {
-            let r = set(p)
-            if !r.successful {
-                entries = snapshot
-                return r
-            }
-        }
         return .success()
     }
 
@@ -281,4 +338,10 @@ extension ParameterStore {
     ) {
         self.eventEmitter = emitter
     }
+}
+
+extension ParameterStore {
+    func emitChanged(_ params: [ROS2Parameter]) { /* filled in Task 5 */  }
+    func emitNew(_ params: [ROS2Parameter]) { /* filled in Task 5 */  }
+    func emitDeleted(_ params: [ROS2Parameter]) { /* filled in Task 5 */  }
 }

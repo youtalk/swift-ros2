@@ -109,6 +109,7 @@ public final class ROS2Context: @unchecked Sendable {
             // leak transport handles into the caller's hands.
             do {
                 try await node.startParameterServices()
+                await node.installParameterEventEmitter()
             } catch {
                 await node.destroy()
                 throw error

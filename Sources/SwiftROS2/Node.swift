@@ -34,6 +34,7 @@ public final class ROS2Node: @unchecked Sendable {
     private let lock = NSLock()
 
     let parameterStore: ParameterStore = ParameterStore()
+    private var parameterEventPublisher: ROS2Publisher<ParameterEvent>?
 
     init(
         name: String,
@@ -391,6 +392,59 @@ public final class ROS2Node: @unchecked Sendable {
         }
         let ns = namespace.hasSuffix("/") ? namespace : namespace + "/"
         return "\(ns)\(topic)"
+    }
+}
+
+extension ROS2Node {
+    /// Called from `ROS2Context.createNode` when parameter services are
+    /// enabled. Installs the per-node emitter so the store's `declare` /
+    /// `set*` / `undeclare` operations route the resulting `ParameterEvent`
+    /// out the `/parameter_events` topic.
+    internal func installParameterEventEmitter() async {
+        let fqn = self.fullyQualifiedName
+        await parameterStore.setEventEmitter { [weak self] event in
+            guard let self = self else { return }
+            var stamped = event
+            stamped.node = fqn
+            Task { await self.dispatchParameterEvent(stamped) }
+        }
+    }
+
+    /// Lazily creates the `/parameter_events` publisher on first emission
+    /// and forwards the event. The publisher is appended to `publishers`
+    /// so `destroy()` closes it like any other.
+    private func dispatchParameterEvent(_ event: ParameterEvent) async {
+        do {
+            let pub = try await ensureParameterEventPublisher()
+            try pub.publish(event)
+        } catch {
+            // Silent drop: emitting a parameter event must never throw out
+            // of a parameter mutation. The store has already committed.
+        }
+    }
+
+    private func ensureParameterEventPublisher() async throws -> ROS2Publisher<ParameterEvent> {
+        lock.lock()
+        if let p = parameterEventPublisher {
+            lock.unlock()
+            return p
+        }
+        lock.unlock()
+        let pub = try await createPublisher(
+            ParameterEvent.self,
+            topic: "/parameter_events",
+            qos: .parameterEvents
+        )
+        lock.lock()
+        // Race: another caller may have created one between unlock + create.
+        if let existing = parameterEventPublisher {
+            lock.unlock()
+            try? pub.closePublisher()
+            return existing
+        }
+        parameterEventPublisher = pub
+        lock.unlock()
+        return pub
     }
 }
 

@@ -310,8 +310,20 @@ final class MockTransportPublisher: TransportPublisher, @unchecked Sendable {
 
     private let lock = NSLock()
     private var closed = false
-    private(set) var publishedPayloads: [(data: Data, timestamp: UInt64, sequenceNumber: Int64)] = []
+    private var _publishedPayloads: [(data: Data, timestamp: UInt64, sequenceNumber: Int64)] = []
     var deliveryFanout: ((Data, UInt64) -> Void)?
+
+    /// Snapshot of payloads observed so far, returned under the lock.
+    /// Reading the underlying storage without locking races against the
+    /// `publish(...)` writer — on Linux x86_64 (Swift 6.0 runtime) the
+    /// detector aborts the process with a "_ContiguousArrayStorage
+    /// deallocated with non-zero retain count" message; on other targets
+    /// it can silently mis-observe. Always go through the snapshot.
+    var publishedPayloads: [(data: Data, timestamp: UInt64, sequenceNumber: Int64)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _publishedPayloads
+    }
 
     var isActive: Bool {
         lock.lock()
@@ -332,7 +344,7 @@ final class MockTransportPublisher: TransportPublisher, @unchecked Sendable {
             lock.unlock()
             throw TransportError.publisherClosed
         }
-        publishedPayloads.append((data, timestamp, sequenceNumber))
+        _publishedPayloads.append((data, timestamp, sequenceNumber))
         let fanout = deliveryFanout
         lock.unlock()
         fanout?(data, timestamp)

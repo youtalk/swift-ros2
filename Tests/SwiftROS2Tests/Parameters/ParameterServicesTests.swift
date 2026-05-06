@@ -248,4 +248,51 @@ final class ParameterServicesTests: XCTestCase {
         XCTAssertEqual(resp.types, [2, 3, 1, 0])
         // Integer (2), Double (3), Bool (1), NOT_SET (0)
     }
+
+    func testAutoRegistersWhenOptionsDefault() async throws {
+        let mock = MockTransportSession()
+        mock.installEchoServiceTransport()
+        let ctx = try await ROS2Context(
+            transport: .zenoh(locator: "tcp/mock:7447"), session: mock)
+        // Default options: services should already be registered after createNode.
+        let node = try await ctx.createNode(name: "talker")
+        _ = try await node.declareParameter("rate", default: Int64(30))
+
+        let cli = try await node.createClient(
+            GetParametersSrv.self, name: "/talker/get_parameters")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        let resp = try await cli.call(
+            GetParametersRequest(names: ["rate"]), timeout: .seconds(1))
+        XCTAssertEqual(resp.values.first?.integerValue, 30)
+    }
+
+    func testOptOutSkipsRegistration() async throws {
+        let mock = MockTransportSession()
+        mock.installEchoServiceTransport()
+        let ctx = try await ROS2Context(
+            transport: .zenoh(locator: "tcp/mock:7447"), session: mock)
+        let node = try await ctx.createNode(
+            name: "talker",
+            options: ROS2NodeOptions(startParameterServices: false))
+        _ = try await node.declareParameter("rate", default: Int64(30))
+
+        // The mock client dispatcher throws TransportError.notConnected when
+        // no matching server exists, which ServiceError.mapping surfaces as
+        // .serviceUnavailable. A timeout would also prove the call failed
+        // because no service was auto-registered.
+        let cli = try await node.createClient(
+            GetParametersSrv.self, name: "/talker/get_parameters")
+        do {
+            _ = try await cli.call(
+                GetParametersRequest(names: ["rate"]), timeout: .milliseconds(200))
+            XCTFail("expected the call to fail because services were not auto-registered")
+        } catch ServiceError.serviceUnavailable {
+            // expected: the mock dispatcher could not find a server with the name
+        } catch ServiceError.timeout {
+            // also acceptable: depending on the mock's failure surface mapping
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
 }

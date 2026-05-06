@@ -18,7 +18,8 @@ final class ActionClientTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let cli = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
         let handle = try await cli.sendGoal(FibonacciAction.Goal(order: 5))
         XCTAssertEqual(handle.acceptedAt.sec, 1)
@@ -34,7 +35,8 @@ final class ActionClientTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let cli = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
         do {
             _ = try await cli.sendGoal(FibonacciAction.Goal(order: 5))
@@ -61,7 +63,8 @@ final class ActionClientTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let cli = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
         let handle = try await cli.sendGoal(FibonacciAction.Goal(order: 5))
         var seen: [[Int32]] = []
@@ -84,7 +87,8 @@ final class ActionClientTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let cli = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
         let handle = try await cli.sendGoal(FibonacciAction.Goal(order: 5))
         let r = try await handle.result(timeout: .seconds(2))
@@ -104,7 +108,8 @@ final class ActionClientTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let cli = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
         let canceled = try await cli.cancelGoals(beforeStamp: BuiltinInterfacesTime(sec: 9, nanosec: 0))
         XCTAssertEqual(canceled, [])

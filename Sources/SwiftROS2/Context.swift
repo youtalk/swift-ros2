@@ -76,7 +76,6 @@ public final class ROS2Context: @unchecked Sendable {
         namespace: String = "/",
         options: ROS2NodeOptions = .default
     ) async throws -> ROS2Node {
-        _ = options  // wired in phase-3 Task 10
         let nodeId = entityManager.getNextEntityId()
         let node = ROS2Node(
             name: name,
@@ -87,6 +86,12 @@ public final class ROS2Context: @unchecked Sendable {
             entityManager: entityManager,
             gidManager: gidManager
         )
+        if options.startParameterServices {
+            // Register before the node is reachable from `shutdown` — if
+            // service registration throws we don't want a half-initialised
+            // node hanging on the context.
+            try await node.startParameterServices()
+        }
         appendNode(node)
         return node
     }

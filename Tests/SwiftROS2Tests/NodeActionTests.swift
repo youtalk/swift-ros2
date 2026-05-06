@@ -17,7 +17,8 @@ final class NodeActionTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let server = try await node.createActionServer(
             FibonacciAction.self, name: "/fibonacci",
             handler: _AcceptingHandler()
@@ -39,7 +40,8 @@ final class NodeActionTests: XCTestCase {
             distro: .jazzy,
             session: mock
         )
-        let node = try await ctx.createNode(name: "t")
+        let node = try await ctx.createNode(
+            name: "t", options: ROS2NodeOptions(startParameterServices: false))
         let cli = try await node.createActionClient(FibonacciAction.self, name: "/fibonacci")
         XCTAssertTrue(cli.isActive)
         await ctx.shutdown()

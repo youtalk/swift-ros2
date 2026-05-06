@@ -67,11 +67,12 @@ extension ROS2Node {
         }
     }
 
-    // MARK: - Handler stubs (filled in tasks 4–9)
+    // MARK: - Service handlers
     //
     // Each handler is a `static` async function so it doesn't capture `self`
     // implicitly — only the Sendable `ParameterStore` actor crosses the
-    // closure boundary, which keeps the @Sendable handler closure clean.
+    // closure boundary, which keeps the @Sendable handler closure surface
+    // minimal.
 
     static func handleGetParameters(
         _ request: GetParametersRequest, store: ParameterStore

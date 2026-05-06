@@ -9,8 +9,4 @@ public struct ROS2ParameterCallbackHandle: Sendable, Hashable {
     /// visibility so test code in `@testable import SwiftROS2` can build
     /// handles directly without going through registration.
     let id: UInt64
-
-    init(id: UInt64) {
-        self.id = id
-    }
 }

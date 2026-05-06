@@ -48,13 +48,15 @@ actor ParameterStore {
             throw ROS2ParameterError.invalidValue(name: name, reason: reason)
         }
         entries[name] = ParameterEntry(value: value, descriptor: descriptor)
+        emitNew([ROS2Parameter(name: name, value: value)])
         return value
     }
 
     func undeclare(name: String) throws {
-        guard entries.removeValue(forKey: name) != nil else {
+        guard let removed = entries.removeValue(forKey: name) else {
             throw ROS2ParameterError.notDeclared(name: name)
         }
+        emitDeleted([ROS2Parameter(name: name, value: removed.value)])
     }
 
     func has(name: String) -> Bool {
@@ -341,7 +343,35 @@ extension ParameterStore {
 }
 
 extension ParameterStore {
-    func emitChanged(_ params: [ROS2Parameter]) { /* filled in Task 5 */  }
-    func emitNew(_ params: [ROS2Parameter]) { /* filled in Task 5 */  }
-    func emitDeleted(_ params: [ROS2Parameter]) { /* filled in Task 5 */  }
+    /// Build a `ParameterEvent` from per-bucket lists and fan it out via the
+    /// installed emitter (if any). The `node` field is filled by the emitter
+    /// closure on the Node side — the store doesn't know its own FQN.
+    private func emit(
+        new: [ROS2Parameter] = [],
+        changed: [ROS2Parameter] = [],
+        deleted: [ROS2Parameter] = []
+    ) {
+        guard let emitter = eventEmitter else { return }
+        guard !(new.isEmpty && changed.isEmpty && deleted.isEmpty) else { return }
+        let now = nowAsTime()
+        let event = ParameterEvent(
+            stamp: now,
+            node: "",  // filled in by the Node-side emitter wrapper
+            newParameters: new.map { $0.toWire() },
+            changedParameters: changed.map { $0.toWire() },
+            deletedParameters: deleted.map { $0.toWire() }
+        )
+        emitter(event)
+    }
+
+    func emitChanged(_ params: [ROS2Parameter]) { emit(changed: params) }
+    func emitNew(_ params: [ROS2Parameter]) { emit(new: params) }
+    func emitDeleted(_ params: [ROS2Parameter]) { emit(deleted: params) }
+
+    private func nowAsTime() -> Time {
+        let sec = Date().timeIntervalSince1970
+        let secInt = Int32(sec)
+        let nanos = UInt32((sec - Double(secInt)) * 1_000_000_000)
+        return Time(sec: secInt, nanosec: nanos)
+    }
 }

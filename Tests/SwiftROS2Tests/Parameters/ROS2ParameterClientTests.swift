@@ -88,4 +88,68 @@ final class ROS2ParameterClientTests: XCTestCase {
         XCTAssertEqual(values[1], .string("hi"))
         XCTAssertEqual(values[2], .notSet)
     }
+
+    func testSetParameters() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient(
+            params: [("rate", .integer(30))])
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        let results = try await pc.setParameters([
+            ROS2Parameter(name: "rate", value: .integer(99)),
+            ROS2Parameter(name: "missing", value: .integer(1)),
+        ])
+        XCTAssertEqual(results.count, 2)
+        XCTAssertTrue(results[0].successful)
+        XCTAssertFalse(results[1].successful)
+        let stored = try await server.getParameter("rate")
+        XCTAssertEqual(stored.value, .integer(99))
+    }
+
+    func testSetParametersAtomicallyBatchSuccess() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient(
+            params: [("a", .integer(1)), ("b", .integer(2))])
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        let r = try await pc.setParametersAtomically([
+            ROS2Parameter(name: "a", value: .integer(10)),
+            ROS2Parameter(name: "b", value: .integer(20)),
+        ])
+        XCTAssertTrue(r.successful)
+        let a = try await server.getParameter("a")
+        let b = try await server.getParameter("b")
+        XCTAssertEqual(a.value, .integer(10))
+        XCTAssertEqual(b.value, .integer(20))
+    }
+
+    func testSetParametersAtomicallyRollsBackOnFailure() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient(
+            params: [("a", .integer(1))])
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        let r = try await pc.setParametersAtomically([
+            ROS2Parameter(name: "a", value: .integer(10)),
+            ROS2Parameter(name: "missing", value: .integer(0)),
+        ])
+        XCTAssertFalse(r.successful)
+        let a = try await server.getParameter("a")
+        XCTAssertEqual(a.value, .integer(1))
+    }
 }

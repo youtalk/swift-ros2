@@ -83,3 +83,26 @@ extension ROS2ParameterClient {
         return resp.values.map { ROS2ParameterValue(wire: $0) }
     }
 }
+
+extension ROS2ParameterClient {
+    public func setParameters(
+        _ ps: [ROS2Parameter], timeout: Duration? = nil
+    ) async throws -> [ROS2SetParametersResult] {
+        let req = SetParametersRequest(parameters: ps.map { $0.toWire() })
+        let resp = try await setParametersClient.call(
+            req, timeout: timeout ?? defaultTimeout)
+        return resp.results.map {
+            ROS2SetParametersResult(successful: $0.successful, reason: $0.reason)
+        }
+    }
+
+    public func setParametersAtomically(
+        _ ps: [ROS2Parameter], timeout: Duration? = nil
+    ) async throws -> ROS2SetParametersResult {
+        let req = SetParametersAtomicallyRequest(parameters: ps.map { $0.toWire() })
+        let resp = try await setParametersAtomicallyClient.call(
+            req, timeout: timeout ?? defaultTimeout)
+        return ROS2SetParametersResult(
+            successful: resp.result.successful, reason: resp.result.reason)
+    }
+}

@@ -72,3 +72,14 @@ public final class ROS2ParameterClient: @unchecked Sendable {
         getParameterTypesClient.cancel()
     }
 }
+
+extension ROS2ParameterClient {
+    public func getParameters(
+        _ names: [String], timeout: Duration? = nil
+    ) async throws -> [ROS2ParameterValue] {
+        let req = GetParametersRequest(names: names)
+        let resp = try await getParametersClient.call(
+            req, timeout: timeout ?? defaultTimeout)
+        return resp.values.map { ROS2ParameterValue(wire: $0) }
+    }
+}

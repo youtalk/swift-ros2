@@ -70,4 +70,22 @@ final class ROS2ParameterClientTests: XCTestCase {
         await pc.close()
         await pc.close()  // must not crash
     }
+
+    func testGetParameters() async throws {
+        let (ctx, server, client, pc) = try await makeServerAndClient(
+            params: [("rate", .integer(30)), ("greeting", .string("hi"))])
+        defer {
+            Task {
+                await pc.close()
+                await client.destroy()
+                await server.destroy()
+                await ctx.shutdown()
+            }
+        }
+        let values = try await pc.getParameters(["rate", "greeting", "missing"])
+        XCTAssertEqual(values.count, 3)
+        XCTAssertEqual(values[0], .integer(30))
+        XCTAssertEqual(values[1], .string("hi"))
+        XCTAssertEqual(values[2], .notSet)
+    }
 }

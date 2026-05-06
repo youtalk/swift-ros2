@@ -1,3 +1,4 @@
+import SwiftROS2Transport
 import XCTest
 
 @testable import SwiftROS2
@@ -7,6 +8,13 @@ final class ParameterCallbacksTests: XCTestCase {
         _ = try await store.declare(
             name: name, value: value,
             descriptor: ROS2ParameterDescriptor(name: name, type: value.parameterType))
+    }
+
+    private func makeContext() async throws -> ROS2Context {
+        let config = TransportConfig.zenoh(locator: "tcp/mock:7447")
+        let mock = MockTransportSession()
+        mock.installEchoServiceTransport()
+        return try await ROS2Context(transport: config, session: mock)
     }
 
     func testPreSetMutatesProposedList() async throws {
@@ -72,6 +80,43 @@ final class ParameterCallbacksTests: XCTestCase {
         let b = try await store.get(name: "b")
         XCTAssertEqual(a.value, .integer(1))
         XCTAssertEqual(b.value, .integer(2))
+    }
+
+    func testNodeOnSetCallbackVetoesViaSet() async throws {
+        let ctx = try await makeContext()
+        let node = try await ctx.createNode(name: "n1")
+        defer {
+            Task {
+                await node.destroy()
+                await ctx.shutdown()
+            }
+        }
+        _ = try await node.declareParameter("rate", default: Int64(30))
+        _ = await node.setOnSetParametersCallback { _ in
+            ROS2SetParametersResult(successful: false, reason: "guarded")
+        }
+        let r = await node.setParameter(ROS2Parameter(name: "rate", value: .integer(99)))
+        XCTAssertFalse(r.successful)
+        XCTAssertEqual(r.reason, "guarded")
+    }
+
+    func testNodeRemoveParameterCallback() async throws {
+        let ctx = try await makeContext()
+        let node = try await ctx.createNode(name: "n2")
+        defer {
+            Task {
+                await node.destroy()
+                await ctx.shutdown()
+            }
+        }
+        _ = try await node.declareParameter("rate", default: Int64(30))
+        let h = await node.setOnSetParametersCallback { _ in
+            ROS2SetParametersResult(successful: false, reason: "guarded")
+        }
+        let removed = await node.removeParameterCallback(h)
+        XCTAssertTrue(removed)
+        let r = await node.setParameter(ROS2Parameter(name: "rate", value: .integer(99)))
+        XCTAssertTrue(r.successful)
     }
 
     func testRemovedCallbackStopsFiring() async throws {

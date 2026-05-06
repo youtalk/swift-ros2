@@ -199,4 +199,34 @@ final class ParameterServicesTests: XCTestCase {
             timeout: .seconds(1))
         XCTAssertEqual(Set(groupResp.result.names), ["group.beta", "group.gamma"])
     }
+
+    func testDescribeParametersReturnsDescriptorsAndMissingFallback() async throws {
+        let (_, node) = try await makeContextAndNode()
+        _ = try await node.declareParameter(
+            "rate",
+            default: Int64(30),
+            descriptor: ROS2ParameterDescriptor(
+                name: "rate", type: .integer, description: "publish rate (Hz)",
+                integerRange: 1...120))
+        try await node.startParameterServices()
+
+        let cli = try await node.createClient(
+            DescribeParametersSrv.self, name: "/talker/describe_parameters")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        let resp = try await cli.call(
+            DescribeParametersRequest(names: ["rate", "missing"]),
+            timeout: .seconds(1))
+        XCTAssertEqual(resp.descriptors.count, 2)
+
+        XCTAssertEqual(resp.descriptors[0].name, "rate")
+        XCTAssertEqual(resp.descriptors[0].type, 2)  // PARAMETER_INTEGER
+        XCTAssertEqual(resp.descriptors[0].description, "publish rate (Hz)")
+        XCTAssertEqual(resp.descriptors[0].integerRange.count, 1)
+        XCTAssertEqual(resp.descriptors[0].integerRange.first?.fromValue, 1)
+        XCTAssertEqual(resp.descriptors[0].integerRange.first?.toValue, 120)
+
+        XCTAssertEqual(resp.descriptors[1].name, "missing")
+        XCTAssertEqual(resp.descriptors[1].type, 0)  // PARAMETER_NOT_SET
+    }
 }

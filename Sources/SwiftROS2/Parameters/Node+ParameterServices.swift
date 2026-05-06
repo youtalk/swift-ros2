@@ -123,9 +123,21 @@ extension ROS2Node {
     static func handleDescribeParameters(
         _ request: DescribeParametersRequest, store: ParameterStore
     ) async -> DescribeParametersResponse {
-        _ = request
-        _ = store
-        return DescribeParametersResponse()
+        var out: [SwiftROS2Messages.ParameterDescriptor] = []
+        out.reserveCapacity(request.names.count)
+        for name in request.names {
+            if let entry = await store.entry(name: name) {
+                out.append(entry.descriptor.toWire())
+            } else {
+                // rclcpp returns a descriptor whose name echoes the request and
+                // whose type slot is PARAMETER_NOT_SET. Mirror that.
+                var stub = SwiftROS2Messages.ParameterDescriptor()
+                stub.name = name
+                stub.type = 0
+                out.append(stub)
+            }
+        }
+        return DescribeParametersResponse(descriptors: out)
     }
 
     static func handleGetParameterTypes(

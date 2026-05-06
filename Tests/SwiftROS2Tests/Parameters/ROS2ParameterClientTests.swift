@@ -45,8 +45,12 @@ final class ROS2ParameterClientTests: XCTestCase {
         return (ctx, server, client, pc)
     }
 
-    func testInitCreatesAllSixUnderlyingClients() async throws {
-        let (ctx, server, client, pc) = try await makeServerAndClient()
+    func testInitWiresRemoteNameAndAllSixServiceClients() async throws {
+        // The init contract has two halves: the public `remoteNodeName` is
+        // recorded, and one underlying ROS2Client is created per service so
+        // every public method has somewhere to dispatch. Exercise both.
+        let (ctx, server, client, pc) = try await makeServerAndClient(
+            params: [("rate", .integer(30))])
         defer {
             Task {
                 await pc.close()
@@ -56,6 +60,20 @@ final class ROS2ParameterClientTests: XCTestCase {
             }
         }
         XCTAssertEqual(pc.remoteNodeName, "/test/server")
+        XCTAssertEqual(pc.defaultTimeout, .seconds(5))
+
+        // One round-trip per service confirms each underlying client was
+        // created against the right service name and connects to a handler.
+        _ = try await pc.getParameters(["rate"])
+        _ = try await pc.setParameters([
+            ROS2Parameter(name: "rate", value: .integer(31))
+        ])
+        _ = try await pc.setParametersAtomically([
+            ROS2Parameter(name: "rate", value: .integer(32))
+        ])
+        _ = try await pc.listParameters()
+        _ = try await pc.describeParameters(["rate"])
+        _ = try await pc.getParameterTypes(["rate"])
     }
 
     func testCloseIsIdempotent() async throws {

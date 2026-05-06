@@ -139,11 +139,12 @@ extension ROS2ParameterClient {
 
 extension ROS2ParameterClient {
     /// Wait until every one of the six underlying clients reports that a
-    /// matching service is reachable, or until `timeout` elapses. Polls
-    /// in parallel via a child task group.
+    /// matching service is reachable, or until `timeout` elapses. Each
+    /// child wait sees the same `timeout` budget; whichever child throws
+    /// first cancels the rest via the task group.
     public func waitForService(timeout: Duration) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
-            for cli in allClients() {
+            for cli in allClients(timeout: timeout) {
                 group.addTask { try await cli() }
             }
             try await group.waitForAll()
@@ -152,25 +153,27 @@ extension ROS2ParameterClient {
 
     /// Type-erases the six client `waitForService` calls into a list of
     /// throwing closures so the task group iterates uniformly.
-    private func allClients() -> [@Sendable () async throws -> Void] {
+    private func allClients(
+        timeout: Duration
+    ) -> [@Sendable () async throws -> Void] {
         [
             { [getParametersClient] in
-                try await getParametersClient.waitForService(timeout: .seconds(5))
+                try await getParametersClient.waitForService(timeout: timeout)
             },
             { [setParametersClient] in
-                try await setParametersClient.waitForService(timeout: .seconds(5))
+                try await setParametersClient.waitForService(timeout: timeout)
             },
             { [setParametersAtomicallyClient] in
-                try await setParametersAtomicallyClient.waitForService(timeout: .seconds(5))
+                try await setParametersAtomicallyClient.waitForService(timeout: timeout)
             },
             { [listParametersClient] in
-                try await listParametersClient.waitForService(timeout: .seconds(5))
+                try await listParametersClient.waitForService(timeout: timeout)
             },
             { [describeParametersClient] in
-                try await describeParametersClient.waitForService(timeout: .seconds(5))
+                try await describeParametersClient.waitForService(timeout: timeout)
             },
             { [getParameterTypesClient] in
-                try await getParameterTypesClient.waitForService(timeout: .seconds(5))
+                try await getParameterTypesClient.waitForService(timeout: timeout)
             },
         ]
     }

@@ -313,8 +313,16 @@ final class ParameterServicesTests: XCTestCase {
             ]),
             timeout: .seconds(2)
         )
-        try await Task.sleep(nanoseconds: 100_000_000)
-        let pub = mock.publishers.first { $0.topic.hasSuffix("/parameter_events") }
+        // Bounded poll instead of fixed sleep — `dispatchParameterEvent`
+        // runs in a detached task and may take longer than 100 ms on a
+        // loaded CI runner.
+        let deadline = ContinuousClock.now + .seconds(2)
+        var pub: MockTransportPublisher?
+        while ContinuousClock.now < deadline {
+            pub = mock.publishers.first { $0.topic.hasSuffix("/parameter_events") }
+            if (pub?.publishedPayloads.count ?? 0) >= 2 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertNotNil(pub)
         // declare emits one, set_parameters emits a second.
         XCTAssertGreaterThanOrEqual(pub?.publishedPayloads.count ?? 0, 2)

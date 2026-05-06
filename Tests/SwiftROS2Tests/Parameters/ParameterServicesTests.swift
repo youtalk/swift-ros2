@@ -172,4 +172,31 @@ final class ParameterServicesTests: XCTestCase {
         let alpha2 = try await node.getParameter("alpha")
         XCTAssertEqual(alpha2.value, .double(0.9))
     }
+
+    func testListParametersReturnsNamesAndPrefixes() async throws {
+        let (_, node) = try await makeContextAndNode()
+        _ = try await node.declareParameter("rate", default: Int64(30))
+        _ = try await node.declareParameter("alpha", default: 0.5)
+        _ = try await node.declareParameter("group.beta", default: Int64(1))
+        _ = try await node.declareParameter("group.gamma", default: Int64(2))
+        try await node.startParameterServices()
+
+        let cli = try await node.createClient(
+            ListParametersSrv.self, name: "/talker/list_parameters")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        // No prefix filter, depth = 0 (recursive).
+        let allResp = try await cli.call(
+            ListParametersRequest(prefixes: [], depth: 0), timeout: .seconds(1))
+        XCTAssertEqual(
+            Set(allResp.result.names),
+            ["rate", "alpha", "group.beta", "group.gamma"])
+        XCTAssertEqual(allResp.result.prefixes, ["group"])
+
+        // Prefix-filtered.
+        let groupResp = try await cli.call(
+            ListParametersRequest(prefixes: ["group"], depth: 0),
+            timeout: .seconds(1))
+        XCTAssertEqual(Set(groupResp.result.names), ["group.beta", "group.gamma"])
+    }
 }

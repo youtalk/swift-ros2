@@ -114,9 +114,10 @@ extension ROS2Node {
     static func handleListParameters(
         _ request: ListParametersRequest, store: ParameterStore
     ) async -> ListParametersResponse {
-        _ = request
-        _ = store
-        return ListParametersResponse()
+        let r = await store.list(prefixes: request.prefixes, depth: request.depth)
+        return ListParametersResponse(
+            result: SwiftROS2Messages.ListParametersResult(
+                names: r.names, prefixes: r.prefixes))
     }
 
     static func handleDescribeParameters(

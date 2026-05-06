@@ -119,4 +119,57 @@ final class ParameterServicesTests: XCTestCase {
         let alpha = try await node.getParameter("alpha")
         XCTAssertEqual(alpha.value, .double(0.75))
     }
+
+    func testSetParametersAtomicallyRollsBackOnFailure() async throws {
+        let (_, node) = try await makeContextAndNode()
+        _ = try await node.declareParameter(
+            "rate",
+            default: Int64(30),
+            descriptor: ROS2ParameterDescriptor(
+                name: "rate", type: .integer, integerRange: 1...120))
+        _ = try await node.declareParameter("alpha", default: 0.5)
+        try await node.startParameterServices()
+
+        let cli = try await node.createClient(
+            SetParametersAtomicallySrv.self, name: "/talker/set_parameters_atomically")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        var goodInt = SwiftROS2Messages.ParameterValue()
+        goodInt.type = 2
+        goodInt.integerValue = 60
+        var goodDouble = SwiftROS2Messages.ParameterValue()
+        goodDouble.type = 3
+        goodDouble.doubleValue = 0.9
+        var badInt = SwiftROS2Messages.ParameterValue()
+        badInt.type = 2
+        badInt.integerValue = 999
+
+        // First call: every parameter valid → atomic success.
+        let okResp = try await cli.call(
+            SetParametersAtomicallyRequest(parameters: [
+                Parameter(name: "rate", value: goodInt),
+                Parameter(name: "alpha", value: goodDouble),
+            ]),
+            timeout: .seconds(1))
+        XCTAssertTrue(okResp.result.successful)
+        let rate1 = try await node.getParameter("rate")
+        XCTAssertEqual(rate1.value, .integer(60))
+        let alpha1 = try await node.getParameter("alpha")
+        XCTAssertEqual(alpha1.value, .double(0.9))
+
+        // Second call: second parameter is out-of-range → both rolled back.
+        let failResp = try await cli.call(
+            SetParametersAtomicallyRequest(parameters: [
+                Parameter(name: "alpha", value: goodDouble),
+                Parameter(name: "rate", value: badInt),
+            ]),
+            timeout: .seconds(1))
+        XCTAssertFalse(failResp.result.successful)
+
+        // Net effect of failed call must be zero — values match the previous successful call.
+        let rate2 = try await node.getParameter("rate")
+        XCTAssertEqual(rate2.value, .integer(60))
+        let alpha2 = try await node.getParameter("alpha")
+        XCTAssertEqual(alpha2.value, .double(0.9))
+    }
 }

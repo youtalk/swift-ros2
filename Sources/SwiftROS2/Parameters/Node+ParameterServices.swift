@@ -104,12 +104,11 @@ extension ROS2Node {
     static func handleSetParametersAtomically(
         _ request: SetParametersAtomicallyRequest, store: ParameterStore
     ) async -> SetParametersAtomicallyResponse {
-        _ = request
-        _ = store
+        let swiftParams = request.parameters.map { ROS2Parameter(wire: $0) }
+        let r = await store.setAtomically(swiftParams)
         return SetParametersAtomicallyResponse(
-            result: SetParametersResult(
-                successful: false,
-                reason: "phase 3 task 6 not implemented yet"))
+            result: SwiftROS2Messages.SetParametersResult(
+                successful: r.successful, reason: r.reason))
     }
 
     static func handleListParameters(

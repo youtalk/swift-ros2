@@ -227,6 +227,44 @@ print(resp.success, resp.message)
 
 Failures (timeout, remote handler error, encoding / decoding) surface as `ServiceError` — pattern-match on `.timeout(_)`, `.handlerFailed(_)`, `.serviceUnavailable(_)`, `.taskCancelled`, etc.
 
+### Parameters
+
+Each `ROS2Node` exposes the standard six `rcl_interfaces` parameter services
+under `<node_fqn>/<service>`, plus a `/parameter_events` publisher. Declare
+parameters from Swift; remote tools (`ros2 param`, `rqt_param`) interoperate
+unchanged.
+
+```swift
+let node = try await ctx.createNode(name: "talker")
+_ = try await node.declareParameter(
+    "rate", default: Int64(30),
+    descriptor: ROS2ParameterDescriptor(
+        name: "rate", type: .integer, integerRange: Int64(1)...Int64(120)))
+
+_ = await node.setOnSetParametersCallback { proposed in
+    // Inspect proposed changes; return .failure(reason:) to veto.
+    .success()
+}
+```
+
+From a second terminal:
+
+```bash
+ros2 param list /talker
+ros2 param set  /talker rate 60
+ros2 topic echo /parameter_events
+```
+
+A runnable demo lives in [`Sources/Examples/ParameterDemo`](Sources/Examples/ParameterDemo/main.swift) — try `swift run parameter-demo zenoh`.
+
+To call a remote node's parameters from Swift:
+
+```swift
+let pc = try await node.createParameterClient(remoteNode: "/talker")
+try await pc.waitForService(timeout: .seconds(2))
+let values = try await pc.getParameters(["rate"])
+```
+
 ### Runnable examples
 
 End-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift run talker zenoh`, `swift run listener dds`, etc. — live under [`Sources/Examples/README.md`](Sources/Examples/README.md), with instructions for wiring them up to `ros2 topic echo` / `ros2 topic pub` on the ROS 2 side.

@@ -42,7 +42,12 @@ final class ROS2ParamCLIInteropTests: XCTestCase {
             transport: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0),
             distro: .jazzy)
         let node = try await ctx.createNode(name: "cli_node", namespace: "/test")
-        defer { Task { await node.destroy(); await ctx.shutdown() } }
+        defer {
+            Task {
+                await node.destroy()
+                await ctx.shutdown()
+            }
+        }
 
         _ = try await node.declareParameter("rate", default: Int64(30))
         _ = try await node.declareParameter("greeting", default: "hi")
@@ -92,7 +97,12 @@ final class ROS2ParamCLIInteropTests: XCTestCase {
                 domainId: domain),
             distro: .jazzy, domainId: domain)
         let node = try await ctx.createNode(name: "cli_node", namespace: "/test")
-        defer { Task { await node.destroy(); await ctx.shutdown() } }
+        defer {
+            Task {
+                await node.destroy()
+                await ctx.shutdown()
+            }
+        }
 
         _ = try await node.declareParameter("rate", default: Int64(30))
         _ = try await node.declareParameter("greeting", default: "hi")

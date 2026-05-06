@@ -13,7 +13,12 @@ final class ParameterEventsInteropTests: XCTestCase {
             transport: .zenoh(locator: "tcp/127.0.0.1:7447", domainId: 0),
             distro: .jazzy)
         let node = try await ctx.createNode(name: "events_node", namespace: "/test")
-        defer { Task { await node.destroy(); await ctx.shutdown() } }
+        defer {
+            Task {
+                await node.destroy()
+                await ctx.shutdown()
+            }
+        }
 
         // Spawn a docker `ros2 topic echo --once` in the background. It
         // returns the next message and exits.

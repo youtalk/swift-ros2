@@ -76,9 +76,14 @@ extension ROS2Node {
     static func handleGetParameters(
         _ request: GetParametersRequest, store: ParameterStore
     ) async -> GetParametersResponse {
-        _ = request
-        _ = store
-        return GetParametersResponse()
+        var values: [SwiftROS2Messages.ParameterValue] = []
+        values.reserveCapacity(request.names.count)
+        for name in request.names {
+            let entry = await store.entry(name: name)
+            let swiftValue = entry?.value ?? .notSet
+            values.append(swiftValue.toWire())
+        }
+        return GetParametersResponse(values: values)
     }
 
     static func handleSetParameters(

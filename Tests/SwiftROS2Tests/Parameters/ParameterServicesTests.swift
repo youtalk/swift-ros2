@@ -52,4 +52,26 @@ final class ParameterServicesTests: XCTestCase {
             GetParametersSrv.self, name: "/talker/get_parameters")
         try await cli.waitForService(timeout: .milliseconds(100))
     }
+
+    func testGetParametersReturnsDeclaredValues() async throws {
+        let (_, node) = try await makeContextAndNode()
+        _ = try await node.declareParameter("rate", default: Int64(30))
+        _ = try await node.declareParameter("alpha", default: 0.5)
+        try await node.startParameterServices()
+
+        let cli = try await node.createClient(
+            GetParametersSrv.self, name: "/talker/get_parameters")
+        try await cli.waitForService(timeout: .milliseconds(100))
+
+        let resp = try await cli.call(
+            GetParametersRequest(names: ["rate", "alpha", "missing"]),
+            timeout: .seconds(1))
+
+        XCTAssertEqual(resp.values.count, 3)
+        XCTAssertEqual(resp.values[0].type, 2)  // PARAMETER_INTEGER
+        XCTAssertEqual(resp.values[0].integerValue, 30)
+        XCTAssertEqual(resp.values[1].type, 3)  // PARAMETER_DOUBLE
+        XCTAssertEqual(resp.values[1].doubleValue, 0.5)
+        XCTAssertEqual(resp.values[2].type, 0)  // PARAMETER_NOT_SET — missing name
+    }
 }

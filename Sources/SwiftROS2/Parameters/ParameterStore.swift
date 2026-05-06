@@ -185,14 +185,28 @@ extension ParameterStore {
         return (e.value, e.descriptor)
     }
 
-    /// One-shot latch used by `Node.startParameterServices()` to guard
-    /// against double-registration (e.g. a caller that opted out of
-    /// auto-start and then later calls the public method twice).
-    /// Returns `true` exactly once per store instance.
+    /// One-shot latch used by `Node.startParameterServices()` to claim
+    /// the right to register the six parameter services. Returns `true`
+    /// the first time it is called; subsequent calls return `false`.
+    ///
+    /// The latch is claimed *before* the six `createService` calls so
+    /// concurrent `startParameterServices()` invocations can't double-
+    /// register. If registration then fails partway through, the caller
+    /// must invoke `resetServicesStarted()` so a future retry can
+    /// re-claim the latch.
     @discardableResult
     func markServicesStarted() -> Bool {
         if servicesStarted { return false }
         servicesStarted = true
         return true
+    }
+
+    /// Release the latch so a future `startParameterServices()` call can
+    /// re-claim it. Called by `Node.startParameterServices()` when one of
+    /// the six `createService` registrations throws — the partially-
+    /// registered services are torn down by `Node.destroy()` (or by the
+    /// caller's own cleanup) and the node is left in an un-started state.
+    func resetServicesStarted() {
+        servicesStarted = false
     }
 }

@@ -25,19 +25,34 @@ final class ParameterServicesTests: XCTestCase {
         // Manual registration since auto-start is opted out.
         try await node.startParameterServices()
 
-        // Each client.waitForService is satisfied by MockTransportSession's
-        // echo mode as long as the matching server name was registered.
-        for path in [
-            "/talker/get_parameters",
-            "/talker/set_parameters",
-            "/talker/set_parameters_atomically",
-            "/talker/list_parameters",
-            "/talker/describe_parameters",
-            "/talker/get_parameter_types",
-        ] {
-            let cli = try await node.createClient(GetParametersSrv.self, name: path)
-            try await cli.waitForService(timeout: .milliseconds(100))
-        }
+        // One client per service type so the type symbols (and the
+        // request/response request hashes) are exercised at compile time —
+        // the call-time semantics of each handler are covered by the
+        // dedicated per-handler tests below.
+        let getCli = try await node.createClient(
+            GetParametersSrv.self, name: "/talker/get_parameters")
+        try await getCli.waitForService(timeout: .milliseconds(100))
+
+        let setCli = try await node.createClient(
+            SetParametersSrv.self, name: "/talker/set_parameters")
+        try await setCli.waitForService(timeout: .milliseconds(100))
+
+        let setAtomicCli = try await node.createClient(
+            SetParametersAtomicallySrv.self,
+            name: "/talker/set_parameters_atomically")
+        try await setAtomicCli.waitForService(timeout: .milliseconds(100))
+
+        let listCli = try await node.createClient(
+            ListParametersSrv.self, name: "/talker/list_parameters")
+        try await listCli.waitForService(timeout: .milliseconds(100))
+
+        let describeCli = try await node.createClient(
+            DescribeParametersSrv.self, name: "/talker/describe_parameters")
+        try await describeCli.waitForService(timeout: .milliseconds(100))
+
+        let typesCli = try await node.createClient(
+            GetParameterTypesSrv.self, name: "/talker/get_parameter_types")
+        try await typesCli.waitForService(timeout: .milliseconds(100))
     }
 
     func testStartParameterServicesIsIdempotent() async throws {

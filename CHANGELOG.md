@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+## [1.1.1] - 2026-05-16
+
+### Fixed
+
+- **`SwiftROS2GenPlugin` consumers now build for iOS via `xcodebuild`.** `xcodebuild` compiles a build-tool plugin's tool for the consuming target's destination platform, so any package that added `SwiftROS2GenPlugin` to a target could not be built for iOS / iOS Simulator. Two spots in the plugin's tool chain were not portable to embedded Apple platforms: `swift-ros2-gen` declared `@main` in `main.swift` — rejected by the compiler in top-level-code mode — fixed by renaming the single source file off `main.swift` so the module builds with `-parse-as-library`; and `SwiftROS2Gen`'s `OracleClient` spawned Docker via `Process` / `Pipe`, which are unavailable on iOS/tvOS/watchOS/visionOS, so the host-only `--verify-hashes` path is now guarded behind `#if os(macOS) || os(Linux) || os(Windows)`. No public API or wire-format change; the prebuilt xcframeworks are unaffected (#113).
+
 ## [1.1.0] - 2026-05-06
 
 ### Added

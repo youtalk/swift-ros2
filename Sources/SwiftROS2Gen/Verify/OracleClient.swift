@@ -86,43 +86,53 @@ public struct OracleClient: Sendable {
     }
 
     private func runDocker(arguments: [String]) throws -> String {
-        let process = Process()
-        // POSIX hosts: shell out via `/usr/bin/env docker` so a developer
-        // who installed Docker in a non-standard location (Homebrew,
-        // CoreOS, etc.) still gets PATH lookup. Windows hosts don't have
-        // `/usr/bin/env`, so resolve the bare `docker.exe` and let the OS
-        // PATH search find it. The Verify family is part of the Windows
-        // build graph (Zenoh-only target builds it as a dependency of
-        // SwiftROS2Gen) so the `#if os(Windows)` branch matters even
-        // though no Windows CI job exercises the verifier today.
-        #if os(Windows)
-            process.executableURL = URL(fileURLWithPath: "docker.exe")
-            process.arguments = ["run", "--rm", dockerImage] + arguments
-            let cmdPrefix = ["docker.exe", "run", "--rm", dockerImage]
+        #if os(macOS) || os(Linux) || os(Windows)
+            let process = Process()
+            // POSIX hosts: shell out via `/usr/bin/env docker` so a developer
+            // who installed Docker in a non-standard location (Homebrew,
+            // CoreOS, etc.) still gets PATH lookup. Windows hosts don't have
+            // `/usr/bin/env`, so resolve the bare `docker.exe` and let the OS
+            // PATH search find it. The Verify family is part of the Windows
+            // build graph (Zenoh-only target builds it as a dependency of
+            // SwiftROS2Gen) so the `#if os(Windows)` branch matters even
+            // though no Windows CI job exercises the verifier today.
+            #if os(Windows)
+                process.executableURL = URL(fileURLWithPath: "docker.exe")
+                process.arguments = ["run", "--rm", dockerImage] + arguments
+                let cmdPrefix = ["docker.exe", "run", "--rm", dockerImage]
+            #else
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = ["docker", "run", "--rm", dockerImage] + arguments
+                let cmdPrefix = ["docker", "run", "--rm", dockerImage]
+            #endif
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+            do {
+                try process.run()
+            } catch {
+                throw OracleError.dockerNotInstalled
+            }
+            process.waitUntilExit()
+            let outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            if process.terminationStatus != 0 {
+                let stderr = String(data: errData, encoding: .utf8) ?? ""
+                let cmd = (cmdPrefix + arguments).joined(separator: " ")
+                throw OracleError.dockerExitNonZero(
+                    process.terminationStatus, stderr: stderr, command: cmd)
+            }
+            return String(data: outData, encoding: .utf8) ?? ""
         #else
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["docker", "run", "--rm", dockerImage] + arguments
-            let cmdPrefix = ["docker", "run", "--rm", dockerImage]
-        #endif
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        do {
-            try process.run()
-        } catch {
+            // `Process` / `Pipe` are unavailable on embedded Apple platforms
+            // (iOS / tvOS / watchOS / visionOS). `--verify-hashes` shells out
+            // to a Docker oracle and is only ever invoked on a build host, so
+            // this branch is never executed. It exists so `SwiftROS2Gen` still
+            // compiles when `xcodebuild` builds the `SwiftROS2GenPlugin`
+            // build-tool plugin's tool for an embedded Apple destination.
             throw OracleError.dockerNotInstalled
-        }
-        process.waitUntilExit()
-        let outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        if process.terminationStatus != 0 {
-            let stderr = String(data: errData, encoding: .utf8) ?? ""
-            let cmd = (cmdPrefix + arguments).joined(separator: " ")
-            throw OracleError.dockerExitNonZero(
-                process.terminationStatus, stderr: stderr, command: cmd)
-        }
-        return String(data: outData, encoding: .utf8) ?? ""
+        #endif
     }
 
     /// Pulls the `"type_hashes": [{ "type_name": "...", "hash_string": "RIHS01_..." }, ...]`

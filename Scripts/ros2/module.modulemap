@@ -1,5 +1,7 @@
 module CRos2Jazzy {
-  umbrella "include"
+  // Umbrella *header* (not `umbrella "."`): only headers reachable from
+  // CRos2Jazzy.h are compiled into the module, so platform-specific / C++
+  // headers installed by ROS 2 + CycloneDDS don't break the C module build.
+  umbrella header "CRos2Jazzy.h"
   export *
-  module * { export * }
 }

@@ -81,6 +81,13 @@ let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir !=
 
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.1.1"
 
+// M0-only (native-rcl spike): opt-in via SWIFT_ROS2_ENABLE_RCL=1 so default
+// consumers are unaffected. When set on an Apple build, the manifest adds a
+// local path-based binaryTarget for the not-yet-released CRos2Jazzy
+// xcframework (built by Scripts/build-ros2-xcframework.sh) plus an rcl_init
+// smoke executable. Replaced by a URL+checksum binaryTarget in M3.
+let enableRcl = Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1" && targetOS == "apple"
+
 // Non-unix zenoh-pico platform backends shared between the Linux and
 // Android arms — both use the unix backend inside `src/system/unix`.
 let zenohPicoNonUnixBackends = [
@@ -487,6 +494,24 @@ if canBuildDDS {
             path: "Tests/SwiftROS2IntegrationTests"
         ),
     ])
+}
+
+// M0-only native-rcl spike: local CRos2Jazzy xcframework + rcl_init smoke
+// executable, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple only).
+if enableRcl {
+    targets.append(.binaryTarget(
+        name: "CRos2Jazzy",
+        path: "build/ros2/CRos2Jazzy.xcframework"
+    ))
+    targets.append(.executableTarget(
+        name: "rcl-smoke",
+        dependencies: ["CRos2Jazzy"],
+        path: "Sources/Examples/RclSmoke",
+        // rmw_cyclonedds_cpp / rcpputils / rmw_dds_common in CRos2Jazzy are
+        // C++; a C executable target must link the C++ runtime explicitly.
+        linkerSettings: [.linkedLibrary("c++")]
+    ))
+    products.append(.executable(name: "rcl-smoke", targets: ["rcl-smoke"]))
 }
 
 // Only pull in swift-docc-plugin when actually building documentation

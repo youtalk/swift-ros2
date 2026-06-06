@@ -93,6 +93,14 @@ patch_sources() {
 
 mkdir -p "$BUILD"
 
+# CMake 4.x removed compatibility with cmake_minimum_required(VERSION < 3.5).
+# Some bundled sources still declare old minimums (e.g. libyaml, pulled by
+# libyaml_vendor's ExternalProject). CMake honours CMAKE_POLICY_VERSION_MINIMUM
+# from the environment, which propagates to every nested cmake invocation
+# (colcon -> cmake -> ExternalProject -> inner cmake), unlike a -D on the outer
+# command line. Pin it so old projects still configure under CMake 4.x.
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
+
 setup_venv() {
   [[ -d "$BUILD/venv" ]] && return 0
   python3.11 -m venv "$BUILD/venv"
@@ -137,6 +145,12 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
   local sb="$BUILD/$slice"
   ignore_unbuildable
   patch_sources
+  # ament_vendor forwards CMAKE_TOOLCHAIN_FILE to its nested ExternalProject
+  # builds (e.g. libyaml) but NOT the toolchain's required PLATFORM var, so the
+  # nested cmake bails with "PLATFORM argument not set". The leetal toolchain
+  # also reads PLATFORM from ENV{_PLATFORM}, so export it as a real environment
+  # variable — it propagates through colcon -> make -> ExternalProject -> cmake.
+  export _PLATFORM="$platform"
   # shellcheck disable=SC1091
   source "$BUILD/venv/bin/activate"
   # colcon-generated setup.sh references unbound vars (COLCON_CURRENT_PREFIX);
@@ -159,6 +173,7 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
       -DPLATFORM="$platform" -DDEPLOYMENT_TARGET="$deploy" \
       -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
       -DCMAKE_MAKE_PROGRAM=/usr/bin/make \
+      -DFORCE_BUILD_VENDOR_PKG=ON \
       -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
 }
 
@@ -168,16 +183,23 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
   local slice="$1"
   local sb="$BUILD/$slice"
   local out="$sb/merged"
-  rm -rf "$out"; mkdir -p "$out/obj"
-  ( cd "$out/obj"
-    local i=0
-    for a in "$sb/install/lib/"*.a; do
-      local d; d="$(basename "$a" .a)"; mkdir -p "$d"
-      ( cd "$d" && ar x "$a" )
-      for o in "$d"/*.o "$d"/*.obj; do [[ -f "$o" ]] && mv "$o" "$d-$(basename "$o")"; done
-      rm -rf "$d"; i=$((i+1))
-    done
-    libtool -static -o "$out/librclros.a" ./*.o )
+  rm -rf "$out"; mkdir -p "$out"
+  # Merge all static archives into one. install/lib/*.a are the ament packages;
+  # install/opt/*/lib/*.a are vendor packages whose ament_vendor build installs
+  # into a private opt prefix (e.g. libyaml from libyaml_vendor) — both are
+  # needed or the static link leaves undefined symbols.
+  #
+  # Use `libtool -static` directly on the archives rather than `ar x` + re-pack.
+  # CycloneDDS's libddsc.a contains duplicate member names (random.c.o,
+  # time.c.o, ... — a generic and a platform variant); `ar x` overwrites them
+  # on disk, silently dropping the object that defines symbols like
+  # _ddsrt_random. libtool merges archives while preserving duplicate members.
+  local archives=()
+  local a
+  shopt -s nullglob
+  for a in "$sb/install/lib/"*.a "$sb/install/opt/"*/lib/*.a; do archives+=("$a"); done
+  shopt -u nullglob
+  libtool -static -o "$out/librclros.a" "${archives[@]}"
   cp -R "$sb/install/include" "$out/include"
   # ROS 2 installs headers doubled: include/<pkg>/<pkg>/foo.h, consumed as
   # <pkg/foo.h>. An xcframework exposes a single headers dir as one search
@@ -192,7 +214,30 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
       rmdir "$p$name" 2>/dev/null || true
     fi
   done
-  find "$out/include" -type f ! -name '*.h' ! -name '*.hpp' -delete
+  # Keep only C headers. The umbrella module is consumed from C (the rcl C
+  # API: rcl/rmw/rcutils/rosidl_runtime_c are all .h). C++ headers (.hpp:
+  # rosidl_runtime_cpp, rcpputils, message C++ builders, fastcdr) pull
+  # <algorithm> etc. and break the module when built in C mode; they are not
+  # needed for the C publish path, so drop them.
+  find "$out/include" -type f ! -name '*.h' -delete
+  # Drop the fastrtps typesupport from the public umbrella: fastcdr ships C++
+  # under a .h extension (Cdr.h includes <array>) and every message package's
+  # per-type *__rosidl_typesupport_fastrtps_c.h pulls fastcdr/Cdr.h — both
+  # break the C umbrella module. The publish path uses the introspection
+  # typesupport only; the fastrtps typesupport objects stay in librclros.a as
+  # harmless dead weight (nothing references them), just not in the headers.
+  rm -rf "$out/include/fastcdr" \
+         "$out/include/rosidl_typesupport_fastrtps_c" \
+         "$out/include/rosidl_typesupport_fastrtps_cpp"
+  find "$out/include" -name '*rosidl_typesupport_fastrtps*' -delete
+  # CycloneDDS internal/tooling headers (dds/, ddsc/, idl/, idlc/) are not part
+  # of the rcl C API — rmw_cyclonedds installs no public header and nothing
+  # else includes <dds/...>; CycloneDDS is consumed only at link time (libddsc
+  # in librclros.a). Their internal headers reference iceoryx (the disabled SHM
+  # transport) and don't self-compile under the umbrella, so drop them.
+  rm -rf "$out/include/dds" "$out/include/ddsc" \
+         "$out/include/idl" "$out/include/idlc"
+  find "$out/include" -type d -empty -delete
 }
 
 assemble_xcframework() {  # $@ = slices
@@ -203,6 +248,7 @@ assemble_xcframework() {  # $@ = slices
   for slice in "$@"; do
     m="$BUILD/$slice/merged"
     cp "$ROOT/Scripts/ros2/module.modulemap" "$m/include/module.modulemap"
+    cp "$ROOT/Scripts/ros2/CRos2Jazzy.h" "$m/include/CRos2Jazzy.h"
     args+=(-library "$m/librclros.a" -headers "$m/include")
   done
   xcodebuild -create-xcframework "${args[@]}" -output "$out"

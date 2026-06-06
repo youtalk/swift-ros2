@@ -130,3 +130,36 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
       -DCMAKE_MAKE_PROGRAM=/usr/bin/make \
       -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
 }
+
+merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
+  # Separate `local` statements: `local a=$1 b=$BUILD/$a` expands $a before it
+  # is localized, which trips `set -u` ("a: unbound variable").
+  local slice="$1"
+  local sb="$BUILD/$slice"
+  local out="$sb/merged"
+  rm -rf "$out"; mkdir -p "$out/obj"
+  ( cd "$out/obj"
+    local i=0
+    for a in "$sb/install/lib/"*.a; do
+      local d; d="$(basename "$a" .a)"; mkdir -p "$d"
+      ( cd "$d" && ar x "$a" )
+      for o in "$d"/*.o "$d"/*.obj; do [[ -f "$o" ]] && mv "$o" "$d-$(basename "$o")"; done
+      rm -rf "$d"; i=$((i+1))
+    done
+    libtool -static -o "$out/librclros.a" ./*.o )
+  cp -R "$sb/install/include" "$out/include"
+  # ROS 2 installs headers doubled: include/<pkg>/<pkg>/foo.h, consumed as
+  # <pkg/foo.h>. An xcframework exposes a single headers dir as one search
+  # path, so collapse the doubled level (include/<pkg>/<pkg>/* ->
+  # include/<pkg>/*) so <pkg/foo.h> resolves. Non-doubled trees (CycloneDDS
+  # dds/ddsc, idl, fastcdr) are already at the right level and left as-is.
+  local p name
+  for p in "$out/include"/*/; do
+    name="$(basename "$p")"
+    if [[ -d "$p$name" ]]; then
+      ( shopt -s dotglob nullglob; mv "$p$name"/* "$p" )
+      rmdir "$p$name" 2>/dev/null || true
+    fi
+  done
+  find "$out/include" -type f ! -name '*.h' ! -name '*.hpp' -delete
+}

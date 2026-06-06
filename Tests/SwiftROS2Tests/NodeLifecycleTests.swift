@@ -83,6 +83,39 @@ final class NodeLifecycleTests: XCTestCase {
         XCTAssertEqual(seqs, [0, 1, 2])
     }
 
+    func testPublishWithSourceTimestampForwardsTimestampAndSequence() async throws {
+        let (ctx, session) = try await makeContext()
+        let node = try await ctx.createNode(name: "n", namespace: "/ns")
+        let pub = try await node.createPublisher(StringMsg.self, topic: "chatter")
+
+        let sourceTimestamp: UInt64 = 1_700_000_000_123_456_789
+        try pub.publish(StringMsg(data: "hello"), timestamp: sourceTimestamp, sequenceNumber: 42)
+
+        let recorded = session.publishers[0]
+        XCTAssertEqual(recorded.publishedPayloads.count, 1)
+        let payload = recorded.publishedPayloads[0]
+        XCTAssertEqual(payload.timestamp, sourceTimestamp, "Caller timestamp must reach the attachment verbatim")
+        XCTAssertEqual(payload.sequenceNumber, 42, "Caller sequence number must be used as-is")
+        XCTAssertGreaterThanOrEqual(payload.data.count, 4, "CDR encapsulation header must be present")
+    }
+
+    func testPublishWithSourceTimestampNilSequenceUsesMonotonicCounter() async throws {
+        let (ctx, session) = try await makeContext()
+        let node = try await ctx.createNode(name: "n", namespace: "/ns")
+        let pub = try await node.createPublisher(StringMsg.self, topic: "chatter")
+
+        // Mixing the timestamp overload (nil sequence) with the plain overload
+        // must share the one monotonic counter: 0, 1, 2.
+        try pub.publish(StringMsg(data: "a"), timestamp: 100)
+        try pub.publish(StringMsg(data: "b"))
+        try pub.publish(StringMsg(data: "c"), timestamp: 300)
+
+        let payloads = session.publishers[0].publishedPayloads
+        XCTAssertEqual(payloads.map { $0.sequenceNumber }, [0, 1, 2])
+        XCTAssertEqual(payloads.map { $0.timestamp }[0], 100)
+        XCTAssertEqual(payloads.map { $0.timestamp }[2], 300)
+    }
+
     func testPublisherUsesAbsoluteTopicWhenLeadingSlash() async throws {
         let (ctx, session) = try await makeContext()
         let node = try await ctx.createNode(name: "n", namespace: "/ns")

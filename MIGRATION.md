@@ -11,6 +11,7 @@
 | 0.9.x | 1.0.0 | **Six visibility-only changes** — plumbing types pulled out of the public surface (`TransportQoS`, `QoSPolicy`, `DDSBridge*`, `ZenohClientProtocol`/`DDSClientProtocol` + 10 related, `EntityManager`/`GIDManager` → `package`; `ZenohTransportPublisher`, `DeclaredKeyExpr`/`ZenohSubscriber`/`LivelinessToken` → `internal`). End-user APIs (`ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, all message types) are unchanged. |
 | 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
 | 1.0.x | 1.1.0 | **None.** Parameter API (`ROS2Node.declareParameter` / `setParameter` / `setOnSetParametersCallback` / six standard parameter services / `/parameter_events` publisher / `ROS2ParameterClient`) is purely additive. |
+| 1.1.x | 1.2.0 | **None.** The `ROS2Publisher.publish(_:timestamp:sequenceNumber:)` source-timestamp overload is purely additive — the existing `publish(_:)` is unchanged (it now delegates to the overload with the same wall-clock timestamp + monotonic sequence). |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 

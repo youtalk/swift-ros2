@@ -30,18 +30,48 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     /// `ROS2Message` conformers (generated and hand-written) write payload only —
     /// the Publisher writes the header. Per-type `encode(to:)` implementations
     /// must therefore not call `writeEncapsulationHeader()` themselves.
+    ///
+    /// The attachment's `timestamp_ns` field carries the wall-clock publish time
+    /// and the sequence number comes from this publisher's own monotonic counter.
+    /// Use ``publish(_:timestamp:sequenceNumber:)`` to supply a source timestamp
+    /// (e.g. a sensor capture time) and/or an explicit sequence number instead.
     public func publish(_ message: M) throws {
+        let timestamp = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
+        try publish(message, timestamp: timestamp, sequenceNumber: nil)
+    }
+
+    /// Publish a message with a caller-supplied source timestamp.
+    ///
+    /// Identical to ``publish(_:)`` in how it serializes the message (4-byte CDR
+    /// encapsulation header + `message.encode(to:)`), but the attachment's
+    /// `timestamp_ns` field carries `timestamp` instead of the wall-clock publish
+    /// time. This lets a publisher stamp the message with the moment the data was
+    /// captured (e.g. a sensor sample time) rather than the moment it went on the
+    /// wire.
+    ///
+    /// - Parameters:
+    ///   - message: The typed message to publish.
+    ///   - timestamp: Source timestamp in nanoseconds since the Unix epoch,
+    ///     written verbatim into the attachment's `timestamp_ns` field.
+    ///   - sequenceNumber: An explicit attachment sequence number. When `nil`
+    ///     (the default) this publisher's own monotonic counter is used, exactly
+    ///     as ``publish(_:)`` does.
+    public func publish(_ message: M, timestamp: UInt64, sequenceNumber: Int64? = nil) throws {
         let encoder = CDREncoder(isLegacySchema: isLegacySchema)
         encoder.writeEncapsulationHeader()
         try message.encode(to: encoder)
         let data = encoder.getData()
 
-        lock.lock()
-        let seq = sequenceNumber
-        sequenceNumber += 1
-        lock.unlock()
+        let seq: Int64
+        if let sequenceNumber {
+            seq = sequenceNumber
+        } else {
+            lock.lock()
+            seq = self.sequenceNumber
+            self.sequenceNumber += 1
+            lock.unlock()
+        }
 
-        let timestamp = UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
         try transportPublisher.publish(data: data, timestamp: timestamp, sequenceNumber: seq)
     }
 

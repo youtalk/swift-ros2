@@ -29,15 +29,38 @@ SKIP_TEST_PKGS=(
   mimick_vendor uncrustify_vendor
 )
 
-# iceoryx is a hard <depend> of cyclonedds (shared-memory transport: a
-# POSIX-SHM daemon / RouDi that does not cross-compile to iOS and is unusable
-# in the app sandbox). It cannot be --packages-skip'd (colcon would flag the
-# unmet dependency); instead drop a COLCON_IGNORE so colcon never discovers it
-# and treats it as an external dependency. CycloneDDS then configures without
-# SHM (also forced via ENABLE_SHM=OFF in colcon-defaults.meta).
+# Drop COLCON_IGNORE so colcon never discovers these subtrees and treats them
+# as external (so dependents don't flag an unmet dependency — unlike
+# --packages-skip). These cannot or need not be cross-compiled for a
+# CycloneDDS-only, introspection-typesupport ROS 2 build:
+#  - iceoryx: cyclonedds's shared-memory transport (POSIX-SHM RouDi daemon);
+#    does not cross-compile to iOS, unusable in the app sandbox. CycloneDDS
+#    configures fine without it (ENABLE_SHM=OFF).
+#  - rmw_fastrtps / rmw_connextdds: rcl pulls every RMW via rmw_implementation's
+#    runtime selection, but we use rmw_cyclonedds_cpp only
+#    (RMW_IMPLEMENTATION_DISABLE_RUNTIME_SELECTION=ON). The Fast-DDS RMW drags
+#    in the Fast-DDS middleware + foonathan_memory_vendor, whose nested
+#    ExternalProject build does not cross-compile to iOS.
+#  - Fast-DDS (fastrtps) + foonathan_memory_vendor: only reachable via
+#    rmw_fastrtps; not needed. (Fast-CDR / rosidl_typesupport_fastrtps stay —
+#    the fastrtps *typesupport* only needs fastcdr, which cross-compiles.)
+IGNORE_SUBTREES=(
+  eclipse-iceoryx/iceoryx
+  ros2/rmw_fastrtps
+  ros2/rmw_connextdds
+  ros2/rosidl_dynamic_typesupport_fastrtps
+  eProsima/Fast-DDS
+  eProsima/foonathan_memory_vendor
+  # noop logging (RCL_LOGGING_IMPLEMENTATION=rcl_logging_noop) makes the
+  # default spdlog logging backend unnecessary; drop it and its vendor.
+  ros2/rcl_logging/rcl_logging_spdlog
+  ros2/spdlog_vendor
+)
 ignore_unbuildable() {
-  local iceoryx="$SRC/eclipse-iceoryx/iceoryx"
-  [[ -d "$iceoryx" ]] && touch "$iceoryx/COLCON_IGNORE"
+  local rel
+  for rel in "${IGNORE_SUBTREES[@]}"; do
+    [[ -d "$SRC/$rel" ]] && touch "$SRC/$rel/COLCON_IGNORE"
+  done
 }
 
 mkdir -p "$BUILD"
@@ -92,6 +115,7 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
   source "$HOST/install/setup.sh"
   set -u
   STATIC_ROSIDL_TYPESUPPORT_C=rosidl_typesupport_introspection_c \
+  STATIC_ROSIDL_TYPESUPPORT_CPP=rosidl_typesupport_introspection_cpp \
   colcon --log-base "$sb/log" build \
     --base-paths "$SRC" \
     --build-base "$sb/build" --install-base "$sb/install" \
@@ -103,5 +127,6 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
       -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
       -DPLATFORM="$platform" -DDEPLOYMENT_TARGET="$deploy" \
       -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+      -DCMAKE_MAKE_PROGRAM=/usr/bin/make \
       -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
 }

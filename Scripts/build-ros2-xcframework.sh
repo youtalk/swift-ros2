@@ -55,12 +55,40 @@ IGNORE_SUBTREES=(
   # default spdlog logging backend unnecessary; drop it and its vendor.
   ros2/rcl_logging/rcl_logging_spdlog
   ros2/spdlog_vendor
+  # rosidl_generator_py emits Python C-extension bindings for every message
+  # package. Generation is driven by which generators are discoverable in the
+  # ament prefix (not by buildtool_depend), so its mere presence in the host
+  # tools forces a libpython-linked .dylib per message type — which fails to
+  # cross-compile to iOS (links the host's macOS Python framework). We consume
+  # ROS 2 from C/C++/Swift only, so drop the Python generator entirely; message
+  # packages then generate just the C/C++/introspection typesupports.
+  ros2/rosidl_python
 )
 ignore_unbuildable() {
   local rel
   for rel in "${IGNORE_SUBTREES[@]}"; do
     [[ -d "$SRC/$rel" ]] && touch "$SRC/$rel/COLCON_IGNORE"
   done
+}
+
+# CycloneDDS's POSIX ifaddrs backend includes <net/if_media.h> on Apple to
+# guess the interface media type. That header ships in the macOS / Mac
+# Catalyst SDK but NOT in the iOS device / simulator SDK. Insert an
+# __has_include-guarded Apple branch that stubs guess_iftype where the header
+# is absent (iOS); Catalyst/macOS keep the real media query. Idempotent.
+patch_sources() {
+  local f="$SRC/eclipse-cyclonedds/cyclonedds/src/ddsrt/src/ifaddrs/posix/ifaddrs.c"
+  [[ -f "$f" ]] || return 0
+  grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f" && return 0
+  local tmp; tmp="$(mktemp)"
+  awk '
+    /^#elif defined\(__APPLE__\) \|\| defined\(__QNXNTO__\)/ && !done {
+      print "#elif defined(__APPLE__) && !__has_include(<net/if_media.h>) /* SWIFT_ROS2_IOS_IFTYPE_STUB */"
+      print "static enum ddsrt_iftype guess_iftype (const struct ifaddrs *sys_ifa) { (void) sys_ifa; return DDSRT_IFTYPE_UNKNOWN; }"
+      done = 1
+    }
+    { print }
+  ' "$f" > "$tmp" && mv "$tmp" "$f"
 }
 
 mkdir -p "$BUILD"
@@ -82,6 +110,8 @@ import_sources() {
 
 build_host_tools() {
   [[ -f "$HOST/install/setup.sh" ]] && return 0
+  ignore_unbuildable
+  patch_sources
   # shellcheck disable=SC1091
   source "$BUILD/venv/bin/activate"
   colcon --log-base "$HOST/log" build \
@@ -106,6 +136,7 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
   read -r platform deploy < <(slice_platform "$slice")
   local sb="$BUILD/$slice"
   ignore_unbuildable
+  patch_sources
   # shellcheck disable=SC1091
   source "$BUILD/venv/bin/activate"
   # colcon-generated setup.sh references unbound vars (COLCON_CURRENT_PREFIX);
@@ -163,3 +194,28 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
   done
   find "$out/include" -type f ! -name '*.h' ! -name '*.hpp' -delete
 }
+
+assemble_xcframework() {  # $@ = slices
+  local out="$BUILD/CRos2Jazzy.xcframework"
+  rm -rf "$out"
+  local args=()
+  local slice m
+  for slice in "$@"; do
+    m="$BUILD/$slice/merged"
+    cp "$ROOT/Scripts/ros2/module.modulemap" "$m/include/module.modulemap"
+    args+=(-library "$m/librclros.a" -headers "$m/include")
+  done
+  xcodebuild -create-xcframework "${args[@]}" -output "$out"
+}
+
+# Top-level dispatch when invoked directly (not sourced) with slice args.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  setup_venv
+  import_sources
+  build_host_tools
+  for slice in "$@"; do
+    cross_build "$slice" "${PKGS_UP_TO[@]}"
+    merge_slice "$slice"
+  done
+  assemble_xcframework "$@"
+fi

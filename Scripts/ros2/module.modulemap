@@ -1,0 +1,5 @@
+module CRos2Jazzy {
+  umbrella "include"
+  export *
+  module * { export * }
+}

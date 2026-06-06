@@ -499,18 +499,20 @@ if canBuildDDS {
 // M0-only native-rcl spike: local CRos2Jazzy xcframework + rcl_init smoke
 // executable, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple only).
 if enableRcl {
-    targets.append(.binaryTarget(
-        name: "CRos2Jazzy",
-        path: "build/ros2/CRos2Jazzy.xcframework"
-    ))
-    targets.append(.executableTarget(
-        name: "rcl-smoke",
-        dependencies: ["CRos2Jazzy"],
-        path: "Sources/Examples/RclSmoke",
-        // rmw_cyclonedds_cpp / rcpputils / rmw_dds_common in CRos2Jazzy are
-        // C++; a C executable target must link the C++ runtime explicitly.
-        linkerSettings: [.linkedLibrary("c++")]
-    ))
+    targets.append(
+        .binaryTarget(
+            name: "CRos2Jazzy",
+            path: "build/ros2/CRos2Jazzy.xcframework"
+        ))
+    targets.append(
+        .executableTarget(
+            name: "rcl-smoke",
+            dependencies: ["CRos2Jazzy"],
+            path: "Sources/Examples/RclSmoke",
+            // rmw_cyclonedds_cpp / rcpputils / rmw_dds_common in CRos2Jazzy are
+            // C++; a C executable target must link the C++ runtime explicitly.
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
     products.append(.executable(name: "rcl-smoke", targets: ["rcl-smoke"]))
 }
 

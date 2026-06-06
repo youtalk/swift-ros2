@@ -11,3 +11,6 @@ Vendor/*-arm64/
 Vendor/*-x86_64/
 Vendor/include/
 Vendor/pkgconfig/
+
+# Native RCL backend out-of-band build outputs
+build/ros2/

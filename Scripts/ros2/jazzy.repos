@@ -1,0 +1,9 @@
+# Imports the upstream Jazzy ros2.repos snapshot. We build only
+# --packages-up-to the targets in colcon-defaults.meta; the rest are
+# present so build deps (ament_cmake, rosidl generators) resolve.
+# Pin via the release-jazzy-YYYYMMDD tag of ros2/ros2.
+repositories:
+  ros2:
+    type: git
+    url: https://github.com/ros2/ros2.git
+    version: release-jazzy-20250528

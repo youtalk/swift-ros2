@@ -21,12 +21,24 @@ PKGS_UP_TO=(rcl rmw_cyclonedds_cpp builtin_interfaces std_msgs geometry_msgs sen
 # closure via <test_depend>, but never link into the runtime libraries. They
 # build shared libs / executables (e.g. osrf_testing_tools_cpp's malloc
 # interposition .dylib) that do not cross-compile to the static iOS/Catalyst
-# toolchain. colcon has no "skip test deps" flag, so skip them explicitly.
+# toolchain. They are leaf test deps, so colcon's --packages-skip drops them
+# without breaking the dependents' build closure.
 SKIP_TEST_PKGS=(
   osrf_testing_tools_cpp performance_test_fixture
   gtest_vendor gmock_vendor google_benchmark_vendor
   mimick_vendor uncrustify_vendor
 )
+
+# iceoryx is a hard <depend> of cyclonedds (shared-memory transport: a
+# POSIX-SHM daemon / RouDi that does not cross-compile to iOS and is unusable
+# in the app sandbox). It cannot be --packages-skip'd (colcon would flag the
+# unmet dependency); instead drop a COLCON_IGNORE so colcon never discovers it
+# and treats it as an external dependency. CycloneDDS then configures without
+# SHM (also forced via ENABLE_SHM=OFF in colcon-defaults.meta).
+ignore_unbuildable() {
+  local iceoryx="$SRC/eclipse-iceoryx/iceoryx"
+  [[ -d "$iceoryx" ]] && touch "$iceoryx/COLCON_IGNORE"
+}
 
 mkdir -p "$BUILD"
 
@@ -70,6 +82,7 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
   local slice="$1"; shift
   read -r platform deploy < <(slice_platform "$slice")
   local sb="$BUILD/$slice"
+  ignore_unbuildable
   # shellcheck disable=SC1091
   source "$BUILD/venv/bin/activate"
   # colcon-generated setup.sh references unbound vars (COLCON_CURRENT_PREFIX);

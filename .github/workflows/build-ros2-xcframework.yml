@@ -1,0 +1,22 @@
+name: build-ros2-xcframework
+on:
+  workflow_dispatch:
+    inputs:
+      slices:
+        description: "space-separated slices"
+        default: "maccatalyst iphoneos"
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: brew install cmake
+      - run: Scripts/build-ros2-xcframework.sh ${{ inputs.slices }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CRos2Jazzy.xcframework
+          path: build/ros2/CRos2Jazzy.xcframework

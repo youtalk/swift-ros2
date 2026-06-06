@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Source-timestamp publishing.** `ROS2Publisher.publish(_:timestamp:sequenceNumber:)` is a new additive overload that stamps the attachment's `timestamp_ns` field with a caller-supplied source timestamp (nanoseconds since the Unix epoch) — e.g. a sensor capture time — instead of the wall-clock publish time, and optionally takes an explicit attachment sequence number (defaulting to the publisher's own monotonic counter, just like `publish(_:)`). The existing `publish(_:)` now delegates to it with `Date()` and a nil sequence number, so its bytes are unchanged. Purely additive — no existing public API changed.
+
 ## [1.1.1] - 2026-05-16
 
 ### Fixed

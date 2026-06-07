@@ -21,6 +21,16 @@ package protocol TransportSession: AnyObject, Sendable {
     func close() throws
     func checkHealth() -> Bool
 
+    /// Register a ROS 2 node so backends that model real nodes (the rcl
+    /// backend) create one with the caller's name. Wire-level transports
+    /// (Zenoh/DDS) synthesize node identity per publisher and ignore this.
+    /// Default: no-op.
+    func registerNode(name: String, namespace: String) throws
+
+    /// Tear down a node previously registered via `registerNode`.
+    /// Default: no-op.
+    func unregisterNode(name: String, namespace: String)
+
     /// Create a publisher for a topic
     func createPublisher(
         topic: String,
@@ -104,6 +114,9 @@ package protocol TransportSession: AnyObject, Sendable {
 }
 
 extension TransportSession {
+    package func registerNode(name: String, namespace: String) throws {}
+    package func unregisterNode(name: String, namespace: String) {}
+
     /// Default — concrete sessions override in Phases 4 / 5.
     package func createActionServer(
         name: String,

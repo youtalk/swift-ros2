@@ -102,6 +102,10 @@ public final class ROS2Context: @unchecked Sendable {
             entityManager: entityManager,
             gidManager: gidManager
         )
+        // Let the transport create a real node where it models one (rcl).
+        // Wire-level transports default to a no-op. On a later failure the
+        // `catch` below calls node.destroy(), which unregisters it.
+        try session.registerNode(name: name, namespace: namespace)
         if options.startParameterServices {
             // Register before the node is reachable from `shutdown` — if
             // any of the six createService calls throws, close the services

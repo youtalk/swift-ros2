@@ -33,6 +33,8 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     private var _publishers: [MockTransportPublisher] = []
     private var _subscribers: [MockTransportSubscriber] = []
     private var _closedCount = 0
+    private var _registeredNodes: [(name: String, namespace: String)] = []
+    private var _unregisteredNodes: [(name: String, namespace: String)] = []
 
     // Service-related state. Default-disabled so tests that don't opt in
     // keep getting the original "unsupportedFeature" throw.
@@ -80,6 +82,8 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     var publishers: [MockTransportPublisher] { synchronized { _publishers } }
     var subscribers: [MockTransportSubscriber] { synchronized { _subscribers } }
     var closedCount: Int { synchronized { _closedCount } }
+    var registeredNodes: [(name: String, namespace: String)] { synchronized { _registeredNodes } }
+    var unregisteredNodes: [(name: String, namespace: String)] { synchronized { _unregisteredNodes } }
 
     // MARK: - TransportSession
 
@@ -237,6 +241,14 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
             synchronized { _clients.append(cli) }
             return cli
         }
+    }
+
+    func registerNode(name: String, namespace: String) throws {
+        synchronized { _registeredNodes.append((name, namespace)) }
+    }
+
+    func unregisterNode(name: String, namespace: String) {
+        synchronized { _unregisteredNodes.append((name, namespace)) }
     }
 
     // MARK: - Action overrides

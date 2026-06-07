@@ -325,6 +325,7 @@ public final class ROS2Node: @unchecked Sendable {
                 try? c.closeActionClient()
             }
         }
+        session.unregisterNode(name: name, namespace: namespace)
     }
 
     // MARK: - Private (synchronous lock helpers)

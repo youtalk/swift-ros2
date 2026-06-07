@@ -1,0 +1,73 @@
+// RclTransportSession+Publisher.swift
+// Publisher creation and the RclTransportPublisher concrete type.
+
+import Foundation
+
+extension RclTransportSession {
+    package func createPublisher(
+        topic: String, typeName: String, typeHash: String?, qos: TransportQoS
+    ) throws -> any TransportPublisher {
+        guard !topic.isEmpty else {
+            throw TransportError.invalidConfiguration("Topic name cannot be empty")
+        }
+        guard !typeName.isEmpty else {
+            throw TransportError.invalidConfiguration("Type name cannot be empty")
+        }
+        guard isConnected else { throw TransportError.notConnected }
+        let node = try activeNode()
+        let handle = try client.createPublisher(
+            node: node, typeName: typeName, topic: topic, qos: qos)
+        let pub = RclTransportPublisher(client: client, handle: handle, topic: topic)
+        appendPublisher(pub, for: topic)
+        return pub
+    }
+}
+
+final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
+    private let client: any RclClientProtocol
+    private var handle: (any RclPublisherHandle)?
+    public let topic: String
+    private let lock = NSLock()
+    private var closed = false
+
+    public var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if closed { return false }
+        return handle?.isActive ?? false
+    }
+
+    init(client: any RclClientProtocol, handle: any RclPublisherHandle, topic: String) {
+        self.client = client
+        self.handle = handle
+        self.topic = topic
+    }
+
+    public func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
+        // P1: timestamp/sequenceNumber are unused — rmw assigns the source
+        // timestamp and the sensor time rides in the CDR header.stamp.
+        guard data.count >= 4 else {
+            throw TransportError.publishFailed("Data too short: missing CDR encapsulation header")
+        }
+        lock.lock()
+        guard !closed, let h = handle else {
+            lock.unlock()
+            throw TransportError.publisherClosed
+        }
+        lock.unlock()
+        try client.publishSerialized(h, data: data)
+    }
+
+    public func close() throws {
+        lock.lock()
+        guard !closed else {
+            lock.unlock()
+            return
+        }
+        closed = true
+        let h = handle
+        handle = nil
+        lock.unlock()
+        h?.close()
+    }
+}

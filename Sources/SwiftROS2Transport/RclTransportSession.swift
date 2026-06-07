@@ -123,17 +123,6 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         lock.unlock()
     }
 
-    // TEMPORARY stub to satisfy the TransportSession protocol until Task 4
-    // moves the real implementation into RclTransportSession+Publisher.swift.
-    package func createPublisher(
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: TransportQoS
-    ) throws -> any TransportPublisher {
-        throw TransportError.unsupportedFeature("createPublisher (rcl) — implemented in Task 4")
-    }
-
     package func createServiceServer(
         name: String,
         serviceTypeName: String,
@@ -154,16 +143,4 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     ) throws -> any TransportClient {
         throw TransportError.unsupportedFeature("createServiceClient (transport: rcl) — not supported in M1")
     }
-}
-
-// Minimal placeholder; Task 4 replaces this with the full implementation in
-// RclTransportSession+Publisher.swift.
-final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
-    let topic: String
-    var isActive: Bool { false }
-    init(topic: String) { self.topic = topic }
-    func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
-        throw TransportError.unsupportedFeature("RclTransportPublisher — implemented in Task 4")
-    }
-    func close() throws {}
 }

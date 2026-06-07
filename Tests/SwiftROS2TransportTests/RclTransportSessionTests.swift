@@ -98,4 +98,50 @@ final class RclTransportSessionTests: XCTestCase {
         try s.close()
         XCTAssertFalse(client.contextDestroyed)
     }
+
+    func testCreatePublisherRequiresNode() async throws {
+        let s = try await openSession()
+        XCTAssertThrowsError(
+            try s.createPublisher(
+                topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        ) { error in
+            guard case TransportError.publisherCreationFailed = error else {
+                return XCTFail("got \(error)")
+            }
+        }
+    }
+
+    func testCreatePublisherAttachesToCurrentNode() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let pub = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        XCTAssertEqual(client.publishersCreated.count, 1)
+        XCTAssertEqual(client.publishersCreated.first?.topic, "/imu")
+        XCTAssertEqual(client.publishersCreated.first?.typeName, "sensor_msgs/msg/Imu")
+        XCTAssertTrue(pub.isActive)
+    }
+
+    func testPublishForwardsSerializedBytes() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let pub = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        let cdr = Data([0x00, 0x01, 0x00, 0x00, 0xDE, 0xAD])
+        try pub.publish(data: cdr, timestamp: 123, sequenceNumber: 1)
+        XCTAssertEqual(client.publishedPayloads, [cdr])
+    }
+
+    func testPublishRejectsShortData() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let pub = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        XCTAssertThrowsError(try pub.publish(data: Data([0x00]), timestamp: 0, sequenceNumber: 0)) {
+            guard case TransportError.publishFailed = $0 else { return XCTFail("got \($0)") }
+        }
+    }
 }

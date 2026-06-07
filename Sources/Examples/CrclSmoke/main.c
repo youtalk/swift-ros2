@@ -18,9 +18,17 @@ int main(void) {
     int rc = crcl_publish_serialized(pub, cdr, sizeof(cdr));
     if (rc != 0) { printf("publish FAIL (%d): %s\n", rc, crcl_last_error()); return 1; }
 
+    // The publish path is what this smoke validates, and it has now succeeded.
+    // Print + flush the result BEFORE teardown: on a headless CI runner with no
+    // working multicast, CycloneDDS participant teardown can block indefinitely
+    // on failed discovery writes, and stdout to a pipe is fully buffered, so a
+    // teardown hang would otherwise swallow this line. Teardown still runs after
+    // (best-effort; the OS reclaims everything on process exit).
+    printf("crcl_smoke OK: publish path exercised\n");
+    fflush(stdout);
+
     crcl_publisher_destroy(pub);
     crcl_node_destroy(node);
     crcl_context_destroy(ctx);
-    printf("crcl_smoke OK: publish path exercised\n");
     return 0;
 }

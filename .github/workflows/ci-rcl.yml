@@ -76,4 +76,13 @@ jobs:
           xcodebuild -scheme crcl-smoke \
             -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
             -derivedDataPath build/dd-ci-crclsmoke build CODE_SIGNING_ALLOWED=NO
-          "$(find build/dd-ci-crclsmoke -name crcl-smoke -type f -perm +111 | head -1)"
+          bin="$(find build/dd-ci-crclsmoke -name crcl-smoke -type f -perm +111 | head -1)"
+          echo "Running smoke: $bin"
+          # crcl-smoke prints the OK line + fflush right after the publish call
+          # succeeds, before DDS teardown. On a headless runner CycloneDDS
+          # teardown can block on failed multicast writes, so bound the run with
+          # a SIGALRM timeout and decide success on the OK line, not the
+          # (possibly killed) exit code.
+          out="$(perl -e 'alarm 60; exec @ARGV' "$bin" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "crcl_smoke OK: publish path exercised"

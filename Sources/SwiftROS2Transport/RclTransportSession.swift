@@ -72,10 +72,15 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         }
     }
 
-    /// The node a new publisher attaches to (M1 single-node assumption).
-    func activeNode() throws -> any RclNodeHandle {
+    /// Atomically validate the session is open, the topic is free, and a node
+    /// exists; returns the node a new publisher attaches to (M1 single-node).
+    func preflightPublisher(topic: String) throws -> any RclNodeHandle {
         lock.lock()
         defer { lock.unlock() }
+        guard isOpen else { throw TransportError.notConnected }
+        guard publishers[topic] == nil else {
+            throw TransportError.publisherCreationFailed("Publisher already exists for topic: \(topic)")
+        }
         guard let node = currentNode else {
             throw TransportError.publisherCreationFailed("no node registered — create a node first")
         }

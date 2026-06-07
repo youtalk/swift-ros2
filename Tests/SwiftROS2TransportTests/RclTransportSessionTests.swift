@@ -144,4 +144,35 @@ final class RclTransportSessionTests: XCTestCase {
             guard case TransportError.publishFailed = $0 else { return XCTFail("got \($0)") }
         }
     }
+
+    func testPublishAfterCloseThrows() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let pub = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        try pub.close()
+        XCTAssertFalse(pub.isActive)
+        XCTAssertThrowsError(
+            try pub.publish(data: Data([0x00, 0x01, 0x00, 0x00]), timestamp: 0, sequenceNumber: 0)
+        ) { error in
+            guard case TransportError.publisherClosed = error else { return XCTFail("got \(error)") }
+        }
+    }
+
+    func testCreatePublisherDuplicateTopicThrows() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        _ = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        XCTAssertThrowsError(
+            try s.createPublisher(
+                topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        ) { error in
+            guard case TransportError.publisherCreationFailed = error else {
+                return XCTFail("got \(error)")
+            }
+        }
+    }
 }

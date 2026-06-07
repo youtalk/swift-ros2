@@ -13,8 +13,7 @@ extension RclTransportSession {
         guard !typeName.isEmpty else {
             throw TransportError.invalidConfiguration("Type name cannot be empty")
         }
-        guard isConnected else { throw TransportError.notConnected }
-        let node = try activeNode()
+        let node = try preflightPublisher(topic: topic)
         let handle = try client.createPublisher(
             node: node, typeName: typeName, topic: topic, qos: qos)
         let pub = RclTransportPublisher(client: client, handle: handle, topic: topic)
@@ -46,6 +45,9 @@ final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
     public func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
         // P1: timestamp/sequenceNumber are unused — rmw assigns the source
         // timestamp and the sensor time rides in the CDR header.stamp.
+        guard !data.isEmpty else {
+            throw TransportError.publishFailed("Data is empty")
+        }
         guard data.count >= 4 else {
             throw TransportError.publishFailed("Data too short: missing CDR encapsulation header")
         }

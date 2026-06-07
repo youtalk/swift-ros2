@@ -180,7 +180,7 @@ extension ROS2Context {
                 return RclTransportSession(client: RclClient())
             #else
                 throw TransportError.unsupportedFeature(
-                    "rcl backend not built — rebuild with SWIFT_ROS2_ENABLE_RCL=1 on an Apple platform")
+                    "rcl backend not built — set SWIFT_ROS2_ENABLE_RCL=1 and rebuild on an Apple platform")
             #endif
         }
     }

@@ -8,6 +8,10 @@ final class RclConfigTests: XCTestCase {
         let cfg = TransportConfig.rcl(domainId: 7)
         XCTAssertEqual(cfg.type, .rcl)
         XCTAssertEqual(cfg.domainId, 7)
+        XCTAssertNil(cfg.zenohLocator)
+        XCTAssertNil(cfg.wireMode)
+        XCTAssertEqual(cfg.ddsDiscoveryMode, .multicast)
+        XCTAssertTrue(cfg.ddsUnicastPeers.isEmpty)
         XCTAssertNoThrow(try cfg.validate())
     }
 

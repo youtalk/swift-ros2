@@ -121,7 +121,11 @@ public struct TransportConfig: Sendable {
         )
     }
 
-    /// Real `rcl` + `rmw_cyclonedds_cpp` backend (Apple, Jazzy; opt-in).
+    /// RCL + `rmw_cyclonedds_cpp` backend.
+    ///
+    /// Requires an Apple platform and building with `SWIFT_ROS2_ENABLE_RCL=1`.
+    /// On other configurations, `ROS2Context(transport:)` throws
+    /// ``TransportError/unsupportedFeature(_:)``.
     public static func rcl(domainId: Int = 0) -> TransportConfig {
         TransportConfig(
             type: .rcl, domainId: domainId,

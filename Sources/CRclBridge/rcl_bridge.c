@@ -2,6 +2,12 @@
 
 #include <rcl/rcl.h>
 #include <rcl/publisher.h>
+// rcl_error_string_t / rcl_get_error_string / rcl_reset_error (capture_error()).
+// Included explicitly for the symbols this TU uses rather than relying on the
+// CRos2Jazzy module re-exporting it: the modulemap declares CRos2Jazzy.h as a
+// plain (non-umbrella) header, so `#include <rcl/...>` resolves textually and
+// only brings what each header transitively pulls in.
+#include <rcl/error_handling.h>
 // rcl_serialized_message_t is typedef'd in <rcl/types.h>, pulled in by <rcl/rcl.h>.
 // There is no standalone <rcl/serialized_message.h> in this distribution.
 #include <rmw/qos_profiles.h>

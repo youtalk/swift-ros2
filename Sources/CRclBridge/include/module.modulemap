@@ -1,0 +1,4 @@
+module CRclBridge {
+    header "rcl_bridge.h"
+    export *
+}

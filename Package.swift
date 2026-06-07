@@ -514,6 +514,24 @@ if enableRcl {
             linkerSettings: [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "rcl-smoke", targets: ["rcl-smoke"]))
+    targets.append(
+        .target(
+            name: "CRclBridge",
+            dependencies: ["CRos2Jazzy"],
+            path: "Sources/CRclBridge",
+            sources: ["rcl_bridge.c"],
+            publicHeadersPath: "include",
+            // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++.
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    targets.append(
+        .executableTarget(
+            name: "crcl-smoke",
+            dependencies: ["CRclBridge"],
+            path: "Sources/Examples/CrclSmoke",
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    products.append(.executable(name: "crcl-smoke", targets: ["crcl-smoke"]))
 }
 
 // Only pull in swift-docc-plugin when actually building documentation

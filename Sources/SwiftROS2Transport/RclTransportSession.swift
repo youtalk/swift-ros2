@@ -4,6 +4,8 @@
 
 import Foundation
 
+/// `TransportSession` backed by the real `rcl` + `rmw_cyclonedds_cpp` stack via
+/// `RclClientProtocol`. M1 is publish-only and assumes a single node.
 public final class RclTransportSession: TransportSession, @unchecked Sendable {
     let client: any RclClientProtocol
     private let lock = NSLock()

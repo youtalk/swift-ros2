@@ -47,6 +47,12 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     }
 
     public func registerNode(name: String, namespace: String) throws {
+        lock.lock()
+        guard isOpen else {
+            lock.unlock()
+            throw TransportError.notConnected
+        }
+        lock.unlock()
         let node = try client.createNode(name: name, namespace: namespace)
         lock.lock()
         nodes[nodeKey(name, namespace)] = node
@@ -88,6 +94,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
 
     public func close() throws {
         lock.lock()
+        let wasOpen = isOpen
         let pubs = Array(publishers.values)
         publishers.removeAll()
         let ns = Array(nodes.values)
@@ -98,7 +105,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         lock.unlock()
         for p in pubs { try? p.close() }
         for n in ns { client.destroyNode(n) }
-        client.destroyContext()
+        if wasOpen { client.destroyContext() }
     }
 
     public func checkHealth() -> Bool { isConnected }
@@ -106,7 +113,8 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     // MARK: - Helpers
 
     private func nodeKey(_ name: String, _ namespace: String) -> String {
-        "\(namespace)/\(name)"
+        let ns = namespace.isEmpty ? "/" : namespace
+        return ns.hasSuffix("/") ? "\(ns)\(name)" : "\(ns)/\(name)"
     }
 
     func appendPublisher(_ pub: RclTransportPublisher, for topic: String) {

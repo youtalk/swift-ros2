@@ -6,10 +6,10 @@
 import Foundation
 
 /// Opaque handle to an rcl node owned by the client.
-public protocol RclNodeHandle: AnyObject, Sendable {}
+package protocol RclNodeHandle: AnyObject, Sendable {}
 
 /// Opaque handle to an rcl publisher owned by the client.
-public protocol RclPublisherHandle: AnyObject, Sendable {
+package protocol RclPublisherHandle: AnyObject, Sendable {
     var isActive: Bool { get }
     func close()
 }

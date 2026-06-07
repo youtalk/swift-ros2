@@ -19,6 +19,7 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.lastDomainId, 5)
         XCTAssertTrue(s.isConnected)
         XCTAssertEqual(s.transportType, .rcl)
+        XCTAssertEqual(s.sessionId, "rcl-5")
     }
 
     func testOpenRejectsNonRclConfig() async {
@@ -82,5 +83,19 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertTrue(client.contextDestroyed)
         XCTAssertEqual(client.nodesDestroyed.count, 1)
         XCTAssertFalse(s.isConnected)
+    }
+
+    func testRegisterNodeBeforeOpenThrows() {
+        let s = RclTransportSession(client: MockRclClient())
+        XCTAssertThrowsError(try s.registerNode(name: "n", namespace: "/")) { error in
+            guard case TransportError.notConnected = error else { return XCTFail("got \(error)") }
+        }
+    }
+
+    func testCloseWithoutOpenSkipsDestroyContext() throws {
+        let client = MockRclClient()
+        let s = RclTransportSession(client: client)
+        try s.close()
+        XCTAssertFalse(client.contextDestroyed)
     }
 }

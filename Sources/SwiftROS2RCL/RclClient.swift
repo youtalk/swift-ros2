@@ -46,9 +46,12 @@ private final class RclPublisherBox: RclPublisherHandle, @unchecked Sendable {
 
 /// Concrete implementation of ``RclClientProtocol`` wrapping the `CRclBridge` C FFI.
 ///
-/// Thread-safety: the client-level `NSLock` serializes `createContext` /
-/// `destroyContext`. Publisher creation/destroy delegate thread-safety to the
-/// per-`RclPublisherBox` lock, mirroring the `DDSClient` pattern.
+/// Thread-safety: the `ctx` pointer is read/written under `lock`.
+/// `crcl_context_create` runs outside the lock (one-time init); the guard rejects
+/// a second `createContext` call with `alreadyConnected`. `destroyContext`
+/// snapshots and nils `ctx` under lock, then calls `crcl_context_destroy` outside.
+/// Publisher create/destroy delegates thread-safety to the per-`RclPublisherBox` lock,
+/// mirroring the `DDSClient` pattern.
 public final class RclClient: RclClientProtocol, @unchecked Sendable {
     private var ctx: OpaquePointer?
     private let lock = NSLock()
@@ -58,6 +61,12 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     package var isAvailable: Bool { true }
 
     package func createContext(domainId: Int32) throws {
+        lock.lock()
+        guard ctx == nil else {
+            lock.unlock()
+            throw TransportError.alreadyConnected
+        }
+        lock.unlock()
         guard let c = crcl_context_create(Int(domainId)) else {
             throw TransportError.connectionFailed(lastError())
         }
@@ -80,7 +89,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         lock.unlock()
         guard let c else { throw TransportError.notConnected }
         guard let n = crcl_node_create(c, name, namespace) else {
-            throw TransportError.publisherCreationFailed(lastError())
+            throw TransportError.connectionFailed(lastError())
         }
         return RclNodeBox(n)
     }
@@ -117,10 +126,10 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         guard let b = publisher as? RclPublisherBox else {
             throw TransportError.publishFailed("invalid publisher handle")
         }
-        let rc: Int32? = data.withUnsafeBytes { raw in
-            b.withPtr { p in
-                crcl_publish_serialized(
-                    p, raw.bindMemory(to: UInt8.self).baseAddress, data.count)
+        let rc: Int32? = data.withUnsafeBytes { raw -> Int32? in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+            return b.withPtr { p in
+                crcl_publish_serialized(p, base, data.count)
             }
         }
         guard let rc else { throw TransportError.publisherClosed }

@@ -13,11 +13,13 @@ import SwiftROS2Wire
 public enum TransportType: String, Codable, CaseIterable, Sendable {
     case zenoh
     case dds
+    case rcl
 
     public var displayName: String {
         switch self {
         case .zenoh: return "Zenoh"
         case .dds: return "DDS"
+        case .rcl: return "RCL (DDS)"
         }
     }
 }
@@ -119,6 +121,15 @@ public struct TransportConfig: Sendable {
         )
     }
 
+    /// Real `rcl` + `rmw_cyclonedds_cpp` backend (Apple, Jazzy; opt-in).
+    public static func rcl(domainId: Int = 0) -> TransportConfig {
+        TransportConfig(
+            type: .rcl, domainId: domainId,
+            zenohLocator: nil, wireMode: nil, connectionTimeout: 10.0,
+            ddsDiscoveryMode: .multicast, ddsUnicastPeers: [], ddsNetworkInterface: nil
+        )
+    }
+
     public init(
         type: TransportType,
         domainId: Int = 0,
@@ -152,6 +163,8 @@ public struct TransportConfig: Sendable {
             if ddsDiscoveryMode.requiresPeerConfiguration && ddsUnicastPeers.isEmpty {
                 throw TransportError.invalidConfiguration("DDS \(ddsDiscoveryMode) mode requires peer configuration")
             }
+        case .rcl:
+            break
         }
     }
 }

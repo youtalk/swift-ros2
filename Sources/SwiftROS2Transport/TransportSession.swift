@@ -27,8 +27,8 @@ package protocol TransportSession: AnyObject, Sendable {
     /// Default: no-op.
     func registerNode(name: String, namespace: String) throws
 
-    /// Tear down a node previously registered via `registerNode`.
-    /// Default: no-op.
+    /// Tear down a node previously registered via a successful `registerNode`
+    /// call. Called by `ROS2Node.destroy()`. Default: no-op.
     func unregisterNode(name: String, namespace: String)
 
     /// Create a publisher for a topic

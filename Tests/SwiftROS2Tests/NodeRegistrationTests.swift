@@ -37,4 +37,31 @@ final class NodeRegistrationTests: XCTestCase {
         XCTAssertEqual(session.unregisteredNodes.first?.name, "imu_node")
         XCTAssertEqual(session.unregisteredNodes.first?.namespace, "/ios")
     }
+
+    func testRegisterNodeFailureDoesNotTriggerUnregister() async throws {
+        let session = MockTransportSession()
+        session.registerNodeShouldThrow = TransportError.connectionFailed("simulated")
+        let ctx = try await makeContext(session)
+        do {
+            _ = try await ctx.createNode(
+                name: "imu_node", namespace: "/ios",
+                options: ROS2NodeOptions(startParameterServices: false))
+            XCTFail("Expected createNode to throw")
+        } catch {}
+        XCTAssertEqual(session.registeredNodes.count, 0)
+        XCTAssertEqual(session.unregisteredNodes.count, 0)
+    }
+
+    func testContextShutdownUnregistersAllNodes() async throws {
+        let session = MockTransportSession()
+        let ctx = try await makeContext(session)
+        _ = try await ctx.createNode(
+            name: "a", namespace: "/ns",
+            options: ROS2NodeOptions(startParameterServices: false))
+        _ = try await ctx.createNode(
+            name: "b", namespace: "/ns",
+            options: ROS2NodeOptions(startParameterServices: false))
+        await ctx.shutdown()
+        XCTAssertEqual(session.unregisteredNodes.count, 2)
+    }
 }

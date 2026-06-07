@@ -27,6 +27,7 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     private var _isConnected = true
     private var _sessionIdValue = "mock-umbrella-session"
     private var _openShouldThrow: TransportError?
+    private var _registerNodeShouldThrow: TransportError?
     private var _createPublisherShouldThrow: TransportError?
     private var _createSubscriberShouldThrow: TransportError?
     private var _openedConfigs: [TransportConfig] = []
@@ -66,6 +67,11 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     var openShouldThrow: TransportError? {
         get { synchronized { _openShouldThrow } }
         set { synchronized { _openShouldThrow = newValue } }
+    }
+
+    var registerNodeShouldThrow: TransportError? {
+        get { synchronized { _registerNodeShouldThrow } }
+        set { synchronized { _registerNodeShouldThrow = newValue } }
     }
 
     var createPublisherShouldThrow: TransportError? {
@@ -244,6 +250,7 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     }
 
     func registerNode(name: String, namespace: String) throws {
+        if let e = synchronized({ _registerNodeShouldThrow }) { throw e }
         synchronized { _registeredNodes.append((name, namespace)) }
     }
 

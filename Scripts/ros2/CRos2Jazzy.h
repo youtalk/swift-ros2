@@ -11,6 +11,9 @@
 // Extend this list as the native-rcl backend grows (M1+): add the per-message
 // introspection typesupport handle headers the publisher needs.
 #include <rcl/rcl.h>
+#include <rcl/error_handling.h>
 #include <rcl/publisher.h>
 #include <rmw/rmw.h>
 #include <rosidl_runtime_c/message_type_support_struct.h>
+// M1: sensor_msgs/Imu typesupport declaration (rosidl_typesupport_c symbol).
+#include <sensor_msgs/msg/imu.h>

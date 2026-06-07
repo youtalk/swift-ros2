@@ -1,0 +1,82 @@
+name: ci-rcl
+# RCL (native rcl + rmw_cyclonedds_cpp) backend CI. Opt-in / scheduled only:
+# the cost driver is cross-compiling the real ROS 2 stack into
+# CRos2Jazzy.xcframework (~30-60 min), so this is NOT run on every PR. The
+# mock-based RCL unit tests need no xcframework and already run in ci.yml; this
+# job covers the parts that require the real xcframework + Mac Catalyst.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+jobs:
+  rcl-build-smoke:
+    name: RCL build + smoke (Mac Catalyst)
+    # macos-26 + Xcode 26.4.1 to match ci.yml's build-macos job (the maintained
+    # macOS toolchain); the xcframework cross-build is validated on this Xcode.
+    runs-on: macos-26
+    timeout-minutes: 180
+    env:
+      SWIFT_ROS2_ENABLE_RCL: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: brew install cmake
+
+      # ament_cmake's package_xml_2_cmake.py runs under the runner's base python
+      # (CMake's FindPython resolves to it, not the script's venv), so the ROS 2
+      # build deps must be importable there too — install them into the runner
+      # python in addition to the venv the build script creates.
+      - name: Install ROS 2 build deps into runner python
+        run: pip install -r Scripts/ros2/requirements.txt
+
+      # Cross-compile rcl + rmw_cyclonedds_cpp + rosidl introspection into a
+      # single-slice (maccatalyst) CRos2Jazzy.xcframework. One slice is enough:
+      # `xcodebuild -create-xcframework` accepts a single library, and every
+      # step below targets Mac Catalyst. Device-slice verification is done
+      # on-device via Conduit, not here. (The full maccatalyst+iphoneos pair is
+      # built by the separate build-ros2-xcframework.yml workflow when needed.)
+      - name: Build CRos2Jazzy.xcframework (maccatalyst)
+        run: Scripts/build-ros2-xcframework.sh maccatalyst
+
+      # Regression guard for the umbrella build path
+      # (SwiftROS2 -> SwiftROS2DDS -> CDDSBridge). This is the path the
+      # CRos2Jazzy modulemap interaction broke on enableRcl Catalyst; building
+      # SwiftROS2RCL / crcl-smoke alone does NOT pull CDDSBridge and would miss
+      # a regression there. Must reach ** BUILD SUCCEEDED **.
+      - name: Build SwiftROS2 umbrella (enableRcl, Catalyst)
+        run: |
+          xcodebuild -scheme SwiftROS2 \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            build CODE_SIGNING_ALLOWED=NO
+
+      # Full test bundle: also compiles the RCL integration test and both smoke
+      # executables, and confirms the native-only ros2-CLI integration tests
+      # stay excluded on Mac Catalyst. Must reach ** TEST BUILD SUCCEEDED **.
+      - name: Build full test bundle (enableRcl, Catalyst)
+        run: |
+          xcodebuild build-for-testing -scheme swift-ros2-Package \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            build CODE_SIGNING_ALLOWED=NO
+
+      # End-to-end FFI smoke: real rcl context -> node -> Imu publisher ->
+      # rcl_publish_serialized_message. Must print the OK line and exit 0.
+      - name: Build + run crcl-smoke (Catalyst)
+        run: |
+          xcodebuild -scheme crcl-smoke \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            -derivedDataPath build/dd-ci-crclsmoke build CODE_SIGNING_ALLOWED=NO
+          bin="$(find build/dd-ci-crclsmoke -name crcl-smoke -type f -perm +111 | head -1)"
+          echo "Running smoke: $bin"
+          # crcl-smoke prints the OK line + fflush right after the publish call
+          # succeeds, before DDS teardown. On a headless runner CycloneDDS
+          # teardown can block on failed multicast writes, so bound the run with
+          # a SIGALRM timeout and decide success on the OK line, not the
+          # (possibly killed) exit code.
+          out="$(perl -e 'alarm 60; exec @ARGV' "$bin" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "crcl_smoke OK: publish path exercised"

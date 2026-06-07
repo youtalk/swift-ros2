@@ -14,3 +14,9 @@
 #
 # Removals of public APIs are SemVer-breaking on the 1.x line — adding an
 # entry here is a signal that a 2.0 bump is required.
+
+# M1 (native RCL backend): a new transport-selector case. Source-additive (no
+# removal) — the diagnose tool flags any added enum case, but this is an
+# intentional feature addition that ships as a 1.3.0 minor. Drop this entry
+# once a tag is cut whose baseline already includes TransportType.rcl.
+API breakage: enumelement TransportType.rcl has been added as a new enum case

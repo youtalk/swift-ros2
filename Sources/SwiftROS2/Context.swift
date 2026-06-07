@@ -7,6 +7,10 @@ import SwiftROS2Transport
 import SwiftROS2Wire
 import SwiftROS2Zenoh
 
+#if SWIFT_ROS2_RCL
+    import SwiftROS2RCL
+#endif
+
 /// ROS 2 context — the entry point for creating nodes
 ///
 /// A context owns a single transport session. All nodes created from this context
@@ -102,6 +106,10 @@ public final class ROS2Context: @unchecked Sendable {
             entityManager: entityManager,
             gidManager: gidManager
         )
+        // Let the transport create a real node where it models one (rcl).
+        // Wire-level transports default to a no-op. On a later failure the
+        // `catch` below calls node.destroy(), which unregisters it.
+        try session.registerNode(name: name, namespace: namespace)
         if options.startParameterServices {
             // Register before the node is reachable from `shutdown` — if
             // any of the six createService calls throws, close the services
@@ -167,6 +175,13 @@ extension ROS2Context {
             return ZenohTransportSession(client: ZenohClient())
         case .dds:
             return DDSTransportSession(client: DDSClient())
+        case .rcl:
+            #if SWIFT_ROS2_RCL
+                return RclTransportSession(client: RclClient())
+            #else
+                throw TransportError.unsupportedFeature(
+                    "rcl backend not built — set SWIFT_ROS2_ENABLE_RCL=1 and rebuild on an Apple platform")
+            #endif
         }
     }
 }

@@ -27,12 +27,15 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     private var _isConnected = true
     private var _sessionIdValue = "mock-umbrella-session"
     private var _openShouldThrow: TransportError?
+    private var _registerNodeShouldThrow: TransportError?
     private var _createPublisherShouldThrow: TransportError?
     private var _createSubscriberShouldThrow: TransportError?
     private var _openedConfigs: [TransportConfig] = []
     private var _publishers: [MockTransportPublisher] = []
     private var _subscribers: [MockTransportSubscriber] = []
     private var _closedCount = 0
+    private var _registeredNodes: [(name: String, namespace: String)] = []
+    private var _unregisteredNodes: [(name: String, namespace: String)] = []
 
     // Service-related state. Default-disabled so tests that don't opt in
     // keep getting the original "unsupportedFeature" throw.
@@ -66,6 +69,11 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
         set { synchronized { _openShouldThrow = newValue } }
     }
 
+    var registerNodeShouldThrow: TransportError? {
+        get { synchronized { _registerNodeShouldThrow } }
+        set { synchronized { _registerNodeShouldThrow = newValue } }
+    }
+
     var createPublisherShouldThrow: TransportError? {
         get { synchronized { _createPublisherShouldThrow } }
         set { synchronized { _createPublisherShouldThrow = newValue } }
@@ -80,6 +88,8 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
     var publishers: [MockTransportPublisher] { synchronized { _publishers } }
     var subscribers: [MockTransportSubscriber] { synchronized { _subscribers } }
     var closedCount: Int { synchronized { _closedCount } }
+    var registeredNodes: [(name: String, namespace: String)] { synchronized { _registeredNodes } }
+    var unregisteredNodes: [(name: String, namespace: String)] { synchronized { _unregisteredNodes } }
 
     // MARK: - TransportSession
 
@@ -237,6 +247,15 @@ final class MockTransportSession: TransportSession, @unchecked Sendable {
             synchronized { _clients.append(cli) }
             return cli
         }
+    }
+
+    func registerNode(name: String, namespace: String) throws {
+        if let e = synchronized({ _registerNodeShouldThrow }) { throw e }
+        synchronized { _registeredNodes.append((name, namespace)) }
+    }
+
+    func unregisterNode(name: String, namespace: String) {
+        synchronized { _unregisteredNodes.append((name, namespace)) }
     }
 
     // MARK: - Action overrides

@@ -1,7 +1,15 @@
 module CRos2Jazzy {
-  // Umbrella *header* (not `umbrella "."`): only headers reachable from
-  // CRos2Jazzy.h are compiled into the module, so platform-specific / C++
-  // headers installed by ROS 2 + CycloneDDS don't break the C module build.
-  umbrella header "CRos2Jazzy.h"
+  // Plain `header` — NOT `umbrella header` and NOT `umbrella "."`. Clang still
+  // compiles only the headers reachable from CRos2Jazzy.h (so the C++ /
+  // platform-specific headers ROS 2 + CycloneDDS install don't break the C
+  // module build). A plain `header` additionally stops clang from treating
+  // this modulemap's directory as an umbrella: SwiftPM/xcodebuild flatten
+  // every binary target's public headers into one shared build-products
+  // include/ dir, so an `umbrella header` here associated CCycloneDDS's
+  // sibling dds/ tree with module CRos2Jazzy, routing CDDSBridge's
+  // `#include <dds/...>` into this module (incomplete struct ddsi_sertype) on
+  // the enableRcl Mac Catalyst umbrella build. A plain header keeps dds/
+  // textual so it resolves against CCycloneDDS.
+  header "CRos2Jazzy.h"
   export *
 }

@@ -427,16 +427,37 @@ if canBuildDDS {
         ),
 
         // Public API umbrella: Context, Node, Publisher, Subscription
+    ])
+
+    var swiftROS2Deps: [Target.Dependency] = [
+        "SwiftROS2Messages", "SwiftROS2Transport", "SwiftROS2Wire", "SwiftROS2Zenoh", "SwiftROS2DDS",
+    ]
+    var swiftROS2SwiftSettings: [SwiftSetting] = []
+    if enableRcl {
+        swiftROS2Deps.append("SwiftROS2RCL")
+        swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+    }
+
+    var swiftROS2TestsSwiftSettings: [SwiftSetting] = []
+    if enableRcl {
+        swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+    }
+
+    var integrationDeps: [Target.Dependency] = [
+        "SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport",
+    ]
+    var integrationSwiftSettings: [SwiftSetting] = []
+    if enableRcl {
+        integrationDeps.append("SwiftROS2RCL")
+        integrationSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+    }
+
+    targets.append(contentsOf: [
         .target(
             name: "SwiftROS2",
-            dependencies: [
-                "SwiftROS2Messages",
-                "SwiftROS2Transport",
-                "SwiftROS2Wire",
-                "SwiftROS2Zenoh",
-                "SwiftROS2DDS",
-            ],
-            path: "Sources/SwiftROS2"
+            dependencies: swiftROS2Deps,
+            path: "Sources/SwiftROS2",
+            swiftSettings: swiftROS2SwiftSettings
         ),
 
         // Example executables — minimal std_msgs/String talker + listener
@@ -481,7 +502,8 @@ if canBuildDDS {
         .testTarget(
             name: "SwiftROS2Tests",
             dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2CDR"],
-            path: "Tests/SwiftROS2Tests"
+            path: "Tests/SwiftROS2Tests",
+            swiftSettings: swiftROS2TestsSwiftSettings
         ),
         .testTarget(
             name: "SwiftROS2DDSTests",
@@ -490,8 +512,9 @@ if canBuildDDS {
         ),
         .testTarget(
             name: "SwiftROS2IntegrationTests",
-            dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport"],
-            path: "Tests/SwiftROS2IntegrationTests"
+            dependencies: integrationDeps,
+            path: "Tests/SwiftROS2IntegrationTests",
+            swiftSettings: integrationSwiftSettings
         ),
     ])
 }
@@ -514,6 +537,31 @@ if enableRcl {
             linkerSettings: [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "rcl-smoke", targets: ["rcl-smoke"]))
+    targets.append(
+        .target(
+            name: "CRclBridge",
+            dependencies: ["CRos2Jazzy"],
+            path: "Sources/CRclBridge",
+            sources: ["rcl_bridge.c"],
+            publicHeadersPath: "include",
+            // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++.
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    targets.append(
+        .executableTarget(
+            name: "crcl-smoke",
+            dependencies: ["CRclBridge"],
+            path: "Sources/Examples/CrclSmoke",
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    products.append(.executable(name: "crcl-smoke", targets: ["crcl-smoke"]))
+    targets.append(
+        .target(
+            name: "SwiftROS2RCL",
+            dependencies: ["CRclBridge", "SwiftROS2Transport"],
+            path: "Sources/SwiftROS2RCL"
+        ))
+    products.append(.library(name: "SwiftROS2RCL", targets: ["SwiftROS2RCL"]))
 }
 
 // Only pull in swift-docc-plugin when actually building documentation

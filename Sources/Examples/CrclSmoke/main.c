@@ -2,6 +2,8 @@
 #include "rcl_bridge.h"
 
 int main(void) {
+    // Smoke exits on first failure; the process teardown reclaims resources,
+    // so error paths intentionally skip explicit destroy calls.
     crcl_context_t *ctx = crcl_context_create(0);
     if (!ctx) { printf("context FAIL: %s\n", crcl_last_error()); return 1; }
 

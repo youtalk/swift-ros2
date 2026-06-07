@@ -28,7 +28,14 @@ struct crcl_publisher_s {
     rcl_node_t *node;  // borrowed; node must outlive the publisher
 };
 
-static char g_err[1024];
+#ifdef _Thread_local
+#define CRCL_THREAD_LOCAL _Thread_local
+#elif defined(__GNUC__) || defined(__clang__)
+#define CRCL_THREAD_LOCAL __thread
+#else
+#define CRCL_THREAD_LOCAL
+#endif
+static CRCL_THREAD_LOCAL char g_err[1024] = {0};
 
 static void capture_error(void) {
     rcl_error_string_t s = rcl_get_error_string();
@@ -61,13 +68,13 @@ crcl_context_t *crcl_context_create(size_t domain_id) {
     }
     if (rcl_init_options_set_domain_id(&c->opts, domain_id) != RCL_RET_OK) {
         capture_error();
-        rcl_init_options_fini(&c->opts);
+        (void)rcl_init_options_fini(&c->opts);
         free(c);
         return NULL;
     }
     if (rcl_init(0, NULL, &c->opts, &c->ctx) != RCL_RET_OK) {
         capture_error();
-        rcl_init_options_fini(&c->opts);
+        (void)rcl_init_options_fini(&c->opts);
         free(c);
         return NULL;
     }
@@ -77,10 +84,10 @@ crcl_context_t *crcl_context_create(size_t domain_id) {
 void crcl_context_destroy(crcl_context_t *c) {
     if (!c) return;
     if (rcl_context_is_valid(&c->ctx)) {
-        rcl_shutdown(&c->ctx);
+        (void)rcl_shutdown(&c->ctx);
     }
-    rcl_context_fini(&c->ctx);
-    rcl_init_options_fini(&c->opts);
+    (void)rcl_context_fini(&c->ctx);
+    (void)rcl_init_options_fini(&c->opts);
     free(c);
 }
 
@@ -100,7 +107,7 @@ crcl_node_t *crcl_node_create(crcl_context_t *c, const char *name, const char *n
 
 void crcl_node_destroy(crcl_node_t *n) {
     if (!n) return;
-    rcl_node_fini(&n->node);
+    (void)rcl_node_fini(&n->node);
     free(n);
 }
 
@@ -109,6 +116,7 @@ crcl_publisher_t *crcl_publisher_create(
     if (!n) return NULL;
     const rosidl_message_type_support_t *ts = resolve_typesupport(ros_type_name);
     if (!ts) {
+        // Not an rcl error — no rcl error state to clear; set g_err directly.
         snprintf(g_err, sizeof(g_err), "unsupported type: %s", ros_type_name);
         return NULL;
     }
@@ -135,7 +143,7 @@ crcl_publisher_t *crcl_publisher_create(
 
 void crcl_publisher_destroy(crcl_publisher_t *p) {
     if (!p) return;
-    rcl_publisher_fini(&p->pub, p->node);
+    (void)rcl_publisher_fini(&p->pub, p->node);
     free(p);
 }
 

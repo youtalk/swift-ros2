@@ -8,6 +8,12 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  # TEMPORARY (remove before merging PR #120): a brand-new workflow cannot be
+  # workflow_dispatch'd until it lands on the default branch, so trigger one
+  # pre-merge run on this PR to validate the macos-26 runner xcframework
+  # cross-build + Catalyst gates. ci-rcl is otherwise manual/scheduled only.
+  pull_request:
+    branches: [main]
 
 jobs:
   rcl-build-smoke:

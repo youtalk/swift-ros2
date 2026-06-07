@@ -443,6 +443,15 @@ if canBuildDDS {
         swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
     }
 
+    var integrationDeps: [Target.Dependency] = [
+        "SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport",
+    ]
+    var integrationSwiftSettings: [SwiftSetting] = []
+    if enableRcl {
+        integrationDeps.append("SwiftROS2RCL")
+        integrationSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+    }
+
     targets.append(contentsOf: [
         .target(
             name: "SwiftROS2",
@@ -503,8 +512,9 @@ if canBuildDDS {
         ),
         .testTarget(
             name: "SwiftROS2IntegrationTests",
-            dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport"],
-            path: "Tests/SwiftROS2IntegrationTests"
+            dependencies: integrationDeps,
+            path: "Tests/SwiftROS2IntegrationTests",
+            swiftSettings: integrationSwiftSettings
         ),
     ])
 }

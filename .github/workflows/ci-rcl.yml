@@ -33,6 +33,13 @@ jobs:
           python-version: "3.11"
       - run: brew install cmake
 
+      # ament_cmake's package_xml_2_cmake.py runs under the runner's base python
+      # (CMake's FindPython resolves to it, not the script's venv), so the ROS 2
+      # build deps must be importable there too — install them into the runner
+      # python in addition to the venv the build script creates.
+      - name: Install ROS 2 build deps into runner python
+        run: pip install -r Scripts/ros2/requirements.txt
+
       # Cross-compile rcl + rmw_cyclonedds_cpp + rosidl introspection into a
       # single-slice (maccatalyst) CRos2Jazzy.xcframework. One slice is enough:
       # `xcodebuild -create-xcframework` accepts a single library, and every

@@ -130,5 +130,21 @@ goldenCheck(
     ),
     rclSerializeCompressedImage)
 
+// M3b T5 — PointField[] struct sequence (SoA) + per-element heap string + uint8 sequence.
+goldenCheck(
+    "sensor_msgs/PointCloud2",
+    PointCloud2(
+        header: Header(stamp: Time(sec: 9, nanosec: 10), frameId: "lidar"),
+        height: 1, width: 2,
+        fields: [
+            PointField(name: "x", offset: 0, datatype: 7, count: 1),
+            PointField(name: "y", offset: 4, datatype: 7, count: 1),
+            PointField(name: "z", offset: 8, datatype: 7, count: 1),
+        ],
+        isBigendian: false, pointStep: 12, rowStep: 24,
+        data: Array(0..<24).map { UInt8($0) }, isDense: true
+    ),
+    rclSerializePointCloud2)
+
 fflush(stdout)
 exit(0)

@@ -17,5 +17,8 @@ const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char
     if (strcmp(name, "sensor_msgs/msg/Joy") == 0) {
         return crcl_typesupport_joy();
     }
+    if (strcmp(name, "sensor_msgs/msg/PointCloud2") == 0) {
+        return crcl_typesupport_point_cloud2();
+    }
     return NULL;
 }

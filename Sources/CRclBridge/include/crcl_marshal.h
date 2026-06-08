@@ -9,6 +9,7 @@
 #include "Generated/crcl_marshal_compressed_image.h"
 #include "Generated/crcl_marshal_imu.h"
 #include "Generated/crcl_marshal_joy.h"
+#include "Generated/crcl_marshal_point_cloud2.h"
 
 #ifdef __cplusplus
 extern "C" {

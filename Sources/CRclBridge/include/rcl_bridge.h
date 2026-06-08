@@ -58,6 +58,12 @@ int crcl_serialize_imu(
 /// Free a buffer returned by crcl_serialize_imu.
 void crcl_free(uint8_t *buf);
 
+/// Write the canonical RIHS01 type-hash string (e.g. "RIHS01_7d9a00ff…") for a
+/// supported ROS type into `out` (NUL-terminated, truncated to `cap`). Returns 0
+/// on success, non-zero on failure (unsupported type, or the handle carries no
+/// type hash — see crcl_last_error()).
+int crcl_type_hash(const char *ros_type_name, char *out, size_t cap);
+
 /// Last error from the rcutils error stack; "" if none.
 const char *crcl_last_error(void);
 

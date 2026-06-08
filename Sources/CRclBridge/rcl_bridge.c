@@ -16,6 +16,7 @@
 #include <rosidl_runtime_c/message_type_support_struct.h>
 #include <rmw/rmw.h>                              // rmw_serialize
 #include <rosidl_runtime_c/string_functions.h>   // rosidl_runtime_c__String__assign / __fini
+#include <rosidl_runtime_c/type_hash.h>          // rosidl_type_hash_t, rosidl_stringify_type_hash
 // Use the rosidl_typesupport_c symbol (T in the static lib).
 // ROSIDL_GET_MSG_TYPE_SUPPORT expands to
 //   rosidl_typesupport_c__get_message_type_support_handle__sensor_msgs__msg__Imu()
@@ -172,6 +173,37 @@ int crcl_publish_serialized(crcl_publisher_t *p, const uint8_t *data, size_t len
 }
 
 void crcl_free(uint8_t *buf) { free(buf); }
+
+int crcl_type_hash(const char *ros_type_name, char *out, size_t cap) {
+    if (!out || cap == 0) return -1;
+    out[0] = '\0';
+    const rosidl_message_type_support_t *ts = resolve_typesupport(ros_type_name);
+    if (!ts) {
+        snprintf(g_err, sizeof(g_err), "unsupported type: %s", ros_type_name ? ros_type_name : "(null)");
+        return -1;
+    }
+    // Jazzy's rosidl_message_type_support_t carries the type hash via get_type_hash_func.
+    if (!ts->get_type_hash_func) {
+        snprintf(g_err, sizeof(g_err), "type support for %s carries no get_type_hash_func", ros_type_name);
+        return -1;  // R2 fallback: caller drops the in-process hash gate (live `ros2 topic info`).
+    }
+    const rosidl_type_hash_t *type_hash = ts->get_type_hash_func(ts);
+    if (!type_hash) {
+        snprintf(g_err, sizeof(g_err), "type support for %s carries no type_hash", ros_type_name);
+        return -1;
+    }
+    rcutils_allocator_t alloc = rcutils_get_default_allocator();
+    char *s = NULL;
+    rcutils_ret_t rc = rosidl_stringify_type_hash(type_hash, alloc, &s);
+    if (rc != RCUTILS_RET_OK || !s) {
+        snprintf(g_err, sizeof(g_err), "rosidl_stringify_type_hash failed (%d)", (int)rc);
+        return -1;
+    }
+    strncpy(out, s, cap - 1);
+    out[cap - 1] = '\0';
+    alloc.deallocate(s, alloc.state);
+    return 0;
+}
 
 int crcl_serialize_imu(
     int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,

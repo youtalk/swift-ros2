@@ -1075,6 +1075,31 @@ extension Pipeline {
         return parsed
     }
 
+    /// Parse every `.msg` across `runs` and assemble a fully-resolved
+    /// `[rosTypeName: MessageIR]` registry (keyed by `<pkg>/msg/<Type>`). Unlike
+    /// ``generateMulti``, this stops short of hashing / emission — it exists so
+    /// the native-RCL marshaller emitter (and its unit tests) can recurse into
+    /// nested message IRs (`std_msgs/Header → builtin_interfaces/Time`, …)
+    /// without re-implementing the cross-package gather.
+    ///
+    /// Single-distro (jazzy) IRs only: the marshaller flattens the rosidl C
+    /// struct layout, which does not branch on distro, so a per-distro merge is
+    /// unnecessary here. Service / action IRs are intentionally excluded; the
+    /// marshaller targets `.msg` types.
+    ///
+    /// Throws ``GeneratorError/unresolvedNestedType(package:typeName:)`` when a
+    /// nested reference cannot be resolved from the supplied `runs`.
+    public static func buildMessageRegistry(_ runs: [PackageRun]) throws -> [String: MessageIR] {
+        var registry: [String: MessageIR] = [:]
+        for run in runs {
+            for entry in try parsePackage(run: run) {
+                registry[entry.ir.rosTypeName] = entry.ir
+            }
+        }
+        try validateAllReferencesResolved(registry: registry)
+        return registry
+    }
+
     private static func validateAllReferencesResolved(registry: [String: MessageIR]) throws {
         for (_, ir) in registry {
             for field in ir.fields {

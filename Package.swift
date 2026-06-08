@@ -556,6 +556,14 @@ if enableRcl {
         ))
     products.append(.executable(name: "crcl-smoke", targets: ["crcl-smoke"]))
     targets.append(
+        .executableTarget(
+            name: "crcl-golden",
+            dependencies: ["SwiftROS2", "SwiftROS2RCL"],
+            path: "Sources/Examples/CrclGolden",
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    products.append(.executable(name: "crcl-golden", targets: ["crcl-golden"]))
+    targets.append(
         .target(
             name: "SwiftROS2RCL",
             dependencies: ["CRclBridge", "SwiftROS2Transport", "SwiftROS2Messages"],

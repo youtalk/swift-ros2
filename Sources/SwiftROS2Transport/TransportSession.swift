@@ -150,6 +150,11 @@ package protocol TransportPublisher: Sendable {
     func close() throws
     var topic: String { get }
     var isActive: Bool { get }
+
+    /// Whether this publisher implements the typed `rcl_publish` path. Default `false`.
+    var supportsTypedPublish: Bool { get }
+    /// Publish a typed-publishable message via `rcl_publish`. Default throws.
+    func publishTyped(_ publishable: any RclTypedPublishable) throws
 }
 
 // MARK: - Transport Subscriber Protocol

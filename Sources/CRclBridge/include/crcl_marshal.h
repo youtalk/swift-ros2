@@ -5,7 +5,10 @@
 
 #include <rosidl_runtime_c/message_type_support_struct.h>
 
+#include "Generated/crcl_marshal_battery_state.h"
+#include "Generated/crcl_marshal_compressed_image.h"
 #include "Generated/crcl_marshal_imu.h"
+#include "Generated/crcl_marshal_joy.h"
 
 #ifdef __cplusplus
 extern "C" {

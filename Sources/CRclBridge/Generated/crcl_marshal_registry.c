@@ -5,8 +5,17 @@
 #include <string.h>
 
 const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char *name) {
+    if (strcmp(name, "sensor_msgs/msg/BatteryState") == 0) {
+        return crcl_typesupport_battery_state();
+    }
+    if (strcmp(name, "sensor_msgs/msg/CompressedImage") == 0) {
+        return crcl_typesupport_compressed_image();
+    }
     if (strcmp(name, "sensor_msgs/msg/Imu") == 0) {
         return crcl_typesupport_imu();
+    }
+    if (strcmp(name, "sensor_msgs/msg/Joy") == 0) {
+        return crcl_typesupport_joy();
     }
     return NULL;
 }

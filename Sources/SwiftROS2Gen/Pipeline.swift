@@ -22,6 +22,7 @@ public enum GeneratorError: Error, CustomStringConvertible {
     case parse(ParseError)
     case unresolvedNestedType(package: String, typeName: String)
     case invalidExtraImport(String)
+    case unknownRequestedTypes([String])
 
     public var description: String {
         switch self {
@@ -35,6 +36,9 @@ public enum GeneratorError: Error, CustomStringConvertible {
         case .invalidExtraImport(let value):
             return
                 "invalid --extra-import '\(value)' — expected a Swift module identifier (e.g. 'SwiftROS2Messages' or 'My.Nested.Module')"
+        case .unknownRequestedTypes(let names):
+            return
+                "--emit-rcl-marshalling: requested type(s) not found in the parsed packages: \(names) — check --types and --input"
         }
     }
 }
@@ -1098,6 +1102,163 @@ extension Pipeline {
         }
         try validateAllReferencesResolved(registry: registry)
         return registry
+    }
+
+    /// Native-RCL marshalling entry point. Builds the IR registry, determines
+    /// the requested emit set (the union of each run's `typesAllowList`; when a
+    /// run has no allow-list, every top-level `.msg` type from that package's
+    /// directory), and produces the generated C + Swift marshalling files plus a
+    /// resolver registry and aggregator header.
+    ///
+    /// File routing is via `relativePath` prefixes: `c/...` files belong under
+    /// the `CRclBridge` target, `swift/...` files under `SwiftROS2RCL`. The CLI
+    /// strips the leading prefix and writes under the matching output root.
+    public static func generateRclMarshalling(_ runs: [PackageRun]) throws -> [GeneratedFile] {
+        // Build the registry from allow-list-free runs so every nested
+        // dependency (std_msgs/Header → builtin_interfaces/Time, …) is present
+        // for flattening even when the caller passes a narrow `--types` filter
+        // applied uniformly to every `--input`. The emit set below still honors
+        // each run's original allow-list.
+        let registryRuns = runs.map { PackageRun(input: $0.input, typesAllowList: nil) }
+        let registry = try buildMessageRegistry(registryRuns)
+
+        // Requested emit set = union of each run's allow-list. A run with no
+        // allow-list contributes every top-level `.msg` type it parsed (keyed
+        // back through the registry by `<pkg>/msg/<Type>`).
+        var requestedRosNames = Set<String>()
+        // Track every explicitly-requested bare type name and whether it
+        // resolved to a `<pkg>/msg/<Type>` registry key under *any* run. A
+        // typo'd `--types Imuu` would otherwise be silently dropped — producing
+        // zero marshalling files and exiting 0 — which makes the regen-drift CI
+        // guard pass while a type is absent. Surface it as a hard error instead
+        // (mirrors the verify-mode empty-plan guard).
+        var requestedBareNames = Set<String>()
+        var resolvedBareNames = Set<String>()
+        for run in runs {
+            if let allow = run.typesAllowList {
+                for typeName in allow {
+                    requestedBareNames.insert(typeName)
+                    let key = "\(run.input.name)/msg/\(typeName)"
+                    if registry[key] != nil {
+                        requestedRosNames.insert(key)
+                        resolvedBareNames.insert(typeName)
+                    }
+                }
+            } else {
+                for entry in try parsePackage(run: run) {
+                    requestedRosNames.insert(entry.ir.rosTypeName)
+                }
+            }
+        }
+        // The CLI applies the same `--types` allow-list to every `--input`, so
+        // a name like `Imu` resolves only under sensor_msgs and is absent from
+        // the other runs — that is expected. Only fail on names that resolved
+        // under *no* run at all.
+        let unresolvedBareNames = requestedBareNames.subtracting(resolvedBareNames)
+        if !unresolvedBareNames.isEmpty {
+            throw GeneratorError.unknownRequestedTypes(unresolvedBareNames.sorted())
+        }
+        if requestedRosNames.isEmpty {
+            throw GeneratorError.unknownRequestedTypes([])
+        }
+
+        // Deterministic order: sort the requested IRs by ROS type name.
+        let requestedIRs: [MessageIR] =
+            requestedRosNames
+            .sorted()
+            .compactMap { registry[$0] }
+
+        var files: [GeneratedFile] = []
+        for ir in requestedIRs {
+            let snake = CMarshalEmitter.snakeCase(ir.typeName)
+            files.append(
+                GeneratedFile(
+                    relativePath: "c/Generated/crcl_marshal_\(snake).c",
+                    contents: CMarshalEmitter.emit(ir, registry: registry)
+                ))
+            files.append(
+                GeneratedFile(
+                    relativePath: "c/include/Generated/crcl_marshal_\(snake).h",
+                    contents: CMarshalEmitter.emitHeader(ir, registry: registry)
+                ))
+            let structName = SwiftEmitter.swiftStructName(typeName: ir.typeName)
+            files.append(
+                GeneratedFile(
+                    relativePath: "swift/\(structName)+RclMarshal.swift",
+                    contents: RclMarshalSwiftEmitter.emit(ir, registry: registry)
+                ))
+        }
+
+        // Registry C file: typesupport resolver over all requested types.
+        files.append(
+            GeneratedFile(
+                relativePath: "c/Generated/crcl_marshal_registry.c",
+                contents: emitRegistryC(requestedIRs)
+            ))
+        // Aggregator header.
+        files.append(
+            GeneratedFile(
+                relativePath: "c/include/crcl_marshal.h",
+                contents: emitAggregatorHeader(requestedIRs)
+            ))
+        return files
+    }
+
+    /// The `crcl_marshal_resolve_typesupport` resolver: a `strcmp` chain (sorted
+    /// by ROS type name for determinism) mapping each requested type's ROS name
+    /// to its `crcl_typesupport_<snake>()` accessor.
+    private static func emitRegistryC(_ irs: [MessageIR]) -> String {
+        let sorted = irs.sorted { $0.rosTypeName < $1.rosTypeName }
+        var lines: [String] = []
+        lines.append("// Generated by swift-ros2-gen — DO NOT EDIT.")
+        lines.append("")
+        lines.append("#include \"crcl_marshal.h\"")
+        lines.append("")
+        lines.append("#include <string.h>")
+        lines.append("")
+        lines.append(
+            "const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char *name) {")
+        for ir in sorted {
+            let snake = CMarshalEmitter.snakeCase(ir.typeName)
+            lines.append("    if (strcmp(name, \"\(ir.rosTypeName)\") == 0) {")
+            lines.append("        return crcl_typesupport_\(snake)();")
+            lines.append("    }")
+        }
+        lines.append("    return NULL;")
+        lines.append("}")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// The aggregator header `crcl_marshal.h`: `#include`s every per-type header
+    /// (sorted) and declares `crcl_marshal_resolve_typesupport`. Consumed by
+    /// `rcl_bridge.h` (which `#include`s it) so the decls reach Swift.
+    private static func emitAggregatorHeader(_ irs: [MessageIR]) -> String {
+        let sorted = irs.sorted { $0.rosTypeName < $1.rosTypeName }
+        var lines: [String] = []
+        lines.append("// Generated by swift-ros2-gen — DO NOT EDIT.")
+        lines.append("")
+        lines.append("#ifndef CRCL_MARSHAL_H")
+        lines.append("#define CRCL_MARSHAL_H")
+        lines.append("")
+        lines.append("#include <rosidl_runtime_c/message_type_support_struct.h>")
+        lines.append("")
+        for ir in sorted {
+            let snake = CMarshalEmitter.snakeCase(ir.typeName)
+            lines.append("#include \"Generated/crcl_marshal_\(snake).h\"")
+        }
+        lines.append("")
+        lines.append("#ifdef __cplusplus")
+        lines.append("extern \"C\" {")
+        lines.append("#endif")
+        lines.append("")
+        lines.append(
+            "const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char *name);")
+        lines.append("")
+        lines.append("#ifdef __cplusplus")
+        lines.append("}")
+        lines.append("#endif")
+        lines.append("#endif  // CRCL_MARSHAL_H")
+        return lines.joined(separator: "\n") + "\n"
     }
 
     private static func validateAllReferencesResolved(registry: [String: MessageIR]) throws {

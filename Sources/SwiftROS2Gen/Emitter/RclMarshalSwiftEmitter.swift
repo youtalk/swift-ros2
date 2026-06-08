@@ -79,9 +79,11 @@ public enum RclMarshalSwiftEmitter {
             params: params,
             valueRoot: "",
             resultDecl: "        let rc: Int32? =",
-            innerExprPrefix: "box.withPtr { p in crcl_publish_\(snake)(p, ",
-            innerExprSuffix: ") }",
-            baseIndent: "        ")
+            innerExprPrefix: "crcl_publish_\(snake)(",
+            innerExprSuffix: ")",
+            baseIndent: "        ",
+            innerOpener: "box.withPtr { p in",
+            firstCallArg: "p")
         out += "        guard let rc else { throw TransportError.publisherClosed }\n"
         out += "        if rc != 0 { throw TransportError.publishFailed(String(cString: crcl_last_error())) }\n"
         out += "    }\n"
@@ -103,11 +105,14 @@ public enum RclMarshalSwiftEmitter {
         resultDecl: String,
         innerExprPrefix: String,
         innerExprSuffix: String,
-        baseIndent: String
+        baseIndent: String,
+        innerOpener: String? = nil,
+        firstCallArg: String? = nil
     ) -> String {
         var setup: [String] = []  // struct-sequence parallel-array `let` bindings
         var openers: [String] = []  // closure-opening lines, outer → inner
         var callArgs: [String] = []  // C call arguments, in flat-param order
+        if let firstCallArg { callArgs.append(firstCallArg) }
 
         for param in params {
             let path = valueRoot + param.swiftValuePath
@@ -121,12 +126,12 @@ public enum RclMarshalSwiftEmitter {
                 // array would otherwise read out of bounds.
                 setup.append(
                     "precondition(\(path).count == \(length), \"\(param.paramName) needs \(length) elements\")")
-                let buf = "\(param.paramName)Buf"
+                let buf = "\(swiftLocal(param.paramName))Buf"
                 openers.append("\(path).withUnsafeBufferPointer { \(buf) in")
                 callArgs.append("\(buf).baseAddress")
 
             case .scalarSequence:
-                let buf = "\(param.paramName)Buf"
+                let buf = "\(swiftLocal(param.paramName))Buf"
                 openers.append("\(path).withUnsafeBufferPointer { \(buf) in")
                 callArgs.append("\(buf).baseAddress")
                 callArgs.append("\(buf).count")
@@ -136,15 +141,15 @@ public enum RclMarshalSwiftEmitter {
                 // withUnsafeBufferPointer (scalar) or withCStringArray (string)
                 // per member to hand C a contiguous pointer.
                 for member in members {
-                    let arrName = "\(member.paramName)Array"
+                    let arrName = "\(swiftLocal(member.paramName))Array"
                     setup.append("let \(arrName) = \(path).map { $0.\(member.swiftValuePath) }")
                     switch member.kind {
                     case .heapString:
-                        let ptr = "\(member.paramName)Ptr"
+                        let ptr = "\(swiftLocal(member.paramName))Ptr"
                         openers.append("withCStringArray(\(arrName)) { \(ptr) in")
                         callArgs.append(ptr)
                     case .scalar:
-                        let buf = "\(member.paramName)Buf"
+                        let buf = "\(swiftLocal(member.paramName))Buf"
                         openers.append("\(arrName).withUnsafeBufferPointer { \(buf) in")
                         callArgs.append("\(buf).baseAddress")
                     default:
@@ -157,6 +162,11 @@ public enum RclMarshalSwiftEmitter {
             }
         }
 
+        // Append the caller-supplied innermost opener (e.g. `box.withPtr { p in`)
+        // last so it nests deepest; its closing brace is emitted alongside the
+        // value-derived closures below.
+        if let innerOpener { openers.append(innerOpener) }
+
         var lines: [String] = []
         for line in setup {
             lines.append("\(baseIndent)\(line)")
@@ -166,16 +176,23 @@ public enum RclMarshalSwiftEmitter {
         // spaces per opener (matching the hand-written RclImuMarshal style).
         // `resultDecl` already carries its own indentation (it is the
         // assignment LHS at `baseIndent`). The closure bodies indent one extra
-        // level per opener relative to `baseIndent`.
-        let innerExpr = innerExprPrefix + callArgs.joined(separator: ", ") + innerExprSuffix
+        // level per opener relative to `baseIndent`. The C call's arguments are
+        // emitted one-per-line so the generated source stays within the
+        // 120-column lint limit regardless of how many flat params a message
+        // expands to.
         if openers.isEmpty {
-            lines.append("\(resultDecl) \(innerExpr)")
+            lines.append(
+                contentsOf: callExprLines(
+                    resultDecl + " " + innerExprPrefix, callArgs, innerExprSuffix, baseIndent))
         } else {
             lines.append(resultDecl)
             for (i, opener) in openers.enumerated() {
                 lines.append("\(baseIndent)\(indent(i + 1))\(opener)")
             }
-            lines.append("\(baseIndent)\(indent(openers.count + 1))\(innerExpr)")
+            lines.append(
+                contentsOf: callExprLines(
+                    innerExprPrefix, callArgs, innerExprSuffix,
+                    baseIndent + indent(openers.count + 1)))
             for i in stride(from: openers.count, through: 1, by: -1) {
                 lines.append("\(baseIndent)\(indent(i))}")
             }
@@ -183,8 +200,38 @@ public enum RclMarshalSwiftEmitter {
         return lines.map { $0 + "\n" }.joined()
     }
 
+    /// Render a C call with one argument per line, each indented one level past
+    /// `indentBase`. `prefix` is the opening text (function name + `(`, possibly
+    /// preceded by a result-decl / closure opener); `suffix` is the closing
+    /// text after the final argument (the `)` plus any trailing fixed args /
+    /// closure brace). Keeping the call multi-line keeps the generated source
+    /// under the 120-column lint limit regardless of param count.
+    private static func callExprLines(
+        _ prefix: String, _ args: [String], _ suffix: String, _ indentBase: String
+    ) -> [String] {
+        var out: [String] = []
+        out.append("\(indentBase)\(prefix)")
+        for (i, arg) in args.enumerated() {
+            let trailer = i == args.count - 1 ? suffix : ","
+            out.append("\(indentBase)\(indent(1))\(arg)\(trailer)")
+        }
+        return out
+    }
+
     private static func indent(_ depth: Int) -> String {
         String(repeating: "    ", count: depth)
+    }
+
+    /// Convert a snake_case flat-param name into a lowerCamelCase Swift local
+    /// identifier (e.g. `orientation_covariance` → `orientationCovariance`),
+    /// satisfying swift-format's `AlwaysUseLowerCamelCase` rule. C call sites
+    /// keep the snake-case argument *values* — only the Swift-side binding names
+    /// change.
+    private static func swiftLocal(_ snake: String) -> String {
+        let parts = snake.split(separator: "_")
+        guard let first = parts.first else { return snake }
+        return ([String(first)] + parts.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst() })
+            .joined()
     }
 
     /// The fileprivate `withCStringArray` helper. Builds a contiguous

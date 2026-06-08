@@ -58,9 +58,10 @@ struct RclMarshalSwiftEmitterTests {
     @Test("emits BatteryState two-sequence unpack with distinct buffer names")
     func emitsBatteryState() throws {
         let s = try emit("sensor_msgs/msg/BatteryState")
-        // Two parallel [Float] sequences get distinct, paramName-derived buffers.
-        #expect(s.contains("cell_voltageBuf"))
-        #expect(s.contains("cell_temperatureBuf"))
+        // Two parallel [Float] sequences get distinct, paramName-derived buffers
+        // (lowerCamelCased so the generated Swift passes swift-format lint).
+        #expect(s.contains("cellVoltageBuf"))
+        #expect(s.contains("cellTemperatureBuf"))
         #expect(s.contains("crcl_serialize_battery_state("))
         #expect(s.contains("crcl_publish_battery_state("))
         // Brace balance across the two-opener nesting.

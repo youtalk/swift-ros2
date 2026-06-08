@@ -77,6 +77,22 @@ struct SwiftROS2GenCommand: ParsableCommand {
     )
     var excludeTypes: String?
 
+    @Flag(
+        name: .long,
+        help: "Emit native-RCL marshalling (C + Swift) instead of ROS2Message Swift structs.")
+    var emitRclMarshalling: Bool = false
+
+    @Option(
+        name: .long,
+        help: "Output root for generated C marshallers (CRclBridge). Required with --emit-rcl-marshalling.")
+    var rclCOutput: String = ""
+
+    @Option(
+        name: .long,
+        help:
+            "Output root for generated Swift unpackers (SwiftROS2RCL). Required with --emit-rcl-marshalling.")
+    var rclSwiftOutput: String = ""
+
     func validate() throws {
         // Reject untrusted whitespace / quotes / newlines in --extra-import
         // before the value is spliced into emitted Swift `import` lines.
@@ -91,11 +107,74 @@ struct SwiftROS2GenCommand: ParsableCommand {
     }
 
     func run() throws {
+        if emitRclMarshalling {
+            try runRclMarshallingMode()
+            return
+        }
         if let image = verifyHashes {
             try runVerifyMode(image: image)
             return
         }
         try runEmitMode()
+    }
+
+    func runRclMarshallingMode() throws {
+        if !dryRun {
+            guard !rclCOutput.isEmpty else {
+                throw ValidationError("--rcl-c-output is required with --emit-rcl-marshalling")
+            }
+            guard !rclSwiftOutput.isEmpty else {
+                throw ValidationError("--rcl-swift-output is required with --emit-rcl-marshalling")
+            }
+        }
+        let allowList: Set<String>? = types.map {
+            Set($0.split(separator: ",").map(String.init))
+        }
+        var runs: [Pipeline.PackageRun] = []
+        for raw in input {
+            let pkg = try parseInput(raw)
+            runs.append(
+                .init(
+                    input: PackageInput(
+                        name: pkg.packageName,
+                        directory: pkg.directory,
+                        distro: pkg.distro
+                    ),
+                    typesAllowList: allowList
+                ))
+        }
+        let files: [GeneratedFile]
+        do {
+            files = try Pipeline.generateRclMarshalling(runs)
+        } catch let err as GeneratorError {
+            FileHandle.standardError.write(Data("error: \(err)\n".utf8))
+            throw ExitCode.failure
+        }
+        let cRoot = URL(fileURLWithPath: rclCOutput, isDirectory: true)
+        let swiftRoot = URL(fileURLWithPath: rclSwiftOutput, isDirectory: true)
+        for file in files {
+            let absolute: URL
+            if file.relativePath.hasPrefix("c/") {
+                absolute = cRoot.appendingPathComponent(String(file.relativePath.dropFirst("c/".count)))
+            } else if file.relativePath.hasPrefix("swift/") {
+                absolute = swiftRoot.appendingPathComponent(
+                    String(file.relativePath.dropFirst("swift/".count)))
+            } else {
+                FileHandle.standardError.write(
+                    Data("error: unexpected generated relativePath '\(file.relativePath)'\n".utf8))
+                throw ExitCode.failure
+            }
+            if dryRun {
+                FileHandle.standardOutput.write(
+                    Data("WRITE \(absolute.path) (\(file.contents.utf8.count) bytes)\n".utf8))
+            } else {
+                try FileManager.default.createDirectory(
+                    at: absolute.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try file.contents.write(to: absolute, atomically: true, encoding: .utf8)
+            }
+        }
     }
 
     func runEmitMode() throws {

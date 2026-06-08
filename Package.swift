@@ -542,7 +542,7 @@ if enableRcl {
             name: "CRclBridge",
             dependencies: ["CRos2Jazzy"],
             path: "Sources/CRclBridge",
-            sources: ["rcl_bridge.c"],
+            sources: ["rcl_bridge.c", "Generated"],
             publicHeadersPath: "include",
             // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++.
             linkerSettings: [.linkedLibrary("c++")]

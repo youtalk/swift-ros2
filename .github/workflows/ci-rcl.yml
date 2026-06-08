@@ -34,6 +34,18 @@ jobs:
       - name: Install ROS 2 build deps into runner python
         run: pip install -r Scripts/ros2/requirements.txt
 
+      # Regen-drift guard: re-run the marshalling generator and assert the
+      # checked-in C + Swift files are byte-identical. Pure generator (Swift
+      # toolchain + vendor IDL only — no xcframework), so it runs before the
+      # expensive cross-build and fails fast if the generated tree is stale.
+      - name: RCL marshalling regen-drift guard
+        run: |
+          bash Scripts/regen-rcl-marshalling.sh
+          git diff --exit-code Sources/CRclBridge/Generated \
+            Sources/CRclBridge/include/Generated Sources/CRclBridge/include/crcl_marshal.h \
+            Sources/SwiftROS2RCL/Generated \
+            || { echo "::error::generated RCL marshalling is stale — run Scripts/regen-rcl-marshalling.sh and commit"; exit 1; }
+
       # Cross-compile rcl + rmw_cyclonedds_cpp + rosidl introspection into a
       # single-slice (maccatalyst) CRos2Jazzy.xcframework. One slice is enough:
       # `xcodebuild -create-xcframework` accepts a single library, and every
@@ -82,17 +94,22 @@ jobs:
           printf '%s\n' "$out" | grep -q "crcl_smoke OK"
 
       # In-process serialization validation: SwiftROS2CDR wire bytes vs the real
-      # ROS 2 introspection serializer (rmw_serialize) for sensor_msgs/Imu, plus
-      # the RIHS01 type-hash check. rmw_serialize touches no DDS participant, but
-      # bound the run anyway (consistent with crcl-smoke) and decide success on
-      # the OK line.
-      - name: Build + run crcl-golden (Catalyst)
+      # ROS 2 introspection serializer (rmw_serialize) for every M3b type
+      # (Imu/Joy/BatteryState/CompressedImage/PointCloud2), plus the RIHS01
+      # type-hash check. Built under AddressSanitizer so the struct-sequence
+      # (PointField[]) per-element heap-string ownership is leak/double-free
+      # checked. rmw_serialize touches no DDS participant, but bound the run
+      # anyway (consistent with crcl-smoke; ASan slows it, so alarm 90) and
+      # decide success on the OK line + the absence of any ASan/leak report.
+      - name: Build + run crcl-golden (Catalyst, ASan)
         run: |
           xcodebuild -scheme crcl-golden \
             -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
-            -derivedDataPath build/dd-ci-crclgolden build CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath build/dd-ci-crclgolden -enableAddressSanitizer YES \
+            build CODE_SIGNING_ALLOWED=NO
           bin="$(find build/dd-ci-crclgolden -name crcl-golden -type f -perm +111 | head -1)"
           echo "Running golden: $bin"
-          out="$(perl -e 'alarm 60; exec @ARGV' "$bin" 2>&1)" || true
+          out="$(perl -e 'alarm 90; exec @ARGV' "$bin" 2>&1)" || true
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "crcl_golden OK:"
+          ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"

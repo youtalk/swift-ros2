@@ -35,6 +35,11 @@ final class RclPublishIntegrationTests: XCTestCase {
 
             await ctx.shutdown()
 
+        // M3a: pub.publish(imu) now takes the TYPED rcl_publish path
+        // (Imu: RclTypedPublishable + RclTransportPublisher.supportsTypedPublish),
+        // not the P1 serialized seam. The on-wire result is identical (M2 proved
+        // SwiftROS2CDR == rmw_serialize); this confirms it end-to-end on a host.
+        //
         // Host-side verification (run on the Jazzy host while this publishes):
         //   ros2 node list            -> shows /swift_ros2_rcl/swift_ros2_rcl_test
         //   ros2 topic echo /swift_ros2_rcl/imu

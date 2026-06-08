@@ -13,7 +13,7 @@ private final class RclNodeBox: RclNodeHandle, @unchecked Sendable {
 }
 
 /// Per-box lock serializes destroy vs. publish on the same publisher pointer.
-private final class RclPublisherBox: RclPublisherHandle, @unchecked Sendable {
+final class RclPublisherBox: RclPublisherHandle, @unchecked Sendable {
     private var ptr: OpaquePointer?
     private let lock = NSLock()
 

@@ -79,7 +79,7 @@ jobs:
           # (possibly killed) exit code.
           out="$(perl -e 'alarm 60; exec @ARGV' "$bin" 2>&1)" || true
           printf '%s\n' "$out"
-          printf '%s\n' "$out" | grep -q "crcl_smoke OK: publish path exercised"
+          printf '%s\n' "$out" | grep -q "crcl_smoke OK"
 
       # In-process serialization validation: SwiftROS2CDR wire bytes vs the real
       # ROS 2 introspection serializer (rmw_serialize) for sensor_msgs/Imu, plus

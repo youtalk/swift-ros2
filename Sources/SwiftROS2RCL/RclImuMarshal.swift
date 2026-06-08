@@ -7,6 +7,7 @@
 import CRclBridge
 import Foundation
 import SwiftROS2Messages
+import SwiftROS2Transport
 
 /// Serialize `imu` via the real ROS 2 introspection serializer (rmw_serialize),
 /// returning the on-wire CDR bytes (incl. the 4-byte encapsulation header).
@@ -48,4 +49,38 @@ package func rclTypeHash(_ rosTypeName: String) -> String? {
         crcl_type_hash(rosTypeName, p.baseAddress, p.count)
     }
     return rc == 0 ? String(cString: buf) : nil
+}
+
+extension Imu: RclTypedPublishable {
+    /// Marshal this Imu into its rosidl C struct and publish via rcl_publish.
+    /// Mirrors `rclSerializeImu`'s flat-field unpack, but targets the typed
+    /// production path (crcl_publish_imu) instead of the validation serializer.
+    package func rclTypedPublish(into handle: any RclPublisherHandle) throws {
+        guard let box = handle as? RclPublisherBox else {
+            throw TransportError.publishFailed("rclTypedPublish: unexpected publisher handle type")
+        }
+        precondition(orientationCovariance.count == 9, "orientationCovariance needs 9 elements")
+        precondition(angularVelocityCovariance.count == 9, "angularVelocityCovariance needs 9 elements")
+        precondition(linearAccelerationCovariance.count == 9, "linearAccelerationCovariance needs 9 elements")
+
+        let rc: Int32? = orientationCovariance.withUnsafeBufferPointer { oc in
+            angularVelocityCovariance.withUnsafeBufferPointer { ac in
+                linearAccelerationCovariance.withUnsafeBufferPointer { lc in
+                    box.withPtr { p in
+                        crcl_publish_imu(
+                            p,
+                            header.stamp.sec, header.stamp.nanosec, header.frameId,
+                            orientation.x, orientation.y, orientation.z, orientation.w,
+                            oc.baseAddress,
+                            angularVelocity.x, angularVelocity.y, angularVelocity.z,
+                            ac.baseAddress,
+                            linearAcceleration.x, linearAcceleration.y, linearAcceleration.z,
+                            lc.baseAddress)
+                    }
+                }
+            }
+        }
+        guard let rc else { throw TransportError.publisherClosed }
+        if rc != 0 { throw TransportError.publishFailed(String(cString: crcl_last_error())) }
+    }
 }

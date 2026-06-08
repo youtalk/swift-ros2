@@ -55,6 +55,21 @@ int crcl_serialize_imu(
     const double *linear_acceleration_covariance,
     uint8_t **out_buf, size_t *out_len);
 
+/// Marshal a sensor_msgs/msg/Imu from flat fields into its rosidl C struct and
+/// publish it via rcl_publish (real ROS 2 introspection serialization happens
+/// inside rmw_cyclonedds_cpp). `pub` must come from crcl_publisher_create with
+/// ros_type_name "sensor_msgs/msg/Imu". Each covariance pointer references 9
+/// doubles. Returns 0 on success, non-zero rcl_ret_t otherwise (crcl_last_error()).
+int crcl_publish_imu(
+    crcl_publisher_t *pub,
+    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
+    double orientation_x, double orientation_y, double orientation_z, double orientation_w,
+    const double *orientation_covariance,
+    double angular_velocity_x, double angular_velocity_y, double angular_velocity_z,
+    const double *angular_velocity_covariance,
+    double linear_acceleration_x, double linear_acceleration_y, double linear_acceleration_z,
+    const double *linear_acceleration_covariance);
+
 /// Free a buffer returned by crcl_serialize_imu.
 void crcl_free(uint8_t *buf);
 

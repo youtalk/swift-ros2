@@ -80,3 +80,19 @@ jobs:
           out="$(perl -e 'alarm 60; exec @ARGV' "$bin" 2>&1)" || true
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "crcl_smoke OK: publish path exercised"
+
+      # In-process serialization validation: SwiftROS2CDR wire bytes vs the real
+      # ROS 2 introspection serializer (rmw_serialize) for sensor_msgs/Imu, plus
+      # the RIHS01 type-hash check. rmw_serialize touches no DDS participant, but
+      # bound the run anyway (consistent with crcl-smoke) and decide success on
+      # the OK line.
+      - name: Build + run crcl-golden (Catalyst)
+        run: |
+          xcodebuild -scheme crcl-golden \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            -derivedDataPath build/dd-ci-crclgolden build CODE_SIGNING_ALLOWED=NO
+          bin="$(find build/dd-ci-crclgolden -name crcl-golden -type f -perm +111 | head -1)"
+          echo "Running golden: $bin"
+          out="$(perl -e 'alarm 60; exec @ARGV' "$bin" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "crcl_golden OK:"

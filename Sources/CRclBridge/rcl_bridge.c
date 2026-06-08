@@ -14,6 +14,9 @@
 #include <rmw/serialized_message.h>
 #include <rcutils/allocator.h>
 #include <rosidl_runtime_c/message_type_support_struct.h>
+#include <rmw/rmw.h>                              // rmw_serialize
+#include <rosidl_runtime_c/string_functions.h>   // rosidl_runtime_c__String__assign / __fini
+#include <rosidl_runtime_c/type_hash.h>          // rosidl_type_hash_t, rosidl_stringify_type_hash
 // Use the rosidl_typesupport_c symbol (T in the static lib).
 // ROSIDL_GET_MSG_TYPE_SUPPORT expands to
 //   rosidl_typesupport_c__get_message_type_support_handle__sensor_msgs__msg__Imu()
@@ -166,5 +169,109 @@ int crcl_publish_serialized(crcl_publisher_t *p, const uint8_t *data, size_t len
         capture_error();
         return (int)ret;
     }
+    return 0;
+}
+
+void crcl_free(uint8_t *buf) { free(buf); }
+
+int crcl_type_hash(const char *ros_type_name, char *out, size_t cap) {
+    if (!out || cap == 0) return -1;
+    out[0] = '\0';
+    const rosidl_message_type_support_t *ts = resolve_typesupport(ros_type_name);
+    if (!ts) {
+        snprintf(g_err, sizeof(g_err), "unsupported type: %s", ros_type_name ? ros_type_name : "(null)");
+        return -1;
+    }
+    // Jazzy's rosidl_message_type_support_t carries the type hash via get_type_hash_func.
+    if (!ts->get_type_hash_func) {
+        snprintf(g_err, sizeof(g_err), "type support for %s carries no get_type_hash_func", ros_type_name);
+        return -1;  // R2 fallback: caller drops the in-process hash gate (live `ros2 topic info`).
+    }
+    const rosidl_type_hash_t *type_hash = ts->get_type_hash_func(ts);
+    if (!type_hash) {
+        snprintf(g_err, sizeof(g_err), "type support for %s carries no type_hash", ros_type_name);
+        return -1;
+    }
+    rcutils_allocator_t alloc = rcutils_get_default_allocator();
+    char *s = NULL;
+    rcutils_ret_t rc = rosidl_stringify_type_hash(type_hash, alloc, &s);
+    if (rc != RCUTILS_RET_OK || !s) {
+        snprintf(g_err, sizeof(g_err), "rosidl_stringify_type_hash failed (%d)", (int)rc);
+        return -1;
+    }
+    strncpy(out, s, cap - 1);
+    out[cap - 1] = '\0';
+    alloc.deallocate(s, alloc.state);
+    return 0;
+}
+
+int crcl_serialize_imu(
+    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
+    double orientation_x, double orientation_y, double orientation_z, double orientation_w,
+    const double *orientation_covariance,
+    double angular_velocity_x, double angular_velocity_y, double angular_velocity_z,
+    const double *angular_velocity_covariance,
+    double linear_acceleration_x, double linear_acceleration_y, double linear_acceleration_z,
+    const double *linear_acceleration_covariance,
+    uint8_t **out_buf, size_t *out_len) {
+    const rosidl_message_type_support_t *ts = resolve_typesupport("sensor_msgs/msg/Imu");
+    if (!ts) {
+        snprintf(g_err, sizeof(g_err), "unsupported type: sensor_msgs/msg/Imu");
+        return -1;
+    }
+
+    // Zero-init on the stack; only header.frame_id needs heap (via __assign).
+    sensor_msgs__msg__Imu msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.header.stamp.sec = stamp_sec;
+    msg.header.stamp.nanosec = stamp_nanosec;
+    if (!rosidl_runtime_c__String__assign(&msg.header.frame_id, frame_id ? frame_id : "")) {
+        snprintf(g_err, sizeof(g_err), "String__assign failed for frame_id");
+        return -1;
+    }
+    msg.orientation.x = orientation_x;
+    msg.orientation.y = orientation_y;
+    msg.orientation.z = orientation_z;
+    msg.orientation.w = orientation_w;
+    memcpy(msg.orientation_covariance, orientation_covariance, 9 * sizeof(double));
+    msg.angular_velocity.x = angular_velocity_x;
+    msg.angular_velocity.y = angular_velocity_y;
+    msg.angular_velocity.z = angular_velocity_z;
+    memcpy(msg.angular_velocity_covariance, angular_velocity_covariance, 9 * sizeof(double));
+    msg.linear_acceleration.x = linear_acceleration_x;
+    msg.linear_acceleration.y = linear_acceleration_y;
+    msg.linear_acceleration.z = linear_acceleration_z;
+    memcpy(msg.linear_acceleration_covariance, linear_acceleration_covariance, 9 * sizeof(double));
+
+    rcutils_allocator_t alloc = rcutils_get_default_allocator();
+    rmw_serialized_message_t ser = rmw_get_zero_initialized_serialized_message();
+    rmw_ret_t rc = rmw_serialized_message_init(&ser, 0u, &alloc);
+    if (rc != RMW_RET_OK) {
+        capture_error();
+        rosidl_runtime_c__String__fini(&msg.header.frame_id);
+        return (int)rc;
+    }
+
+    rc = rmw_serialize(&msg, ts, &ser);
+    if (rc != RMW_RET_OK) {
+        capture_error();
+        (void)rmw_serialized_message_fini(&ser);
+        rosidl_runtime_c__String__fini(&msg.header.frame_id);
+        return (int)rc;
+    }
+
+    uint8_t *copy = malloc(ser.buffer_length);
+    if (!copy) {
+        snprintf(g_err, sizeof(g_err), "out-of-memory copying %zu serialized bytes", ser.buffer_length);
+        (void)rmw_serialized_message_fini(&ser);
+        rosidl_runtime_c__String__fini(&msg.header.frame_id);
+        return -1;
+    }
+    memcpy(copy, ser.buffer, ser.buffer_length);
+    *out_buf = copy;
+    *out_len = ser.buffer_length;
+
+    (void)rmw_serialized_message_fini(&ser);
+    rosidl_runtime_c__String__fini(&msg.header.frame_id);
     return 0;
 }

@@ -39,6 +39,31 @@ void crcl_publisher_destroy(crcl_publisher_t *pub);
 /// Publish pre-serialized CDR bytes. Returns 0 on success, non-zero rcl_ret_t otherwise.
 int crcl_publish_serialized(crcl_publisher_t *pub, const uint8_t *data, size_t len);
 
+/// Serialize a sensor_msgs/msg/Imu from flat fields using the real ROS 2
+/// introspection serializer (rmw_serialize) — no node/context/participant.
+/// Each covariance pointer must reference exactly 9 doubles. On success writes
+/// a malloc'd CDR buffer (incl. the 4-byte encapsulation header) to *out_buf
+/// and its length to *out_len, and returns 0; the caller must crcl_free(*out_buf).
+/// Returns a non-zero rmw_ret_t on failure (see crcl_last_error()).
+int crcl_serialize_imu(
+    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
+    double orientation_x, double orientation_y, double orientation_z, double orientation_w,
+    const double *orientation_covariance,
+    double angular_velocity_x, double angular_velocity_y, double angular_velocity_z,
+    const double *angular_velocity_covariance,
+    double linear_acceleration_x, double linear_acceleration_y, double linear_acceleration_z,
+    const double *linear_acceleration_covariance,
+    uint8_t **out_buf, size_t *out_len);
+
+/// Free a buffer returned by crcl_serialize_imu.
+void crcl_free(uint8_t *buf);
+
+/// Write the canonical RIHS01 type-hash string (e.g. "RIHS01_7d9a00ff…") for a
+/// supported ROS type into `out` (NUL-terminated, truncated to `cap`). Returns 0
+/// on success, non-zero on failure (unsupported type, or the handle carries no
+/// type hash — see crcl_last_error()).
+int crcl_type_hash(const char *ros_type_name, char *out, size_t cap);
+
 /// Last error from the rcutils error stack; "" if none.
 const char *crcl_last_error(void);
 

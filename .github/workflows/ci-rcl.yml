@@ -20,6 +20,11 @@ jobs:
       SWIFT_ROS2_ENABLE_RCL: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The regen-drift guard reads the vendor IDL submodules
+          # (common_interfaces-jazzy, rcl_interfaces-jazzy); the xcframework
+          # build does its own `vcs import` and needs none of them.
+          submodules: recursive
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - uses: actions/setup-python@v5
@@ -39,6 +44,13 @@ jobs:
       # toolchain + vendor IDL only — no xcframework), so it runs before the
       # expensive cross-build and fails fast if the generated tree is stale.
       - name: RCL marshalling regen-drift guard
+        env:
+          # Clear the job-level opt-in for this step only: with it set,
+          # `swift run swift-ros2-gen` would resolve the CRos2Jazzy binary
+          # target at build/ros2/CRos2Jazzy.xcframework, which is not built
+          # until the cross-build step below. The generator itself needs no
+          # RCL target.
+          SWIFT_ROS2_ENABLE_RCL: ""
         run: |
           bash Scripts/regen-rcl-marshalling.sh
           git diff --exit-code Sources/CRclBridge/Generated \

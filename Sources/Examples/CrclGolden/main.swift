@@ -146,5 +146,18 @@ goldenCheck(
     ),
     rclSerializePointCloud2)
 
+// M3b fix — empty PointCloud2: exercises empty fields[] (the withCStringArray
+// nil-baseAddress trap path) and empty data[], asserting wire == rcl for the
+// empty case.
+goldenCheck(
+    "sensor_msgs/PointCloud2 (empty)",
+    PointCloud2(
+        header: Header(stamp: Time(sec: 0, nanosec: 0), frameId: ""),
+        height: 0, width: 0, fields: [],
+        isBigendian: false, pointStep: 0, rowStep: 0,
+        data: [], isDense: false
+    ),
+    rclSerializePointCloud2)
+
 fflush(stdout)
 exit(0)

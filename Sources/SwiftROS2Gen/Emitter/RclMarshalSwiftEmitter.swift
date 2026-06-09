@@ -241,11 +241,11 @@ public enum RclMarshalSwiftEmitter {
     private static func cStringArrayHelper() -> String {
         """
         private func withCStringArray<R>(
-            _ strings: [String], _ body: (UnsafePointer<UnsafePointer<CChar>?>) throws -> R
+            _ strings: [String], _ body: (UnsafePointer<UnsafePointer<CChar>?>?) throws -> R
         ) rethrows -> R {
             func recurse(_ i: Int, _ acc: inout [UnsafePointer<CChar>?]) throws -> R {
                 if i == strings.count {
-                    return try acc.withUnsafeBufferPointer { try body($0.baseAddress!) }
+                    return try acc.withUnsafeBufferPointer { try body($0.baseAddress) }
                 }
                 return try strings[i].withCString { cs in
                     acc.append(cs)

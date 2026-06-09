@@ -62,6 +62,7 @@ int crcl_serialize_compressed_image(
     const rosidl_message_type_support_t *ts = crcl_typesupport_compressed_image();
     sensor_msgs__msg__CompressedImage msg;
     if (!fill_compressed_image(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, format, data_data, data_count)) {
+        fini_compressed_image(&msg);
         return -1;  // crcl__set_error already called
     }
     rcutils_allocator_t alloc = rcutils_get_default_allocator();
@@ -107,6 +108,7 @@ int crcl_publish_compressed_image(
     }
     sensor_msgs__msg__CompressedImage msg;
     if (!fill_compressed_image(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, format, data_data, data_count)) {
+        fini_compressed_image(&msg);
         return -1;  // crcl__set_error already called
     }
     rcl_ret_t ret = rcl_publish(&pub->pub, &msg, NULL);

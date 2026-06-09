@@ -65,6 +65,7 @@ int crcl_serialize_joy(
     const rosidl_message_type_support_t *ts = crcl_typesupport_joy();
     sensor_msgs__msg__Joy msg;
     if (!fill_joy(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, axes_data, axes_count, buttons_data, buttons_count)) {
+        fini_joy(&msg);
         return -1;  // crcl__set_error already called
     }
     rcutils_allocator_t alloc = rcutils_get_default_allocator();
@@ -110,6 +111,7 @@ int crcl_publish_joy(
     }
     sensor_msgs__msg__Joy msg;
     if (!fill_joy(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, axes_data, axes_count, buttons_data, buttons_count)) {
+        fini_joy(&msg);
         return -1;  // crcl__set_error already called
     }
     rcl_ret_t ret = rcl_publish(&pub->pub, &msg, NULL);

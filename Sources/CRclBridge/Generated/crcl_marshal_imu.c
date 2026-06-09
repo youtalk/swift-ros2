@@ -85,6 +85,7 @@ int crcl_serialize_imu(
     const rosidl_message_type_support_t *ts = crcl_typesupport_imu();
     sensor_msgs__msg__Imu msg;
     if (!fill_imu(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, orientation_x, orientation_y, orientation_z, orientation_w, orientation_covariance, angular_velocity_x, angular_velocity_y, angular_velocity_z, angular_velocity_covariance, linear_acceleration_x, linear_acceleration_y, linear_acceleration_z, linear_acceleration_covariance)) {
+        fini_imu(&msg);
         return -1;  // crcl__set_error already called
     }
     rcutils_allocator_t alloc = rcutils_get_default_allocator();
@@ -141,6 +142,7 @@ int crcl_publish_imu(
     }
     sensor_msgs__msg__Imu msg;
     if (!fill_imu(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, orientation_x, orientation_y, orientation_z, orientation_w, orientation_covariance, angular_velocity_x, angular_velocity_y, angular_velocity_z, angular_velocity_covariance, linear_acceleration_x, linear_acceleration_y, linear_acceleration_z, linear_acceleration_covariance)) {
+        fini_imu(&msg);
         return -1;  // crcl__set_error already called
     }
     rcl_ret_t ret = rcl_publish(&pub->pub, &msg, NULL);

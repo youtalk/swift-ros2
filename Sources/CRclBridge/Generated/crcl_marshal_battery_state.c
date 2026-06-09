@@ -110,6 +110,7 @@ int crcl_serialize_battery_state(
     const rosidl_message_type_support_t *ts = crcl_typesupport_battery_state();
     sensor_msgs__msg__BatteryState msg;
     if (!fill_battery_state(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, voltage, temperature, current, charge, capacity, design_capacity, percentage, power_supply_status, power_supply_health, power_supply_technology, present, cell_voltage_data, cell_voltage_count, cell_temperature_data, cell_temperature_count, location, serial_number)) {
+        fini_battery_state(&msg);
         return -1;  // crcl__set_error already called
     }
     rcutils_allocator_t alloc = rcutils_get_default_allocator();
@@ -168,6 +169,7 @@ int crcl_publish_battery_state(
     }
     sensor_msgs__msg__BatteryState msg;
     if (!fill_battery_state(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, voltage, temperature, current, charge, capacity, design_capacity, percentage, power_supply_status, power_supply_health, power_supply_technology, present, cell_voltage_data, cell_voltage_count, cell_temperature_data, cell_temperature_count, location, serial_number)) {
+        fini_battery_state(&msg);
         return -1;  // crcl__set_error already called
     }
     rcl_ret_t ret = rcl_publish(&pub->pub, &msg, NULL);

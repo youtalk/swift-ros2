@@ -90,6 +90,7 @@ int crcl_serialize_point_cloud2(
     const rosidl_message_type_support_t *ts = crcl_typesupport_point_cloud2();
     sensor_msgs__msg__PointCloud2 msg;
     if (!fill_point_cloud2(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, height, width, fields_name, fields_offset, fields_datatype, fields_count, fields_len, is_bigendian, point_step, row_step, data_data, data_count, is_dense)) {
+        fini_point_cloud2(&msg);
         return -1;  // crcl__set_error already called
     }
     rcutils_allocator_t alloc = rcutils_get_default_allocator();
@@ -141,6 +142,7 @@ int crcl_publish_point_cloud2(
     }
     sensor_msgs__msg__PointCloud2 msg;
     if (!fill_point_cloud2(&msg, header_stamp_sec, header_stamp_nanosec, header_frame_id, height, width, fields_name, fields_offset, fields_datatype, fields_count, fields_len, is_bigendian, point_step, row_step, data_data, data_count, is_dense)) {
+        fini_point_cloud2(&msg);
         return -1;  // crcl__set_error already called
     }
     rcl_ret_t ret = rcl_publish(&pub->pub, &msg, NULL);

@@ -17,6 +17,12 @@ typedef struct crcl_context_s crcl_context_t;
 typedef struct crcl_node_s crcl_node_t;
 typedef struct crcl_publisher_s crcl_publisher_t;
 
+// Generated per-type marshalling decls (crcl_serialize_<snake> /
+// crcl_publish_<snake> / crcl_typesupport_<snake>) plus the typesupport
+// resolver. Included after the crcl_publisher_t typedef the per-type headers
+// reference. Surfaced to Swift through the modulemap's `export *`.
+#include "crcl_marshal.h"
+
 /// QoS mapped from Swift TransportQoS (primitives only — no rmw types leak).
 typedef struct crcl_qos_s {
     int reliability;  // 0 = best_effort, 1 = reliable
@@ -39,38 +45,7 @@ void crcl_publisher_destroy(crcl_publisher_t *pub);
 /// Publish pre-serialized CDR bytes. Returns 0 on success, non-zero rcl_ret_t otherwise.
 int crcl_publish_serialized(crcl_publisher_t *pub, const uint8_t *data, size_t len);
 
-/// Serialize a sensor_msgs/msg/Imu from flat fields using the real ROS 2
-/// introspection serializer (rmw_serialize) — no node/context/participant.
-/// Each covariance pointer must reference exactly 9 doubles. On success writes
-/// a malloc'd CDR buffer (incl. the 4-byte encapsulation header) to *out_buf
-/// and its length to *out_len, and returns 0; the caller must crcl_free(*out_buf).
-/// Returns a non-zero rmw_ret_t on failure (see crcl_last_error()).
-int crcl_serialize_imu(
-    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
-    double orientation_x, double orientation_y, double orientation_z, double orientation_w,
-    const double *orientation_covariance,
-    double angular_velocity_x, double angular_velocity_y, double angular_velocity_z,
-    const double *angular_velocity_covariance,
-    double linear_acceleration_x, double linear_acceleration_y, double linear_acceleration_z,
-    const double *linear_acceleration_covariance,
-    uint8_t **out_buf, size_t *out_len);
-
-/// Marshal a sensor_msgs/msg/Imu from flat fields into its rosidl C struct and
-/// publish it via rcl_publish (real ROS 2 introspection serialization happens
-/// inside rmw_cyclonedds_cpp). `pub` must come from crcl_publisher_create with
-/// ros_type_name "sensor_msgs/msg/Imu". Each covariance pointer references 9
-/// doubles. Returns 0 on success, non-zero rcl_ret_t otherwise (crcl_last_error()).
-int crcl_publish_imu(
-    crcl_publisher_t *pub,
-    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
-    double orientation_x, double orientation_y, double orientation_z, double orientation_w,
-    const double *orientation_covariance,
-    double angular_velocity_x, double angular_velocity_y, double angular_velocity_z,
-    const double *angular_velocity_covariance,
-    double linear_acceleration_x, double linear_acceleration_y, double linear_acceleration_z,
-    const double *linear_acceleration_covariance);
-
-/// Free a buffer returned by crcl_serialize_imu.
+/// Free a buffer returned by a generated crcl_serialize_<type>.
 void crcl_free(uint8_t *buf);
 
 /// Write the canonical RIHS01 type-hash string (e.g. "RIHS01_7d9a00ff…") for a

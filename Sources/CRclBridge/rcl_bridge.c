@@ -17,10 +17,10 @@
 #include <rmw/rmw.h>                              // rmw_serialize
 #include <rosidl_runtime_c/string_functions.h>   // rosidl_runtime_c__String__assign / __fini
 #include <rosidl_runtime_c/type_hash.h>          // rosidl_type_hash_t, rosidl_stringify_type_hash
-// Use the rosidl_typesupport_c symbol (T in the static lib).
-// ROSIDL_GET_MSG_TYPE_SUPPORT expands to
-//   rosidl_typesupport_c__get_message_type_support_handle__sensor_msgs__msg__Imu()
-#include <sensor_msgs/msg/imu.h>
+// Publisher struct body + crcl__set_error / crcl__capture_rcl_error definitions.
+// (crcl_marshal_resolve_typesupport is declared via crcl_marshal.h, pulled in
+// by rcl_bridge.h above.)
+#include "crcl_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -31,10 +31,6 @@ struct crcl_context_s {
 };
 struct crcl_node_s {
     rcl_node_t node;
-};
-struct crcl_publisher_s {
-    rcl_publisher_t pub;
-    rcl_node_t *node;  // borrowed; node must outlive the publisher
 };
 
 #ifdef _Thread_local
@@ -54,14 +50,18 @@ static void capture_error(void) {
 }
 const char *crcl_last_error(void) { return g_err; }
 
-// Type-name -> typesupport table.
-// rosidl_typesupport_c symbol is defined (T) in CRos2Jazzy; use
-// ROSIDL_GET_MSG_TYPE_SUPPORT (from <sensor_msgs/msg/imu.h>) to obtain it.
+// Error helpers shared with the generated marshaller C sources (crcl_internal.h).
+void crcl__set_error(const char *msg) {
+    strncpy(g_err, msg, sizeof(g_err) - 1);
+    g_err[sizeof(g_err) - 1] = '\0';
+}
+void crcl__capture_rcl_error(void) { capture_error(); }
+
+// Type-name -> typesupport table. Delegates to the generated registry
+// (crcl_marshal_resolve_typesupport) so every emitted type resolves without a
+// hand-maintained switch here.
 static const rosidl_message_type_support_t *resolve_typesupport(const char *ros_type_name) {
-    if (strcmp(ros_type_name, "sensor_msgs/msg/Imu") == 0) {
-        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu);
-    }
-    return NULL;
+    return crcl_marshal_resolve_typesupport(ros_type_name);
 }
 
 crcl_context_t *crcl_context_create(size_t domain_id) {
@@ -202,121 +202,5 @@ int crcl_type_hash(const char *ros_type_name, char *out, size_t cap) {
     strncpy(out, s, cap - 1);
     out[cap - 1] = '\0';
     alloc.deallocate(s, alloc.state);
-    return 0;
-}
-
-// Fill a zero-initialized Imu struct from flat fields. header.frame_id is the
-// only heap member (via __assign); the caller must rosidl_runtime_c__String__fini
-// it (use fini_imu). Returns 1 on success, 0 on String__assign failure.
-static int fill_imu(
-    sensor_msgs__msg__Imu *msg,
-    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
-    double ox, double oy, double oz, double ow, const double *o_cov,
-    double avx, double avy, double avz, const double *av_cov,
-    double lax, double lay, double laz, const double *la_cov) {
-    memset(msg, 0, sizeof(*msg));
-    msg->header.stamp.sec = stamp_sec;
-    msg->header.stamp.nanosec = stamp_nanosec;
-    if (!rosidl_runtime_c__String__assign(&msg->header.frame_id, frame_id ? frame_id : "")) {
-        snprintf(g_err, sizeof(g_err), "String__assign failed for frame_id");
-        return 0;
-    }
-    msg->orientation.x = ox; msg->orientation.y = oy; msg->orientation.z = oz; msg->orientation.w = ow;
-    memcpy(msg->orientation_covariance, o_cov, 9 * sizeof(double));
-    msg->angular_velocity.x = avx; msg->angular_velocity.y = avy; msg->angular_velocity.z = avz;
-    memcpy(msg->angular_velocity_covariance, av_cov, 9 * sizeof(double));
-    msg->linear_acceleration.x = lax; msg->linear_acceleration.y = lay; msg->linear_acceleration.z = laz;
-    memcpy(msg->linear_acceleration_covariance, la_cov, 9 * sizeof(double));
-    return 1;
-}
-
-static void fini_imu(sensor_msgs__msg__Imu *msg) {
-    rosidl_runtime_c__String__fini(&msg->header.frame_id);
-}
-
-int crcl_serialize_imu(
-    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
-    double orientation_x, double orientation_y, double orientation_z, double orientation_w,
-    const double *orientation_covariance,
-    double angular_velocity_x, double angular_velocity_y, double angular_velocity_z,
-    const double *angular_velocity_covariance,
-    double linear_acceleration_x, double linear_acceleration_y, double linear_acceleration_z,
-    const double *linear_acceleration_covariance,
-    uint8_t **out_buf, size_t *out_len) {
-    const rosidl_message_type_support_t *ts = resolve_typesupport("sensor_msgs/msg/Imu");
-    if (!ts) {
-        snprintf(g_err, sizeof(g_err), "unsupported type: sensor_msgs/msg/Imu");
-        return -1;
-    }
-
-    sensor_msgs__msg__Imu msg;
-    if (!fill_imu(&msg, stamp_sec, stamp_nanosec, frame_id,
-                  orientation_x, orientation_y, orientation_z, orientation_w, orientation_covariance,
-                  angular_velocity_x, angular_velocity_y, angular_velocity_z, angular_velocity_covariance,
-                  linear_acceleration_x, linear_acceleration_y, linear_acceleration_z,
-                  linear_acceleration_covariance)) {
-        return -1;  // g_err set by fill_imu
-    }
-
-    rcutils_allocator_t alloc = rcutils_get_default_allocator();
-    rmw_serialized_message_t ser = rmw_get_zero_initialized_serialized_message();
-    rmw_ret_t rc = rmw_serialized_message_init(&ser, 0u, &alloc);
-    if (rc != RMW_RET_OK) {
-        capture_error();
-        fini_imu(&msg);
-        return (int)rc;
-    }
-
-    rc = rmw_serialize(&msg, ts, &ser);
-    if (rc != RMW_RET_OK) {
-        capture_error();
-        (void)rmw_serialized_message_fini(&ser);
-        fini_imu(&msg);
-        return (int)rc;
-    }
-
-    uint8_t *copy = malloc(ser.buffer_length);
-    if (!copy) {
-        snprintf(g_err, sizeof(g_err), "out-of-memory copying %zu serialized bytes", ser.buffer_length);
-        (void)rmw_serialized_message_fini(&ser);
-        fini_imu(&msg);
-        return -1;
-    }
-    memcpy(copy, ser.buffer, ser.buffer_length);
-    *out_buf = copy;
-    *out_len = ser.buffer_length;
-
-    (void)rmw_serialized_message_fini(&ser);
-    fini_imu(&msg);
-    return 0;
-}
-
-int crcl_publish_imu(
-    crcl_publisher_t *pub,
-    int32_t stamp_sec, uint32_t stamp_nanosec, const char *frame_id,
-    double orientation_x, double orientation_y, double orientation_z, double orientation_w,
-    const double *orientation_covariance,
-    double angular_velocity_x, double angular_velocity_y, double angular_velocity_z,
-    const double *angular_velocity_covariance,
-    double linear_acceleration_x, double linear_acceleration_y, double linear_acceleration_z,
-    const double *linear_acceleration_covariance) {
-    if (!pub) {
-        snprintf(g_err, sizeof(g_err), "crcl_publish_imu: null publisher");
-        return -1;
-    }
-    sensor_msgs__msg__Imu msg;
-    if (!fill_imu(&msg, stamp_sec, stamp_nanosec, frame_id,
-                  orientation_x, orientation_y, orientation_z, orientation_w, orientation_covariance,
-                  angular_velocity_x, angular_velocity_y, angular_velocity_z, angular_velocity_covariance,
-                  linear_acceleration_x, linear_acceleration_y, linear_acceleration_z,
-                  linear_acceleration_covariance)) {
-        return -1;  // g_err set by fill_imu
-    }
-    rcl_ret_t ret = rcl_publish(&pub->pub, &msg, NULL);
-    fini_imu(&msg);
-    if (ret != RCL_RET_OK) {
-        capture_error();
-        return (int)ret;
-    }
     return 0;
 }

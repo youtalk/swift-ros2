@@ -20,3 +20,11 @@
 # intentional feature addition that ships as a 1.3.0 minor. Drop this entry
 # once a tag is cut whose baseline already includes TransportType.rcl.
 API breakage: enumelement TransportType.rcl has been added as a new enum case
+
+# M3b (native RCL marshalling generator): a new `GeneratorError` case raised
+# when `--emit-rcl-marshalling --types` names a type absent from the parsed
+# packages (a typo guard). Source-additive (no removal) — the diagnose tool
+# flags any added enum case, but this is an intentional feature addition that
+# ships on the same 1.3.0 minor. Drop this entry once a tag is cut whose
+# baseline already includes GeneratorError.unknownRequestedTypes.
+API breakage: enumelement GeneratorError.unknownRequestedTypes has been added as a new enum case

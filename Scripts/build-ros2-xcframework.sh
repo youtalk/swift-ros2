@@ -52,7 +52,10 @@ DEPLOY_MAC=13.1
 # visionOS versions are 1.x — passing the iOS target (16.0) to the xros /
 # xrsimulator slices would be rejected by the visionOS SDK.
 DEPLOY_VISIONOS=1.0
-PKGS_UP_TO=(rcl "$RMW_PKG" builtin_interfaces std_msgs geometry_msgs sensor_msgs)
+# std_srvs + example_interfaces carry the service types the M7 service shim
+# registers (SetBool/Trigger/Empty, AddTwoInts); rcl_interfaces (parameter
+# services) is already in the closure via rcl.
+PKGS_UP_TO=(rcl "$RMW_PKG" builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces)
 # C++ test-only / lint vendor packages get dragged into the --packages-up-to
 # closure via <test_depend>, but never link into the runtime libraries. They
 # build shared libs / executables (e.g. osrf_testing_tools_cpp's malloc

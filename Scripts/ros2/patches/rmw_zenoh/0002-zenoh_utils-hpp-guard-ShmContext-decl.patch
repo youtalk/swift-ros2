@@ -1,0 +1,27 @@
+diff --git a/rmw_zenoh_cpp/src/detail/zenoh_utils.hpp b/rmw_zenoh_cpp/src/detail/zenoh_utils.hpp
+index 216421f..687118c 100644
+--- a/rmw_zenoh_cpp/src/detail/zenoh_utils.hpp
++++ b/rmw_zenoh_cpp/src/detail/zenoh_utils.hpp
+@@ -102,6 +102,7 @@ private:
+ };
+ 
+ ///=============================================================================
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+ struct ShmContext
+ {
+   size_t msgsize_threshold;
+@@ -110,6 +111,14 @@ struct ShmContext
+ 
+   std::optional<zenoh::SharedShmProvider> get_shm_provider(zenoh::Session & session);
+ };
++#else
++// Shared memory is not available in this zenoh-c build (e.g. iOS / Mac
++// Catalyst, where zenoh-shm does not compile). Keep an opaque forward
++// declaration so `ShmContext *` parameters and
++// `std::shared_ptr<ShmContext>` members still compile; the pointer is
++// always null and never dereferenced when SHM is compiled out.
++struct ShmContext;
++#endif
+ 
+ ///=============================================================================
+ class BufferPool

@@ -1,0 +1,94 @@
+diff --git a/rmw_zenoh_cpp/CMakeLists.txt b/rmw_zenoh_cpp/CMakeLists.txt
+index 80f3751..8f914a2 100644
+--- a/rmw_zenoh_cpp/CMakeLists.txt
++++ b/rmw_zenoh_cpp/CMakeLists.txt
+@@ -24,7 +24,10 @@ find_package(rmw REQUIRED)
+ find_package(tracetools REQUIRED)
+ find_package(zenoh_cpp_vendor REQUIRED)
+ 
+-add_library(rmw_zenoh_cpp SHARED
++# No explicit SHARED/STATIC keyword: let BUILD_SHARED_LIBS decide so the
++# library can be built as a static archive for platforms that disallow
++# runtime-loaded shared libraries (e.g. iOS / Mac Catalyst).
++add_library(rmw_zenoh_cpp
+   src/detail/attachment_helpers.cpp
+   src/detail/cdr.cpp
+   src/detail/event.cpp
+@@ -87,6 +90,22 @@ target_compile_definitions(rmw_zenoh_cpp
+ )
+ 
+ ament_export_targets(export_rmw_zenoh_cpp)
++# Static-build addition: with BUILD_SHARED_LIBS=OFF the PRIVATE link
++# dependencies above surface in the exported link interface (as
++# $<LINK_ONLY:...>), so consumers must be able to resolve those imported
++# targets. Exporting the dependencies makes the generated package config
++# find_dependency() each of them.
++ament_export_dependencies(
++  ament_index_cpp
++  fastcdr
++  rcpputils
++  rcutils
++  rosidl_typesupport_fastrtps_c
++  rosidl_typesupport_fastrtps_cpp
++  rmw
++  tracetools
++  zenoh_cpp_vendor
++)
+ 
+ register_rmw_implementation(
+   "c:rosidl_typesupport_c:rosidl_typesupport_fastrtps_c:rosidl_typesupport_introspection_c"
+@@ -124,27 +143,32 @@ install(
+   DESTINATION include
+ )
+ 
+-add_executable(rmw_zenohd
+-  src/detail/liveliness_utils.cpp
+-  src/detail/logging.cpp
+-  src/detail/qos.cpp
+-  src/detail/simplified_xxhash3.cpp
+-  src/detail/zenoh_config.cpp
+-  src/zenohd/main.cpp
+-)
+-
+-target_link_libraries(rmw_zenohd
+-  PRIVATE
+-    ament_index_cpp::ament_index_cpp
+-    rcutils::rcutils
+-    rcpputils::rcpputils
+-    rmw::rmw
+-    zenohcxx::zenohc
+-)
+-
+-install(
+-  TARGETS rmw_zenohd
+-  DESTINATION lib/${PROJECT_NAME}
+-)
++# The rmw_zenohd router executable is a host-side tool; skip it when
++# cross-compiling (e.g. for iOS / Mac Catalyst, where standalone
++# executables cannot be deployed anyway).
++if(NOT CMAKE_CROSSCOMPILING)
++  add_executable(rmw_zenohd
++    src/detail/liveliness_utils.cpp
++    src/detail/logging.cpp
++    src/detail/qos.cpp
++    src/detail/simplified_xxhash3.cpp
++    src/detail/zenoh_config.cpp
++    src/zenohd/main.cpp
++  )
++
++  target_link_libraries(rmw_zenohd
++    PRIVATE
++      ament_index_cpp::ament_index_cpp
++      rcutils::rcutils
++      rcpputils::rcpputils
++      rmw::rmw
++      zenohcxx::zenohc
++  )
++
++  install(
++    TARGETS rmw_zenohd
++    DESTINATION lib/${PROJECT_NAME}
++  )
++endif()
+ 
+ ament_package()

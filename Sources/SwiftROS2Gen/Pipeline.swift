@@ -1113,7 +1113,26 @@ extension Pipeline {
     /// File routing is via `relativePath` prefixes: `c/...` files belong under
     /// the `CRclBridge` target, `swift/...` files under `SwiftROS2RCL`. The CLI
     /// strips the leading prefix and writes under the matching output root.
-    public static func generateRclMarshalling(_ runs: [PackageRun]) throws -> [GeneratedFile] {
+    ///
+    /// - Parameters:
+    ///   - srvTypes: Canonical `"<pkg>/srv/<Type>"` names to register in the
+    ///     generated service typesupport registry (`crcl_srv_registry.c`).
+    ///     Per the M7 serialize-shim design no per-field service marshalling
+    ///     is emitted — only typesupport + `__create`/`__destroy` bindings.
+    ///     When empty, no service registry files are emitted at all.
+    ///   - registryOnlyTypes: Canonical `"<pkg>/msg/<Type>"` names that get a
+    ///     typesupport entry in the *message* registry
+    ///     (`crcl_marshal_registry.c`) without any generated marshal
+    ///     functions — for messages published over the serialized seam whose
+    ///     shape exceeds the flattener (first user:
+    ///     `rcl_interfaces/msg/ParameterEvent`). A name that is already in
+    ///     the marshalled emit set is skipped silently (the marshalled
+    ///     accessor already resolves it).
+    public static func generateRclMarshalling(
+        _ runs: [PackageRun],
+        srvTypes: [String] = [],
+        registryOnlyTypes: [String] = []
+    ) throws -> [GeneratedFile] {
         // Build the registry from allow-list-free runs so every nested
         // dependency (std_msgs/Header → builtin_interfaces/Time, …) is present
         // for flattening even when the caller passes a narrow `--types` filter
@@ -1168,6 +1187,23 @@ extension Pipeline {
             .sorted()
             .compactMap { registry[$0] }
 
+        // Registry-only message entries: typesupport binding in the message
+        // registry, no marshal functions. Validate against the registry so a
+        // typo'd name hard-fails instead of silently dropping the entry.
+        var registryOnlyIRs: [MessageIR] = []
+        var unknownRegistryOnly: [String] = []
+        for name in Set(registryOnlyTypes).sorted() {
+            if requestedRosNames.contains(name) { continue }
+            if let ir = registry[name], ir.kind == .msg {
+                registryOnlyIRs.append(ir)
+            } else {
+                unknownRegistryOnly.append(name)
+            }
+        }
+        if !unknownRegistryOnly.isEmpty {
+            throw GeneratorError.unknownRequestedTypes(unknownRegistryOnly)
+        }
+
         var files: [GeneratedFile] = []
         for ir in requestedIRs {
             let snake = CMarshalEmitter.snakeCase(ir.typeName)
@@ -1189,11 +1225,12 @@ extension Pipeline {
                 ))
         }
 
-        // Registry C file: typesupport resolver over all requested types.
+        // Registry C file: typesupport resolver over all requested types plus
+        // the registry-only entries.
         files.append(
             GeneratedFile(
                 relativePath: "c/Generated/crcl_marshal_registry.c",
-                contents: emitRegistryC(requestedIRs)
+                contents: emitRegistryC(requestedIRs, registryOnly: registryOnlyIRs)
             ))
         // Aggregator header.
         files.append(
@@ -1201,27 +1238,95 @@ extension Pipeline {
                 relativePath: "c/include/crcl_marshal.h",
                 contents: emitAggregatorHeader(requestedIRs)
             ))
+
+        // Service typesupport registry (M7 serialize-shim): emitted only when
+        // the caller requested service types, so message-only invocations keep
+        // producing the historical file set.
+        if !srvTypes.isEmpty {
+            // Parse services allow-list-free: the CLI's `--types` filter is a
+            // *message* allow-list and must not hide `.srv` files.
+            let srvRuns = runs.map { PackageRun(input: $0.input, typesAllowList: nil) }
+            var servicesByRosName: [String: CSrvRegistryEmitter.ServiceRef] = [:]
+            for run in srvRuns {
+                for svc in try parseServicesIn(run: run) {
+                    let ref = CSrvRegistryEmitter.ServiceRef(
+                        package: svc.package, typeName: svc.typeName)
+                    servicesByRosName[ref.rosName] = ref
+                }
+            }
+            var selected: [CSrvRegistryEmitter.ServiceRef] = []
+            var unknownSrvTypes: [String] = []
+            for name in Set(srvTypes).sorted() {
+                if let ref = servicesByRosName[name] {
+                    selected.append(ref)
+                } else {
+                    unknownSrvTypes.append(name)
+                }
+            }
+            if !unknownSrvTypes.isEmpty {
+                throw GeneratorError.unknownRequestedTypes(unknownSrvTypes)
+            }
+            files.append(
+                GeneratedFile(
+                    relativePath: "c/Generated/crcl_srv_registry.c",
+                    contents: CSrvRegistryEmitter.emit(selected)
+                ))
+            files.append(
+                GeneratedFile(
+                    relativePath: "c/include/Generated/crcl_srv_registry.h",
+                    contents: CSrvRegistryEmitter.emitHeader(selected)
+                ))
+        }
         return files
     }
 
     /// The `crcl_marshal_resolve_typesupport` resolver: a `strcmp` chain (sorted
     /// by ROS type name for determinism) mapping each requested type's ROS name
-    /// to its `crcl_typesupport_<snake>()` accessor.
-    private static func emitRegistryC(_ irs: [MessageIR]) -> String {
+    /// to its `crcl_typesupport_<snake>()` accessor. Registry-only types (no
+    /// marshal functions) resolve through `ROSIDL_GET_MSG_TYPE_SUPPORT`
+    /// directly — their rosidl umbrella headers are included here, and nothing
+    /// else is emitted for them.
+    private static func emitRegistryC(_ irs: [MessageIR], registryOnly: [MessageIR] = []) -> String {
         let sorted = irs.sorted { $0.rosTypeName < $1.rosTypeName }
+        let sortedRegistryOnly = registryOnly.sorted { $0.rosTypeName < $1.rosTypeName }
+        let marshalledNames = Set(sorted.map(\.rosTypeName))
         var lines: [String] = []
         lines.append("// Generated by swift-ros2-gen — DO NOT EDIT.")
         lines.append("")
         lines.append("#include \"crcl_marshal.h\"")
         lines.append("")
+        if !sortedRegistryOnly.isEmpty {
+            // Umbrella headers for the registry-only typesupport getters.
+            var includes: [String] = []
+            for ir in sortedRegistryOnly {
+                let header = "\(ir.package)/msg/\(CMarshalEmitter.snakeCase(ir.typeName)).h"
+                if !includes.contains(header) { includes.append(header) }
+            }
+            for header in includes.sorted() {
+                lines.append("#include <\(header)>")
+            }
+        }
         lines.append("#include <string.h>")
         lines.append("")
         lines.append(
             "const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char *name) {")
-        for ir in sorted {
-            let snake = CMarshalEmitter.snakeCase(ir.typeName)
-            lines.append("    if (strcmp(name, \"\(ir.rosTypeName)\") == 0) {")
-            lines.append("        return crcl_typesupport_\(snake)();")
+        // One sorted strcmp chain over marshalled + registry-only entries.
+        let entries: [(rosName: String, ir: MessageIR)] =
+            (sorted.map { ($0.rosTypeName, $0) }
+            + sortedRegistryOnly
+            .filter { !marshalledNames.contains($0.rosTypeName) }
+            .map { ($0.rosTypeName, $0) })
+            .sorted { $0.0 < $1.0 }
+        for entry in entries {
+            lines.append("    if (strcmp(name, \"\(entry.rosName)\") == 0) {")
+            if marshalledNames.contains(entry.rosName) {
+                let snake = CMarshalEmitter.snakeCase(entry.ir.typeName)
+                lines.append("        return crcl_typesupport_\(snake)();")
+            } else {
+                lines.append(
+                    "        return ROSIDL_GET_MSG_TYPE_SUPPORT(\(entry.ir.package), msg, \(entry.ir.typeName));"
+                )
+            }
             lines.append("    }")
         }
         lines.append("    return NULL;")

@@ -2,9 +2,13 @@
 
 #include "crcl_marshal.h"
 
+#include <rcl_interfaces/msg/parameter_event.h>
 #include <string.h>
 
 const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char *name) {
+    if (strcmp(name, "rcl_interfaces/msg/ParameterEvent") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, ParameterEvent);
+    }
     if (strcmp(name, "sensor_msgs/msg/BatteryState") == 0) {
         return crcl_typesupport_battery_state();
     }

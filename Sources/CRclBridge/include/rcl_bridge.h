@@ -24,6 +24,11 @@ typedef struct crcl_subscription_s crcl_subscription_t;
 // reference. Surfaced to Swift through the modulemap's `export *`.
 #include "crcl_marshal.h"
 
+// Service typesupport registry (M7 serialize-shim): crcl_srv_entry_t +
+// crcl_srv_registry_lookup. The table itself is generated into
+// Generated/crcl_srv_registry.c.
+#include "crcl_srv_registry.h"
+
 /// QoS mapped from Swift TransportQoS (primitives only — no rmw types leak).
 typedef struct crcl_qos_s {
     int reliability;  // 0 = best_effort, 1 = reliable

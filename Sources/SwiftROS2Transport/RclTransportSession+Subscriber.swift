@@ -24,7 +24,7 @@ extension RclTransportSession {
         let handle = try client.createSubscription(
             node: node, typeName: typeName, topic: topic, qos: qos, handler: handler)
         let sub = RclTransportSubscriber(client: client, handle: handle, topic: topic)
-        appendSubscriber(sub)
+        try appendSubscriber(sub)
         return sub
     }
 }

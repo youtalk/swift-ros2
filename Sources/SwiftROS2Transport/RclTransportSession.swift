@@ -138,8 +138,18 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         lock.unlock()
     }
 
-    func appendSubscriber(_ sub: RclTransportSubscriber) {
+    /// Register a created subscriber, re-checking that the session is still
+    /// open: if `close()` interleaved between `preflightSubscriber()` and the
+    /// client create call, the new subscription would escape teardown — its
+    /// wait thread never joined, its handler context leaked. Destroy it here
+    /// (joins the wait thread) and surface `notConnected` instead.
+    func appendSubscriber(_ sub: RclTransportSubscriber) throws {
         lock.lock()
+        guard isOpen else {
+            lock.unlock()
+            try? sub.close()
+            throw TransportError.notConnected
+        }
         subscribers.append(sub)
         lock.unlock()
     }

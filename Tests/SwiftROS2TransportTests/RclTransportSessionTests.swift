@@ -90,6 +90,9 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.subscriptionsCreated.first?.topic, "/imu")
         XCTAssertEqual(client.subscriptionsCreated.first?.typeName, "sensor_msgs/msg/Imu")
         XCTAssertEqual(client.subscriptionsCreated.first?.qos, qos)
+        // Node attachment by identity: the subscription must be created on the
+        // exact node handle registerNode produced, not a stale or wrong one.
+        XCTAssertTrue(client.subscriptionsCreated.first?.node === client.nodeHandles.first)
         XCTAssertEqual(sub.topic, "/imu")
         XCTAssertTrue(sub.isActive)
     }
@@ -133,6 +136,25 @@ final class RclTransportSessionTests: XCTestCase {
         try s.close()
         XCTAssertEqual(
             client.teardownEvents, ["subscription:/imu", "node:imu_node", "context"])
+    }
+
+    func testCreateSubscriberDuringCloseDestroysSubscriptionAndThrows() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        // Interleave close() into the preflight-create-append window: the
+        // just-created subscription must not escape teardown (wait thread
+        // joined via destroy) and the caller must see notConnected.
+        client.onCreateSubscription = { try? s.close() }
+        XCTAssertThrowsError(
+            try s.createSubscriber(
+                topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil,
+                qos: .sensorData, handler: { _, _ in })
+        ) { error in
+            guard case TransportError.notConnected = error else { return XCTFail("got \(error)") }
+        }
+        XCTAssertEqual(client.subscriptionsDestroyed.count, 1)
+        XCTAssertEqual(client.subscriptionsDestroyed.first?.topic, "/imu")
     }
 
     func testCreateSubscriberSurfacesUnsupportedTypeError() async throws {

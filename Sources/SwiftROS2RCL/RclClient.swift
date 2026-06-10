@@ -104,8 +104,17 @@ private final class RclSubscriptionBox: RclSubscriptionHandle, @unchecked Sendab
             // after it returns is it safe to release the retained closure
             // context, because no further callback invocations will
             // dereference it.
-            _ = crcl_subscription_destroy(p)
+            let rc = crcl_subscription_destroy(p)
             ptr = nil
+            if rc < 0 {
+                // The C side refused to destroy (self-destroy from the take
+                // callback, or a failed join): the wait thread may still
+                // invoke the callback, so the retained handler context must
+                // leak alongside the C subscription rather than be released
+                // under a live thread.
+                contextBox = nil
+                return
+            }
         }
         if let box = contextBox {
             box.release()

@@ -63,8 +63,15 @@ crcl_subscription_t *crcl_subscription_create(
 
 /// Destroy a subscription. Blocks until the wait thread has exited — and thus
 /// until any in-flight callback has returned — before finalizing the rcl
-/// entities. Returns 0 on success, non-zero if any fini failed (resources are
-/// freed regardless; see crcl_last_error()).
+/// entities. MUST NOT be called from the take callback (i.e. from the
+/// subscription's own wait thread): the join would be a self-join, so the
+/// call fails and the subscription is intentionally leaked rather than freed
+/// under the running thread. Returns 0 on success; positive if a fini failed
+/// (resources are still freed and the callback will never fire again);
+/// negative if the subscription could NOT be destroyed (self-call from the
+/// take callback, or the join failed) — the wait thread may still be running,
+/// the subscription leaks, and the caller MUST NOT free `ctx`. See
+/// crcl_last_error() for non-zero returns.
 int crcl_subscription_destroy(crcl_subscription_t *sub);
 
 /// Free a buffer returned by a generated crcl_serialize_<type>.

@@ -60,10 +60,13 @@ static void *crcl__sub_thread_main(void *arg) {
             continue;
         }
         if (atomic_load(&s->stop)) break;
-        // Drain: take until the middleware reports nothing pending. A fresh
-        // zero-capacity serialized message per take is acceptable (M4 plan);
+        // Drain: take until the middleware reports nothing pending, or a stop
+        // request arrives — re-checking the flag per take bounds destroy
+        // latency under sustained load (a fast publisher could otherwise keep
+        // this loop busy indefinitely). A fresh zero-capacity serialized
+        // message per take is acceptable (M4 plan);
         // rcl_take_serialized_message grows it as needed.
-        for (;;) {
+        while (!atomic_load(&s->stop)) {
             rcl_serialized_message_t msg = rmw_get_zero_initialized_serialized_message();
             rcutils_allocator_t alloc = rcutils_get_default_allocator();
             if (rmw_serialized_message_init(&msg, 0, &alloc) != RMW_RET_OK) {
@@ -162,6 +165,17 @@ crcl_subscription_t *crcl_subscription_create(
 
 int crcl_subscription_destroy(crcl_subscription_t *s) {
     if (!s) return 0;
+    // Refuse a self-destroy from the take callback: pthread_join on the
+    // calling thread cannot block on itself (Darwin/glibc return EDEADLK
+    // immediately), so proceeding to fini/free would leave the wait thread
+    // dereferencing freed memory the moment the callback returns. Leak the
+    // subscription instead and surface an error — destroy must be called
+    // from another thread.
+    if (pthread_equal(pthread_self(), s->thread)) {
+        crcl__set_error(
+            "crcl_subscription_destroy called from the take callback; destroy from another thread");
+        return -1;
+    }
     // Join BEFORE any fini: rcl take / fini are not thread-safe, and the wait
     // thread reads `sub` / `wait_set` until it exits. The guard condition is
     // the sanctioned cross-thread wakeup for rcl_wait, so the thread observes
@@ -171,19 +185,24 @@ int crcl_subscription_destroy(crcl_subscription_t *s) {
     // the retained handler context.
     atomic_store(&s->stop, true);
     (void)rcl_trigger_guard_condition(&s->stop_gc);
-    (void)pthread_join(s->thread, NULL);
+    if (pthread_join(s->thread, NULL) != 0) {
+        // The wait thread may still be running; fini/free now would race it.
+        // Leak instead of crash.
+        crcl__set_error("crcl_subscription_destroy: pthread_join failed");
+        return -1;
+    }
     int rc = 0;
     if (rcl_subscription_fini(&s->sub, s->node) != RCL_RET_OK) {
         crcl__capture_rcl_error();
-        rc = -1;
+        rc = 1;
     }
     if (rcl_guard_condition_fini(&s->stop_gc) != RCL_RET_OK) {
         crcl__capture_rcl_error();
-        rc = -1;
+        rc = 1;
     }
     if (rcl_wait_set_fini(&s->wait_set) != RCL_RET_OK) {
         crcl__capture_rcl_error();
-        rc = -1;
+        rc = 1;
     }
     free(s);
     return rc;

@@ -33,6 +33,7 @@ final class MockRclPublisher: RclPublisherHandle, @unchecked Sendable {
 }
 
 final class MockRclSubscription: RclSubscriptionHandle, @unchecked Sendable {
+    let node: any RclNodeHandle
     let topic: String
     let typeName: String
     let qos: TransportQoS
@@ -41,9 +42,10 @@ final class MockRclSubscription: RclSubscriptionHandle, @unchecked Sendable {
     private var destroyed = false
 
     init(
-        topic: String, typeName: String, qos: TransportQoS,
+        node: any RclNodeHandle, topic: String, typeName: String, qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) {
+        self.node = node
         self.topic = topic
         self.typeName = typeName
         self.qos = qos
@@ -82,6 +84,9 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     private(set) var contextDestroyed = false
     private(set) var lastDomainId: Int32 = -1
     private(set) var nodesCreated: [(name: String, namespace: String)] = []
+    /// Handles returned by createNode, in creation order — lets tests assert
+    /// entity-to-node attachment by identity.
+    private(set) var nodeHandles: [MockRclNode] = []
     private(set) var nodesDestroyed: [(name: String, namespace: String)] = []
     private(set) var publishersCreated: [(topic: String, typeName: String)] = []
     private(set) var publishedPayloads: [Data] = []
@@ -92,6 +97,10 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
 
     var createPublisherShouldThrow: TransportError?
     var createSubscriptionShouldThrow: TransportError?
+    /// Test hook: runs inside createSubscription before the handle is
+    /// returned — lets tests interleave a session close() into the
+    /// preflight-create-append window.
+    var onCreateSubscription: (() -> Void)?
 
     func createContext(domainId: Int32) throws {
         sync {
@@ -107,8 +116,12 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     func createNode(name: String, namespace: String) throws -> any RclNodeHandle {
-        sync { nodesCreated.append((name, namespace)) }
-        return MockRclNode(name: name, namespace: namespace)
+        let node = MockRclNode(name: name, namespace: namespace)
+        sync {
+            nodesCreated.append((name, namespace))
+            nodeHandles.append(node)
+        }
+        return node
     }
     func destroyNode(_ node: any RclNodeHandle) {
         guard let n = node as? MockRclNode else { return }
@@ -138,7 +151,9 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any RclSubscriptionHandle {
         if let e = createSubscriptionShouldThrow { throw e }
-        let sub = MockRclSubscription(topic: topic, typeName: typeName, qos: qos, handler: handler)
+        onCreateSubscription?()
+        let sub = MockRclSubscription(
+            node: node, topic: topic, typeName: typeName, qos: qos, handler: handler)
         sync { subscriptionsCreated.append(sub) }
         return sub
     }

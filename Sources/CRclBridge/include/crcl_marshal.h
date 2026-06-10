@@ -7,9 +7,15 @@
 
 #include "Generated/crcl_marshal_battery_state.h"
 #include "Generated/crcl_marshal_compressed_image.h"
+#include "Generated/crcl_marshal_fluid_pressure.h"
+#include "Generated/crcl_marshal_illuminance.h"
 #include "Generated/crcl_marshal_imu.h"
 #include "Generated/crcl_marshal_joy.h"
+#include "Generated/crcl_marshal_magnetic_field.h"
+#include "Generated/crcl_marshal_nav_sat_fix.h"
 #include "Generated/crcl_marshal_point_cloud2.h"
+#include "Generated/crcl_marshal_range.h"
+#include "Generated/crcl_marshal_temperature.h"
 
 #ifdef __cplusplus
 extern "C" {

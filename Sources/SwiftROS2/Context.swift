@@ -5,7 +5,13 @@ import Foundation
 import SwiftROS2DDS
 import SwiftROS2Transport
 import SwiftROS2Wire
-import SwiftROS2Zenoh
+
+// Absent when the zenoh-rmw RCL variant is selected (SWIFT_ROS2_RCL_RMW=zenoh):
+// zenoh-pico and the variant's bundled zenoh-c export the same zenoh C API and
+// cannot link into one binary, so the manifest carves the wire family out.
+#if canImport(SwiftROS2Zenoh)
+    import SwiftROS2Zenoh
+#endif
 
 #if SWIFT_ROS2_RCL
     import SwiftROS2RCL
@@ -172,7 +178,13 @@ extension ROS2Context {
     static func makeDefaultSession(for config: TransportConfig) throws -> any TransportSession {
         switch config.type {
         case .zenoh:
-            return ZenohTransportSession(client: ZenohClient())
+            #if canImport(SwiftROS2Zenoh)
+                return ZenohTransportSession(client: ZenohClient())
+            #else
+                throw TransportError.unsupportedFeature(
+                    "zenoh wire transport is carved out of the zenoh-rmw RCL build "
+                        + "(SWIFT_ROS2_RCL_RMW=zenoh) — use .rcl, or build without the variant")
+            #endif
         case .dds:
             return DDSTransportSession(client: DDSClient())
         case .rcl:

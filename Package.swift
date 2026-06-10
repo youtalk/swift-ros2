@@ -88,6 +88,29 @@ let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.
 // smoke executable. Replaced by a URL+checksum binaryTarget in M3.
 let enableRcl = Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1" && targetOS == "apple"
 
+// SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the RCL binary
+// target: "cyclonedds" (default) -> build/ros2/CRos2Jazzy.xcframework, or
+// "zenoh" -> build/ros2zenoh/CRos2JazzyZenoh.xcframework (rmw_zenoh_cpp +
+// fastrtps typesupport; build with
+// `RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`). Both variants
+// expose the identical rcl C API under the same module name, so every Swift
+// target is variant-agnostic.
+let rclRmwVariant: String = {
+    let raw = Context.environment["SWIFT_ROS2_RCL_RMW"] ?? "cyclonedds"
+    guard ["cyclonedds", "zenoh"].contains(raw) else {
+        fatalError("SWIFT_ROS2_RCL_RMW must be 'cyclonedds' or 'zenoh'; got '\(raw)'")
+    }
+    return raw
+}()
+
+// zenoh-pico (the wire path) and zenoh-c (bundled inside CRos2JazzyZenoh)
+// both export the standard zenoh C API, so they cannot link into one binary.
+// Selecting the zenoh rmw variant therefore carves the zenoh-pico wire family
+// (CZenohPico / CZenohBridge / SwiftROS2Zenoh + its tests) out of the build
+// graph; the umbrella's `.zenoh` transport arm compiles out via
+// `#if canImport(SwiftROS2Zenoh)` and throws unsupportedFeature at runtime.
+let dropZenohWire = enableRcl && rclRmwVariant == "zenoh"
+
 // Non-unix zenoh-pico platform backends shared between the Linux and
 // Android arms — both use the unix backend inside `src/system/unix`.
 let zenohPicoNonUnixBackends = [
@@ -167,7 +190,6 @@ var products: [Product] = [
     .library(name: "SwiftROS2Messages", targets: ["SwiftROS2Messages"]),
     .library(name: "SwiftROS2Wire", targets: ["SwiftROS2Wire"]),
     .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
-    .library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]),
     .library(name: "SwiftROS2Gen", targets: ["SwiftROS2Gen"]),
     .executable(name: "swift-ros2-gen", targets: ["swift-ros2-gen"]),
     .plugin(name: "SwiftROS2GenPlugin", targets: ["SwiftROS2GenPlugin"]),
@@ -203,40 +225,6 @@ var targets: [Target] = [
         path: "Sources/SwiftROS2Transport"
     ),
 
-    // Native C FFI for zenoh-pico. Apple platforms receive the pre-built
-    // xcframework; Linux, Windows, and Android compile from source using
-    // the matching platform backend inside vendor/zenoh-pico.
-    cZenohPico,
-
-    // C bridge for zenoh-pico (Conduit-authored FFI shim).
-    .target(
-        name: "CZenohBridge",
-        dependencies: ["CZenohPico"],
-        path: "Sources/CZenohBridge",
-        sources: ["zenoh_bridge.c"],
-        publicHeadersPath: "include",
-        cSettings: [
-            .define("ZENOH_MACOS", to: "1", .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
-            .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
-            .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
-            .define("ZENOH_ANDROID", to: "1", .when(platforms: [.android])),
-            .define("Z_FEATURE_LINK_TCP", to: "1"),
-            .define("Z_FEATURE_LIVELINESS", to: "1"),
-        ],
-        linkerSettings: [
-            .linkedLibrary("Ws2_32", .when(platforms: [.windows])),
-            .linkedLibrary("Iphlpapi", .when(platforms: [.windows])),
-        ]
-    ),
-
-    // Swift-facing Zenoh module — hosts ZenohClient, the default
-    // implementation of ZenohClientProtocol defined in SwiftROS2Transport.
-    .target(
-        name: "SwiftROS2Zenoh",
-        dependencies: ["CZenohBridge", "SwiftROS2Transport", "SwiftROS2Wire"],
-        path: "Sources/SwiftROS2Zenoh"
-    ),
-
     // Pure-Swift and Zenoh-path tests (available on every platform)
     .testTarget(
         name: "SwiftROS2CDRTests",
@@ -247,11 +235,6 @@ var targets: [Target] = [
         name: "SwiftROS2WireTests",
         dependencies: ["SwiftROS2Wire"],
         path: "Tests/SwiftROS2WireTests"
-    ),
-    .testTarget(
-        name: "SwiftROS2ZenohTests",
-        dependencies: ["SwiftROS2Zenoh"],
-        path: "Tests/SwiftROS2ZenohTests"
     ),
     .testTarget(
         name: "SwiftROS2TransportTests",
@@ -337,6 +320,54 @@ var targets: [Target] = [
         path: "Tests/SwiftROS2GenPluginTests"
     ),
 ]
+
+// zenoh-pico wire family — every platform EXCEPT the zenoh-rmw RCL variant
+// (symbol collision with zenoh-c; see `dropZenohWire` above).
+if !dropZenohWire {
+    products.append(.library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]))
+    targets.append(contentsOf: [
+        // Native C FFI for zenoh-pico. Apple platforms receive the pre-built
+        // xcframework; Linux, Windows, and Android compile from source using
+        // the matching platform backend inside vendor/zenoh-pico.
+        cZenohPico,
+
+        // C bridge for zenoh-pico (Conduit-authored FFI shim).
+        .target(
+            name: "CZenohBridge",
+            dependencies: ["CZenohPico"],
+            path: "Sources/CZenohBridge",
+            sources: ["zenoh_bridge.c"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .define(
+                    "ZENOH_MACOS", to: "1",
+                    .when(platforms: [.macOS, .macCatalyst, .iOS, .visionOS])),
+                .define("ZENOH_LINUX", to: "1", .when(platforms: [.linux])),
+                .define("ZENOH_WINDOWS", to: "1", .when(platforms: [.windows])),
+                .define("ZENOH_ANDROID", to: "1", .when(platforms: [.android])),
+                .define("Z_FEATURE_LINK_TCP", to: "1"),
+                .define("Z_FEATURE_LIVELINESS", to: "1"),
+            ],
+            linkerSettings: [
+                .linkedLibrary("Ws2_32", .when(platforms: [.windows])),
+                .linkedLibrary("Iphlpapi", .when(platforms: [.windows])),
+            ]
+        ),
+
+        // Swift-facing Zenoh module — hosts ZenohClient, the default
+        // implementation of ZenohClientProtocol defined in SwiftROS2Transport.
+        .target(
+            name: "SwiftROS2Zenoh",
+            dependencies: ["CZenohBridge", "SwiftROS2Transport", "SwiftROS2Wire"],
+            path: "Sources/SwiftROS2Zenoh"
+        ),
+        .testTarget(
+            name: "SwiftROS2ZenohTests",
+            dependencies: ["SwiftROS2Zenoh"],
+            path: "Tests/SwiftROS2ZenohTests"
+        ),
+    ])
+}
 
 // DDS path + the SwiftROS2 umbrella + examples + umbrella-level tests.
 // These are only included on platforms where CycloneDDS is consumable
@@ -430,8 +461,11 @@ if canBuildDDS {
     ])
 
     var swiftROS2Deps: [Target.Dependency] = [
-        "SwiftROS2Messages", "SwiftROS2Transport", "SwiftROS2Wire", "SwiftROS2Zenoh", "SwiftROS2DDS",
+        "SwiftROS2Messages", "SwiftROS2Transport", "SwiftROS2Wire", "SwiftROS2DDS",
     ]
+    if !dropZenohWire {
+        swiftROS2Deps.append("SwiftROS2Zenoh")
+    }
     var swiftROS2SwiftSettings: [SwiftSetting] = []
     if enableRcl {
         swiftROS2Deps.append("SwiftROS2RCL")
@@ -522,19 +556,6 @@ if canBuildDDS {
 // M0-only native-rcl spike: local CRos2Jazzy xcframework + rcl_init smoke
 // executable, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple only).
 //
-// SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the binary target:
-// "cyclonedds" (default) -> build/ros2/CRos2Jazzy.xcframework, or "zenoh" ->
-// build/ros2zenoh/CRos2JazzyZenoh.xcframework (rmw_zenoh_cpp + fastrtps
-// typesupport; build with `RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`).
-// Both variants expose the identical rcl C API under the same module name, so
-// every Swift target is variant-agnostic.
-let rclRmwVariant: String = {
-    let raw = Context.environment["SWIFT_ROS2_RCL_RMW"] ?? "cyclonedds"
-    guard ["cyclonedds", "zenoh"].contains(raw) else {
-        fatalError("SWIFT_ROS2_RCL_RMW must be 'cyclonedds' or 'zenoh'; got '\(raw)'")
-    }
-    return raw
-}()
 if enableRcl {
     targets.append(
         .binaryTarget(
@@ -543,14 +564,28 @@ if enableRcl {
                 ? "build/ros2zenoh/CRos2JazzyZenoh.xcframework"
                 : "build/ros2/CRos2Jazzy.xcframework"
         ))
+    // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++, so every target
+    // that links the merged archive needs the C++ runtime. The zenoh variant
+    // additionally bundles zenoh-c's Rust staticlib, whose rustls/ring TLS,
+    // network monitoring, and serialport (transport_serial feature) code
+    // require these system frameworks at final link. Applied to CRclBridge
+    // AND to targets that depend on CRos2Jazzy directly (rcl-smoke).
+    let rclBridgeLinkerSettings: [LinkerSetting] =
+        rclRmwVariant == "zenoh"
+        ? [
+            .linkedLibrary("c++"),
+            .linkedFramework("Security"),
+            .linkedFramework("SystemConfiguration"),
+            .linkedFramework("CoreFoundation"),
+            .linkedFramework("IOKit"),
+        ]
+        : [.linkedLibrary("c++")]
     targets.append(
         .executableTarget(
             name: "rcl-smoke",
             dependencies: ["CRos2Jazzy"],
             path: "Sources/Examples/RclSmoke",
-            // rmw_cyclonedds_cpp / rcpputils / rmw_dds_common in CRos2Jazzy are
-            // C++; a C executable target must link the C++ runtime explicitly.
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: rclBridgeLinkerSettings
         ))
     products.append(.executable(name: "rcl-smoke", targets: ["rcl-smoke"]))
     targets.append(
@@ -560,8 +595,7 @@ if enableRcl {
             path: "Sources/CRclBridge",
             sources: ["rcl_bridge.c", "rcl_subscription.c", "Generated"],
             publicHeadersPath: "include",
-            // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++.
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: rclBridgeLinkerSettings
         ))
     targets.append(
         .executableTarget(

@@ -16,7 +16,7 @@ if(NOT TARGET __zenohc_static)
     add_library(zenohc::static ALIAS __zenohc_static)
     # Frameworks the Rust staticlib needs at final link on Apple platforms.
     target_link_libraries(__zenohc_static INTERFACE
-        "-framework Security" "-framework SystemConfiguration" "-framework CoreFoundation")
+        "-framework Security" "-framework SystemConfiguration" "-framework CoreFoundation" "-framework IOKit")
     set_target_properties(__zenohc_static PROPERTIES
         IMPORTED_LOCATION "${_zenohc_prefix}/lib/libzenohc.a"
         INTERFACE_INCLUDE_DIRECTORIES "${_zenohc_prefix}/include"

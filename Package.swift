@@ -593,7 +593,7 @@ if enableRcl {
             name: "CRclBridge",
             dependencies: ["CRos2Jazzy"],
             path: "Sources/CRclBridge",
-            sources: ["rcl_bridge.c", "rcl_subscription.c", "Generated"],
+            sources: ["rcl_bridge.c", "rcl_subscription.c", "rcl_service.c", "rcl_client.c", "Generated"],
             publicHeadersPath: "include",
             linkerSettings: rclBridgeLinkerSettings
         ))

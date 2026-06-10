@@ -11,14 +11,32 @@ const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char
     if (strcmp(name, "sensor_msgs/msg/CompressedImage") == 0) {
         return crcl_typesupport_compressed_image();
     }
+    if (strcmp(name, "sensor_msgs/msg/FluidPressure") == 0) {
+        return crcl_typesupport_fluid_pressure();
+    }
+    if (strcmp(name, "sensor_msgs/msg/Illuminance") == 0) {
+        return crcl_typesupport_illuminance();
+    }
     if (strcmp(name, "sensor_msgs/msg/Imu") == 0) {
         return crcl_typesupport_imu();
     }
     if (strcmp(name, "sensor_msgs/msg/Joy") == 0) {
         return crcl_typesupport_joy();
     }
+    if (strcmp(name, "sensor_msgs/msg/MagneticField") == 0) {
+        return crcl_typesupport_magnetic_field();
+    }
+    if (strcmp(name, "sensor_msgs/msg/NavSatFix") == 0) {
+        return crcl_typesupport_nav_sat_fix();
+    }
     if (strcmp(name, "sensor_msgs/msg/PointCloud2") == 0) {
         return crcl_typesupport_point_cloud2();
+    }
+    if (strcmp(name, "sensor_msgs/msg/Range") == 0) {
+        return crcl_typesupport_range();
+    }
+    if (strcmp(name, "sensor_msgs/msg/Temperature") == 0) {
+        return crcl_typesupport_temperature();
     }
     return NULL;
 }

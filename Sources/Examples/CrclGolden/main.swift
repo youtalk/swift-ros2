@@ -159,5 +159,61 @@ goldenCheck(
     ),
     rclSerializePointCloud2)
 
+// M3c — the remaining scalar-shape sensor types Conduit streams (finite
+// values only; NavSatFix carries a non-default NavSatStatus so the nested
+// single-message flattening is actually exercised).
+goldenCheck(
+    "sensor_msgs/MagneticField",
+    MagneticField(
+        header: Header(stamp: Time(sec: 11, nanosec: 12), frameId: "mag"),
+        magneticField: Vector3(x: 22.5e-6, y: -1.3e-6, z: 48.0e-6),
+        magneticFieldCovariance: [0.1, 0, 0, 0, 0.2, 0, 0, 0, 0.3]
+    ),
+    rclSerializeMagneticField)
+
+goldenCheck(
+    "sensor_msgs/FluidPressure",
+    FluidPressure(
+        header: Header(stamp: Time(sec: 13, nanosec: 14), frameId: "baro"),
+        fluidPressure: 101_325.0, variance: 2.5
+    ),
+    rclSerializeFluidPressure)
+
+goldenCheck(
+    "sensor_msgs/Illuminance",
+    Illuminance(
+        header: Header(stamp: Time(sec: 15, nanosec: 16), frameId: "als"),
+        illuminance: 430.75, variance: 1.25
+    ),
+    rclSerializeIlluminance)
+
+goldenCheck(
+    "sensor_msgs/NavSatFix",
+    NavSatFix(
+        header: Header(stamp: Time(sec: 17, nanosec: 18), frameId: "gps"),
+        status: NavSatStatus(status: 1, service: 3),
+        latitude: 35.6812, longitude: 139.7671, altitude: 40.5,
+        positionCovariance: [1, 0, 0, 0, 1, 0, 0, 0, 4],
+        positionCovarianceType: 2
+    ),
+    rclSerializeNavSatFix)
+
+goldenCheck(
+    "sensor_msgs/Range",
+    Range(
+        header: Header(stamp: Time(sec: 19, nanosec: 20), frameId: "prox"),
+        radiationType: 1, fieldOfView: 0.5, minRange: 0.02, maxRange: 4.0,
+        range: 1.25, variance: 0.01
+    ),
+    rclSerializeRange)
+
+goldenCheck(
+    "sensor_msgs/Temperature",
+    Temperature(
+        header: Header(stamp: Time(sec: 21, nanosec: 22), frameId: "thermal"),
+        temperature: 36.5, variance: 0.05
+    ),
+    rclSerializeTemperature)
+
 fflush(stdout)
 exit(0)

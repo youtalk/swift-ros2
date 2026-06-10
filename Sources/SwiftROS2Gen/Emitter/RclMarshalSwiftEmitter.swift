@@ -181,9 +181,13 @@ public enum RclMarshalSwiftEmitter {
         // 120-column lint limit regardless of how many flat params a message
         // expands to.
         if openers.isEmpty {
+            // `resultDecl` already carries its own indentation, but
+            // `callExprLines` prepends `indentBase` to its first line — strip
+            // the decl's leading spaces so the indent isn't applied twice.
+            let decl = String(resultDecl.drop(while: { $0 == " " }))
             lines.append(
                 contentsOf: callExprLines(
-                    resultDecl + " " + innerExprPrefix, callArgs, innerExprSuffix, baseIndent))
+                    decl + " " + innerExprPrefix, callArgs, innerExprSuffix, baseIndent))
         } else {
             lines.append(resultDecl)
             for (i, opener) in openers.enumerated() {

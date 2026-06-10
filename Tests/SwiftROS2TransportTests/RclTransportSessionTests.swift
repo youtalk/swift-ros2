@@ -62,16 +62,116 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.nodesDestroyed.first?.name, "imu_node")
     }
 
-    func testCreateSubscriberUnsupported() async throws {
+    // MARK: - Subscriber (M4)
+
+    func testCreateSubscriberRequiresNode() async throws {
         let s = try await openSession()
         XCTAssertThrowsError(
             try s.createSubscriber(
-                topic: "/t", typeName: "std_msgs/msg/String", typeHash: nil,
+                topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil,
                 qos: .sensorData, handler: { _, _ in })
         ) { error in
-            guard case TransportError.unsupportedFeature = error else {
+            guard case TransportError.subscriberCreationFailed = error else {
                 return XCTFail("got \(error)")
             }
+        }
+    }
+
+    func testCreateSubscriberAttachesToCurrentNodeAndPassesQoS() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let qos = TransportQoS(
+            reliability: .bestEffort, durability: .transientLocal, history: .keepLast(5))
+        let sub = try s.createSubscriber(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil,
+            qos: qos, handler: { _, _ in })
+        XCTAssertEqual(client.subscriptionsCreated.count, 1)
+        XCTAssertEqual(client.subscriptionsCreated.first?.topic, "/imu")
+        XCTAssertEqual(client.subscriptionsCreated.first?.typeName, "sensor_msgs/msg/Imu")
+        XCTAssertEqual(client.subscriptionsCreated.first?.qos, qos)
+        // Node attachment by identity: the subscription must be created on the
+        // exact node handle registerNode produced, not a stale or wrong one.
+        XCTAssertTrue(client.subscriptionsCreated.first?.node === client.nodeHandles.first)
+        XCTAssertEqual(sub.topic, "/imu")
+        XCTAssertTrue(sub.isActive)
+    }
+
+    func testSubscriberHandlerReceivesDataAndTimestamp() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let received = Box<[(Data, UInt64)]>([])
+        _ = try s.createSubscriber(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil,
+            qos: .sensorData, handler: { data, ts in received.value.append((data, ts)) })
+        let cdr = Data([0x00, 0x01, 0x00, 0x00, 0xBE, 0xEF])
+        client.subscriptionsCreated[0].fire(cdr, timestamp: 42)
+        XCTAssertEqual(received.value.count, 1)
+        XCTAssertEqual(received.value.first?.0, cdr)
+        XCTAssertEqual(received.value.first?.1, 42)
+    }
+
+    func testSubscriberCloseDestroysExactlyOnce() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let sub = try s.createSubscriber(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil,
+            qos: .sensorData, handler: { _, _ in })
+        try sub.close()
+        try sub.close()  // idempotent
+        XCTAssertFalse(sub.isActive)
+        XCTAssertEqual(client.subscriptionsDestroyed.count, 1)
+        XCTAssertEqual(client.subscriptionsDestroyed.first?.topic, "/imu")
+    }
+
+    func testCloseDestroysSubscribersBeforeNodesAndContext() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        _ = try s.createSubscriber(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil,
+            qos: .sensorData, handler: { _, _ in })
+        try s.close()
+        XCTAssertEqual(
+            client.teardownEvents, ["subscription:/imu", "node:imu_node", "context"])
+    }
+
+    func testCreateSubscriberDuringCloseDestroysSubscriptionAndThrows() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        // Interleave close() into the preflight-create-append window: the
+        // just-created subscription must not escape teardown (wait thread
+        // joined via destroy) and the caller must see notConnected.
+        client.onCreateSubscription = { try? s.close() }
+        XCTAssertThrowsError(
+            try s.createSubscriber(
+                topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil,
+                qos: .sensorData, handler: { _, _ in })
+        ) { error in
+            guard case TransportError.notConnected = error else { return XCTFail("got \(error)") }
+        }
+        XCTAssertEqual(client.subscriptionsDestroyed.count, 1)
+        XCTAssertEqual(client.subscriptionsDestroyed.first?.topic, "/imu")
+    }
+
+    func testCreateSubscriberSurfacesUnsupportedTypeError() async throws {
+        let client = MockRclClient()
+        client.createSubscriptionShouldThrow =
+            .subscriberCreationFailed("unsupported type: foo_msgs/msg/Bar")
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        XCTAssertThrowsError(
+            try s.createSubscriber(
+                topic: "/bar", typeName: "foo_msgs/msg/Bar", typeHash: nil,
+                qos: .sensorData, handler: { _, _ in })
+        ) { error in
+            guard case TransportError.subscriberCreationFailed(let msg) = error else {
+                return XCTFail("got \(error)")
+            }
+            XCTAssertTrue(msg.contains("unsupported type"))
         }
     }
 

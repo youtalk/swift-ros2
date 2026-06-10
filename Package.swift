@@ -542,7 +542,7 @@ if enableRcl {
             name: "CRclBridge",
             dependencies: ["CRos2Jazzy"],
             path: "Sources/CRclBridge",
-            sources: ["rcl_bridge.c", "Generated"],
+            sources: ["rcl_bridge.c", "rcl_subscription.c", "Generated"],
             publicHeadersPath: "include",
             // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++.
             linkerSettings: [.linkedLibrary("c++")]
@@ -563,6 +563,14 @@ if enableRcl {
             linkerSettings: [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-golden", targets: ["crcl-golden"]))
+    targets.append(
+        .executableTarget(
+            name: "crcl-loopback",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/CrclLoopback",
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    products.append(.executable(name: "crcl-loopback", targets: ["crcl-loopback"]))
     targets.append(
         .target(
             name: "SwiftROS2RCL",

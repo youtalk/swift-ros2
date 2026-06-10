@@ -125,3 +125,25 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "crcl_golden OK:"
           ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
+
+      # In-process pub/sub round-trip (M4): typed rcl_publish -> CycloneDDS
+      # local delivery -> rcl_take_serialized_message -> CDRDecoder for
+      # sensor_msgs/Imu, through the public createPublisher /
+      # createSubscription API — the per-subscription wait-set thread and the
+      # Unmanaged handler trampoline run under AddressSanitizer. The loopback
+      # spins up a real DDS participant, so discovery settle + teardown can
+      # block on a headless runner: bound the run (alarm 120 — 2 s settle +
+      # 15 s receive deadline + ASan slowdown) and decide success on the OK
+      # line + the absence of any ASan/leak report.
+      - name: Build + run crcl-loopback (Catalyst, ASan)
+        run: |
+          xcodebuild -scheme crcl-loopback \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            -derivedDataPath build/dd-ci-crclloopback -enableAddressSanitizer YES \
+            build CODE_SIGNING_ALLOWED=NO
+          bin="$(find build/dd-ci-crclloopback -name crcl-loopback -type f -perm +111 | head -1)"
+          echo "Running loopback: $bin"
+          out="$(perl -e 'alarm 120; exec @ARGV' "$bin" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "crcl_loopback OK:"
+          ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"

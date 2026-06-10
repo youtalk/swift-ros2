@@ -1,0 +1,67 @@
+diff --git a/rmw_zenoh_cpp/src/detail/rmw_context_impl_s.cpp b/rmw_zenoh_cpp/src/detail/rmw_context_impl_s.cpp
+index 5c64982..308e1f7 100644
+--- a/rmw_zenoh_cpp/src/detail/rmw_context_impl_s.cpp
++++ b/rmw_zenoh_cpp/src/detail/rmw_context_impl_s.cpp
+@@ -40,6 +40,7 @@
+ #include "rmw/error_handling.h"
+ #include "zenoh_utils.hpp"
+ 
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+ // Megabytes of SHM to reserve.
+ // TODO(clalancette): Make this configurable, or get it from the configuration
+ #define SHM_BUFFER_SIZE_MB 10
+@@ -51,6 +52,7 @@ static const char * CONFIG_KEY_SHM_POOL_SIZE =
+ // Zenoh config key for SHM threshold size
+ static const char * CONFIG_KEY_SHM_THRESHOLD_SIZE =
+   "transport/shared_memory/transport_optimization/message_size_threshold";
++#endif  // Z_FEATURE_SHARED_MEMORY && Z_FEATURE_UNSTABLE_API
+ 
+ 
+ // Bundle all class members into a data struct which can be passed as a
+@@ -259,6 +261,7 @@ private:
+     }
+ 
+     // Insert or replace some Config parameters based on environment variables.
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+     {
+       // Handle SHM allocation size.
+       if (const auto shm_alloc_size = rmw_zenoh_cpp::zenoh_shm_alloc_size() ) {
+@@ -282,9 +285,11 @@ private:
+           std::to_string(shm_threshold.value()));
+       }
+     }
++#endif  // Z_FEATURE_SHARED_MEMORY && Z_FEATURE_UNSTABLE_API
+ 
+     zenoh::ZResult result;
+ 
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+     // Get shm configuration.
+     bool shm_enabled = false;
+     std::size_t shm_pool_size = 0;
+@@ -356,6 +361,7 @@ private:
+           CONFIG_KEY_SHM_POOL_SIZE);
+       }
+     }
++#endif  // Z_FEATURE_SHARED_MEMORY && Z_FEATURE_UNSTABLE_API
+ 
+     // Initialize the zenoh session.
+     session_ = std::make_shared<zenoh::Session>(
+@@ -451,6 +457,7 @@ private:
+       }
+     }
+ 
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+     // Initialize the shm subsystem if shared_memory is enabled in the config
+     if (shm_enabled) {
+       RMW_ZENOH_LOG_DEBUG_NAMED("rmw_zenoh_cpp",
+@@ -464,6 +471,10 @@ private:
+     } else {
+       RMW_ZENOH_LOG_DEBUG_NAMED("rmw_zenoh_cpp", "SHM is disabled");
+     }
++#else
++    RMW_ZENOH_LOG_DEBUG_NAMED(
++      "rmw_zenoh_cpp", "SHM is not available in this build");
++#endif  // Z_FEATURE_SHARED_MEMORY && Z_FEATURE_UNSTABLE_API
+ 
+     graph_guard_condition_ = std::make_unique<rmw_guard_condition_t>();
+     graph_guard_condition_->implementation_identifier = rmw_zenoh_cpp::rmw_zenoh_identifier;

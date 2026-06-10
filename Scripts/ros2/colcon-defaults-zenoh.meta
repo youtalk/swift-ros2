@@ -1,0 +1,13 @@
+{
+  "names": {
+    "rmw_implementation": {
+      "cmake-args": [
+        "-DRMW_IMPLEMENTATION=rmw_zenoh_cpp",
+        "-DRMW_IMPLEMENTATION_DISABLE_RUNTIME_SELECTION=ON"
+      ]
+    },
+    "rcl": {
+      "cmake-args": ["-DRCL_LOGGING_IMPLEMENTATION=rcl_logging_noop"]
+    }
+  }
+}

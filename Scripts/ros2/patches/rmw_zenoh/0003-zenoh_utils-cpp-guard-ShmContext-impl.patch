@@ -1,0 +1,20 @@
+diff --git a/rmw_zenoh_cpp/src/detail/zenoh_utils.cpp b/rmw_zenoh_cpp/src/detail/zenoh_utils.cpp
+index c54b8a8..be72d54 100644
+--- a/rmw_zenoh_cpp/src/detail/zenoh_utils.cpp
++++ b/rmw_zenoh_cpp/src/detail/zenoh_utils.cpp
+@@ -126,6 +126,7 @@ bool Payload::empty() const
+ }
+ 
+ ///=============================================================================
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+ // Create Layout for provider's memory
+ // Provider's alignment is 1 (=2^0) bytes as we are going to make only 1-byte aligned allocations
+ // TODO(yellowhatter): use zenoh_shm_message_size_threshold as base for alignment
+@@ -141,6 +142,7 @@ std::optional<zenoh::SharedShmProvider> ShmContext::get_shm_provider(zenoh::Sess
+   }
+   return std::nullopt;
+ }
++#endif  // Z_FEATURE_SHARED_MEMORY && Z_FEATURE_UNSTABLE_API
+ 
+ 
+ ///=============================================================================

@@ -1,0 +1,71 @@
+diff --git a/rmw_zenoh_cpp/CMakeLists.txt b/rmw_zenoh_cpp/CMakeLists.txt
+index 80f3751..ec36ba8 100644
+--- a/rmw_zenoh_cpp/CMakeLists.txt
++++ b/rmw_zenoh_cpp/CMakeLists.txt
+@@ -24,7 +24,10 @@ find_package(rmw REQUIRED)
+ find_package(tracetools REQUIRED)
+ find_package(zenoh_cpp_vendor REQUIRED)
+ 
+-add_library(rmw_zenoh_cpp SHARED
++# No explicit SHARED/STATIC keyword: let BUILD_SHARED_LIBS decide so the
++# library can be built as a static archive for platforms that disallow
++# runtime-loaded shared libraries (e.g. iOS / Mac Catalyst).
++add_library(rmw_zenoh_cpp
+   src/detail/attachment_helpers.cpp
+   src/detail/cdr.cpp
+   src/detail/event.cpp
+@@ -124,27 +127,32 @@ install(
+   DESTINATION include
+ )
+ 
+-add_executable(rmw_zenohd
+-  src/detail/liveliness_utils.cpp
+-  src/detail/logging.cpp
+-  src/detail/qos.cpp
+-  src/detail/simplified_xxhash3.cpp
+-  src/detail/zenoh_config.cpp
+-  src/zenohd/main.cpp
+-)
+-
+-target_link_libraries(rmw_zenohd
+-  PRIVATE
+-    ament_index_cpp::ament_index_cpp
+-    rcutils::rcutils
+-    rcpputils::rcpputils
+-    rmw::rmw
+-    zenohcxx::zenohc
+-)
+-
+-install(
+-  TARGETS rmw_zenohd
+-  DESTINATION lib/${PROJECT_NAME}
+-)
++# The rmw_zenohd router executable is a host-side tool; skip it when
++# cross-compiling (e.g. for iOS / Mac Catalyst, where standalone
++# executables cannot be deployed anyway).
++if(NOT CMAKE_CROSSCOMPILING)
++  add_executable(rmw_zenohd
++    src/detail/liveliness_utils.cpp
++    src/detail/logging.cpp
++    src/detail/qos.cpp
++    src/detail/simplified_xxhash3.cpp
++    src/detail/zenoh_config.cpp
++    src/zenohd/main.cpp
++  )
++
++  target_link_libraries(rmw_zenohd
++    PRIVATE
++      ament_index_cpp::ament_index_cpp
++      rcutils::rcutils
++      rcpputils::rcpputils
++      rmw::rmw
++      zenohcxx::zenohc
++  )
++
++  install(
++    TARGETS rmw_zenohd
++    DESTINATION lib/${PROJECT_NAME}
++  )
++endif()
+ 
+ ament_package()

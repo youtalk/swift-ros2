@@ -1,0 +1,28 @@
+diff --git a/rmw_zenoh_cpp/src/rmw_zenoh.cpp b/rmw_zenoh_cpp/src/rmw_zenoh.cpp
+index 2d0be13..d427656 100644
+--- a/rmw_zenoh_cpp/src/rmw_zenoh.cpp
++++ b/rmw_zenoh_cpp/src/rmw_zenoh.cpp
+@@ -621,7 +621,11 @@ rmw_publish(
+ 
+   return pub_data->publish(
+     ros_message,
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+     context_impl->shm().get()
++#else
++    nullptr
++#endif
+   );
+ }
+ 
+@@ -729,7 +733,11 @@ rmw_publish_serialized_message(
+ 
+   return publisher_data->publish_serialized_message(
+     serialized_message,
++#if defined(Z_FEATURE_SHARED_MEMORY) && defined(Z_FEATURE_UNSTABLE_API)
+     context_impl->shm().get()
++#else
++    nullptr
++#endif
+   );
+ }
+ 

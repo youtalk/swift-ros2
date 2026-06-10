@@ -521,11 +521,27 @@ if canBuildDDS {
 
 // M0-only native-rcl spike: local CRos2Jazzy xcframework + rcl_init smoke
 // executable, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple only).
+//
+// SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the binary target:
+// "cyclonedds" (default) -> build/ros2/CRos2Jazzy.xcframework, or "zenoh" ->
+// build/ros2zenoh/CRos2JazzyZenoh.xcframework (rmw_zenoh_cpp + fastrtps
+// typesupport; build with `RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`).
+// Both variants expose the identical rcl C API under the same module name, so
+// every Swift target is variant-agnostic.
+let rclRmwVariant: String = {
+    let raw = Context.environment["SWIFT_ROS2_RCL_RMW"] ?? "cyclonedds"
+    guard ["cyclonedds", "zenoh"].contains(raw) else {
+        fatalError("SWIFT_ROS2_RCL_RMW must be 'cyclonedds' or 'zenoh'; got '\(raw)'")
+    }
+    return raw
+}()
 if enableRcl {
     targets.append(
         .binaryTarget(
             name: "CRos2Jazzy",
-            path: "build/ros2/CRos2Jazzy.xcframework"
+            path: rclRmwVariant == "zenoh"
+                ? "build/ros2zenoh/CRos2JazzyZenoh.xcframework"
+                : "build/ros2/CRos2Jazzy.xcframework"
         ))
     targets.append(
         .executableTarget(

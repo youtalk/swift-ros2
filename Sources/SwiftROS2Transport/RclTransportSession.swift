@@ -1,11 +1,11 @@
 // RclTransportSession.swift
 // TransportSession backed by the real rcl + rmw_cyclonedds_cpp stack via
-// RclClientProtocol. M1 is publish-only and assumes a single node.
+// RclClientProtocol. Publish (M1) + subscribe (M4); assumes a single node.
 
 import Foundation
 
 /// `TransportSession` backed by the real `rcl` + `rmw_cyclonedds_cpp` stack via
-/// `RclClientProtocol`. M1 is publish-only and assumes a single node.
+/// `RclClientProtocol`. Publish (M1) + subscribe (M4); assumes a single node.
 public final class RclTransportSession: TransportSession, @unchecked Sendable {
     let client: any RclClientProtocol
     private let lock = NSLock()
@@ -14,6 +14,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     private var nodes: [String: any RclNodeHandle] = [:]
     private var currentNode: (any RclNodeHandle)?
     var publishers: [String: RclTransportPublisher] = [:]
+    var subscribers: [RclTransportSubscriber] = []
 
     public var transportType: TransportType { .rcl }
 
@@ -89,19 +90,23 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         return node
     }
 
-    package func createSubscriber(
-        topic: String,
-        typeName: String,
-        typeHash: String?,
-        qos: TransportQoS,
-        handler: @escaping @Sendable (Data, UInt64) -> Void
-    ) throws -> any TransportSubscriber {
-        throw TransportError.unsupportedFeature("createSubscriber (transport: rcl) — M1 is publish-only")
+    /// Atomically validate the session is open and a node exists; returns the
+    /// node a new subscriber attaches to (inherits the M1 single-node binding).
+    func preflightSubscriber() throws -> any RclNodeHandle {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isOpen else { throw TransportError.notConnected }
+        guard let node = currentNode else {
+            throw TransportError.subscriberCreationFailed("no node registered — create a node first")
+        }
+        return node
     }
 
     public func close() throws {
         lock.lock()
         let wasOpen = isOpen
+        let subs = subscribers
+        subscribers.removeAll()
         let pubs = Array(publishers.values)
         publishers.removeAll()
         let ns = Array(nodes.values)
@@ -110,6 +115,9 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         isOpen = false
         _sessionId = ""
         lock.unlock()
+        // Subscribers first: each close joins the subscription's wait thread,
+        // so no handler can fire against a node/context being torn down below.
+        for s in subs { try? s.close() }
         for p in pubs { try? p.close() }
         for n in ns { client.destroyNode(n) }
         if wasOpen { client.destroyContext() }
@@ -127,6 +135,12 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     func appendPublisher(_ pub: RclTransportPublisher, for topic: String) {
         lock.lock()
         publishers[topic] = pub
+        lock.unlock()
+    }
+
+    func appendSubscriber(_ sub: RclTransportSubscriber) {
+        lock.lock()
+        subscribers.append(sub)
         lock.unlock()
     }
 

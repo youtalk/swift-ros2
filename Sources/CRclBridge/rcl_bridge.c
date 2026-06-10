@@ -29,9 +29,7 @@ struct crcl_context_s {
     rcl_context_t ctx;
     rcl_init_options_t opts;
 };
-struct crcl_node_s {
-    rcl_node_t node;
-};
+// struct crcl_node_s lives in crcl_internal.h (shared with rcl_subscription.c).
 
 #ifdef _Thread_local
 #define CRCL_THREAD_LOCAL _Thread_local
@@ -105,6 +103,7 @@ crcl_node_t *crcl_node_create(crcl_context_t *c, const char *name, const char *n
     crcl_node_t *n = calloc(1, sizeof(*n));
     if (!n) return NULL;
     n->node = rcl_get_zero_initialized_node();
+    n->ctx = &c->ctx;  // Jazzy has no rcl_node_get_context(); see crcl_internal.h.
     rcl_node_options_t nopts = rcl_node_get_default_options();
     if (rcl_node_init(&n->node, name, ns, &c->ctx, &nopts) != RCL_RET_OK) {
         capture_error();

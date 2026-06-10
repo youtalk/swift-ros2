@@ -16,6 +16,7 @@ extern "C" {
 typedef struct crcl_context_s crcl_context_t;
 typedef struct crcl_node_s crcl_node_t;
 typedef struct crcl_publisher_s crcl_publisher_t;
+typedef struct crcl_subscription_s crcl_subscription_t;
 
 // Generated per-type marshalling decls (crcl_serialize_<snake> /
 // crcl_publish_<snake> / crcl_typesupport_<snake>) plus the typesupport
@@ -44,6 +45,27 @@ void crcl_publisher_destroy(crcl_publisher_t *pub);
 
 /// Publish pre-serialized CDR bytes. Returns 0 on success, non-zero rcl_ret_t otherwise.
 int crcl_publish_serialized(crcl_publisher_t *pub, const uint8_t *data, size_t len);
+
+/// Invoked from the subscription's dedicated wait thread once per taken
+/// message. `buf` points at the raw CDR bytes (incl. the 4-byte encapsulation
+/// header) and is valid only for the duration of the call — copy if needed.
+/// `source_timestamp_ns` is rmw's publisher-side timestamp; 0 when the
+/// middleware reports none (or an invalid/negative value).
+typedef void (*crcl_take_callback_t)(
+    void *ctx, const uint8_t *buf, size_t len, int64_t source_timestamp_ns);
+
+/// Create a subscription on `node` and spawn its wait thread. `cb` fires on
+/// that thread for every message until crcl_subscription_destroy. Returns
+/// NULL on failure; call crcl_last_error().
+crcl_subscription_t *crcl_subscription_create(
+    crcl_node_t *node, const char *ros_type_name, const char *topic, const crcl_qos_t *qos,
+    crcl_take_callback_t cb, void *ctx);
+
+/// Destroy a subscription. Blocks until the wait thread has exited — and thus
+/// until any in-flight callback has returned — before finalizing the rcl
+/// entities. Returns 0 on success, non-zero if any fini failed (resources are
+/// freed regardless; see crcl_last_error()).
+int crcl_subscription_destroy(crcl_subscription_t *sub);
 
 /// Free a buffer returned by a generated crcl_serialize_<type>.
 void crcl_free(uint8_t *buf);

@@ -16,6 +16,9 @@ META="$ROOT/Scripts/ros2/colcon-defaults.meta"
 DEPLOY_IOS=16.0
 # leetal ios-cmake enforces a Mac Catalyst minimum deployment target of 13.1.
 DEPLOY_MAC=13.1
+# visionOS versions are 1.x — passing the iOS target (16.0) to the xros /
+# xrsimulator slices would be rejected by the visionOS SDK.
+DEPLOY_VISIONOS=1.0
 PKGS_UP_TO=(rcl rmw_cyclonedds_cpp builtin_interfaces std_msgs geometry_msgs sensor_msgs)
 # C++ test-only / lint vendor packages get dragged into the --packages-up-to
 # closure via <test_depend>, but never link into the runtime libraries. They
@@ -135,8 +138,8 @@ slice_platform() { case "$1" in
   macosx)      echo "MAC_ARM64 $DEPLOY_MAC" ;;
   iphoneos)    echo "OS64 $DEPLOY_IOS" ;;
   iphonesimulator) echo "SIMULATORARM64 $DEPLOY_IOS" ;;
-  xros)        echo "VISIONOS $DEPLOY_IOS" ;;
-  xrsimulator) echo "SIMULATOR_VISIONOS $DEPLOY_IOS" ;;
+  xros)        echo "VISIONOS $DEPLOY_VISIONOS" ;;
+  xrsimulator) echo "SIMULATOR_VISIONOS $DEPLOY_VISIONOS" ;;
   *) echo "unknown slice: $1" >&2; return 1 ;; esac; }
 
 cross_build() {  # $1 = slice, $2... = extra --packages-up-to

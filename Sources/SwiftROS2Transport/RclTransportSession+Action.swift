@@ -102,6 +102,13 @@ extension RclTransportSession {
 /// bridge `rmw_serialize`s the typed wrapper, so user payloads arrive
 /// header-less and the umbrella's `prependHeaderIfMissing` restores the
 /// header for `CDRDecoder`.
+///
+/// Precondition: `payload` is either bare (no encapsulation header) or
+/// LE-XCDR1-encapsulated (`00 01 00 00`). The umbrella always encapsulates
+/// via `CDREncoder.writeEncapsulationHeader`, so this holds for every caller
+/// today. A *bare* payload whose first int32 happens to be 256 LE
+/// (`00 01 00 00`) would be wrongly stripped — do not feed bare payloads
+/// from new call sites without revisiting this helper.
 private func crclStripInnerEncapsulationHeader(_ payload: Data) -> Data {
     guard payload.count >= 4 else { return payload }
     let base = payload.startIndex
@@ -120,8 +127,21 @@ final class RclTransportActionServer: TransportActionServer, @unchecked Sendable
     private let handlers: TransportActionServerHandlers
     private let lock = NSLock()
     private var closed = false
+    /// Serializes the whole rcl goal-state mirror step — `rclGoalStatus`
+    /// read/compare, the `acceptGoal` / `updateGoalState` FFI calls, and the
+    /// map write — so concurrent snapshots (the umbrella routinely publishes
+    /// `accepted` from the goal-response path while the executing Task
+    /// publishes `executing`) cannot observe a half-committed mirror and
+    /// fire a state event against a goal rcl has not accepted yet. Holding
+    /// a lock across the FFI is safe: the C bridge never calls back into
+    /// Swift from `acceptGoal` / `updateGoalState`, and the C-side
+    /// `io_mutex` is leaf-level. Never taken while `lock` is held.
+    private let mirrorLock = NSLock()
     /// Last status mirrored into rcl's goal state machine, per 16-byte goal
-    /// id. `nil` entry means the goal is not yet rcl-accepted. The map keeps
+    /// id. No entry means the goal is not yet rcl-accepted. Guarded by
+    /// `mirrorLock`; entries are committed only after the corresponding FFI
+    /// call succeeded, so a failed accept / transition is retried by the
+    /// next snapshot instead of desyncing permanently. The map keeps
     /// terminal goals so repeated snapshots do not re-fire events (mirrors
     /// the umbrella's own goal map, which also retains finished goals).
     private var rclGoalStatus: [Data: Int8] = [:]
@@ -157,16 +177,22 @@ final class RclTransportActionServer: TransportActionServer, @unchecked Sendable
 
     /// Register the goal with rcl_action exactly once (the goal-response path
     /// and the status-publish path can race here). The C side is idempotent
-    /// too; the Swift-side map just avoids redundant FFI hops.
+    /// too; the Swift-side map just avoids redundant FFI hops. The map entry
+    /// is committed only after `acceptGoal` succeeded, all under
+    /// `mirrorLock`, so a racing snapshot never replays a state event before
+    /// the accept has landed in rcl, and a failed accept is retried by the
+    /// next snapshot.
     private func ensureAcceptedInRcl(goalId: [UInt8], stampSec: Int32, stampNanosec: UInt32) {
+        guard let h = handleSnapshot() else { return }
         let key = Data(goalId)
-        lock.lock()
-        let known = rclGoalStatus[key] != nil
-        if !known { rclGoalStatus[key] = 1 }  // STATUS_ACCEPTED
-        let h = closed ? nil : handle
-        lock.unlock()
-        guard !known, let h else { return }
-        try? client.acceptGoal(h, goalId: goalId, stampSec: stampSec, stampNanosec: stampNanosec)
+        mirrorLock.lock()
+        defer { mirrorLock.unlock() }
+        guard rclGoalStatus[key] == nil else { return }
+        guard
+            (try? client.acceptGoal(
+                h, goalId: goalId, stampSec: stampSec, stampNanosec: stampNanosec)) != nil
+        else { return }
+        rclGoalStatus[key] = 1  // STATUS_ACCEPTED
     }
 
     /// Called from the action server's wait thread. Decodes the SendGoal
@@ -244,8 +270,10 @@ final class RclTransportActionServer: TransportActionServer, @unchecked Sendable
         closed = true
         let h = handle
         handle = nil
-        rclGoalStatus.removeAll()
         lock.unlock()
+        mirrorLock.lock()
+        rclGoalStatus.removeAll()
+        mirrorLock.unlock()
         if let h {
             // Blocks until any in-flight wait-thread callback has returned.
             client.destroyActionServer(h)
@@ -270,32 +298,63 @@ extension RclTransportActionServer: PublishesActionFeedback {
     /// the wire comes from rcl_action's own goal tracking, so first mirror
     /// the umbrella's snapshot into rcl's goal state machine: accept goals
     /// rcl has not seen yet, then replay the per-goal state transitions that
-    /// bridge the last mirrored status to the snapshot status. Goal-event
-    /// sync failures are best-effort (`try?`) — the publish itself reports
+    /// bridge the last mirrored status to the snapshot status. The whole
+    /// per-goal mirror step runs under `mirrorLock` (see its doc comment),
+    /// and the map only advances to the state rcl actually reached — a
+    /// failed accept leaves no entry (retried by the next snapshot), a
+    /// partially-failed event chain commits the last accepted state, and
+    /// terminal mirrored states are absorbing (a stale `canceling` snapshot
+    /// racing `succeeded` must not regress the mirror and re-fire events).
+    /// Goal-event sync failures are best-effort — the publish itself reports
     /// errors, matching the wire path's single throwing write.
     func publishStatus(entries: [ActionStatusEntry]) throws {
         guard let h = handleSnapshot() else { throw TransportError.publisherClosed }
         var anyNewlyTerminal = false
         for entry in entries {
             let key = Data(entry.uuid)
-            lock.lock()
-            let previous = rclGoalStatus[key]
-            if previous == nil { rclGoalStatus[key] = 1 }  // STATUS_ACCEPTED
-            lock.unlock()
-            if previous == nil {
-                try? client.acceptGoal(
-                    h, goalId: entry.uuid, stampSec: entry.stampSec,
-                    stampNanosec: entry.stampNanosec)
+            mirrorLock.lock()
+            let from: Int8
+            if let previous = rclGoalStatus[key] {
+                from = previous
+            } else {
+                guard
+                    (try? client.acceptGoal(
+                        h, goalId: entry.uuid, stampSec: entry.stampSec,
+                        stampNanosec: entry.stampNanosec)) != nil
+                else {
+                    // Accept failed — leave the key absent so the next
+                    // snapshot retries instead of desyncing permanently.
+                    mirrorLock.unlock()
+                    continue
+                }
+                rclGoalStatus[key] = 1  // STATUS_ACCEPTED
+                from = 1
             }
-            let from = previous ?? 1
-            guard entry.status != from else { continue }
-            for event in Self.goalEvents(from: from, to: entry.status) {
-                try? client.updateGoalState(h, goalId: entry.uuid, event: event)
+            // Terminal states are absorbing; identical states need no events.
+            guard !Self.isTerminal(from), entry.status != from else {
+                mirrorLock.unlock()
+                continue
             }
-            lock.lock()
-            rclGoalStatus[key] = entry.status
-            lock.unlock()
-            if Self.isTerminal(entry.status) && !Self.isTerminal(from) {
+            let events = Self.goalEvents(from: from, to: entry.status)
+            guard !events.isEmpty else {
+                // No legal chain (e.g. a regressive stale snapshot) — keep
+                // the mirror where rcl actually is.
+                mirrorLock.unlock()
+                continue
+            }
+            var reached = from
+            for event in events {
+                guard (try? client.updateGoalState(h, goalId: entry.uuid, event: event)) != nil
+                else { break }
+                reached = Self.status(after: event)
+            }
+            if reached != from {
+                rclGoalStatus[key] = reached
+            }
+            mirrorLock.unlock()
+            if Self.isTerminal(reached) {
+                // `from` is non-terminal here (absorbing guard above), so a
+                // terminal `reached` is always newly terminal.
                 anyNewlyTerminal = true
             }
         }
@@ -309,6 +368,19 @@ extension RclTransportActionServer: PublishesActionFeedback {
     private static func isTerminal(_ status: Int8) -> Bool {
         // STATUS_SUCCEEDED = 4, STATUS_CANCELED = 5, STATUS_ABORTED = 6.
         return status == 4 || status == 5 || status == 6
+    }
+
+    /// GoalStatus value rcl's state machine lands in after `event` succeeds.
+    /// Used to advance the mirror map to the state rcl actually reached when
+    /// an event chain fails partway through.
+    private static func status(after event: RclGoalEvent) -> Int8 {
+        switch event {
+        case .execute: return 2  // STATUS_EXECUTING
+        case .cancelGoal: return 3  // STATUS_CANCELING
+        case .succeed: return 4  // STATUS_SUCCEEDED
+        case .abort: return 6  // STATUS_ABORTED
+        case .canceled: return 5  // STATUS_CANCELED
+        }
     }
 
     /// Event chain that drives rcl_action's goal state machine from `from`

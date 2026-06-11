@@ -13,9 +13,11 @@
 // 2. Fibonacci(order: 3): a second, sequential goal asserting [0, 1, 1, 2] —
 //    a correlation bug (a result or feedback wired to the wrong goal id)
 //    cannot satisfy both phases.
-// 3. Cancel: send Fibonacci(order: 50) (~5 s at the server's 100 ms per-step
-//    pacing), wait for the first feedback so execution is provably underway,
-//    cancel the goal, and assert the terminal result is `.canceled` — the
+// 3. Cancel: send Fibonacci(order: 200) (~20 s at the server's 100 ms
+//    per-step pacing — a horizon comfortably wider than any plausible runner
+//    stall between the first feedback and the cancel delivery), wait for the
+//    first feedback so execution is provably underway, cancel the goal, and
+//    assert the terminal result is `.canceled` — the
 //    same acknowledgement the wire path produces (server handleCancel
 //    accepts, the executing Task is cancelled, GetResult returns
 //    STATUS_CANCELED).
@@ -216,14 +218,17 @@ do {
 
 // --- Phase 3: cancel ---
 //
-// order=50 runs ~5 s at the server's pacing — long enough that the cancel
-// lands mid-execution. Wait for the first feedback frame so the executing
-// Task is provably past acceptance before cancelling.
+// order=200 runs ~20 s at the server's pacing — wide enough that even a
+// multi-second runner stall between the first feedback and the cancel
+// delivery cannot let the goal complete and flip `.canceled` to
+// `.succeeded`. The success path is unaffected: the cancel terminates the
+// goal early. Wait for the first feedback frame so the executing Task is
+// provably past acceptance before cancelling.
 
 let cancelHandle: ActionGoalHandle<FibonacciAction>
 do {
     cancelHandle = try await cli.sendGoal(
-        FibonacciAction.Goal(order: 50), acceptanceTimeout: .seconds(10))
+        FibonacciAction.Goal(order: 200), acceptanceTimeout: .seconds(10))
 } catch {
     fail("sendGoal #3 threw: \(error)")
 }

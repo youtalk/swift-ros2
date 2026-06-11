@@ -56,11 +56,16 @@ static rcl_action_goal_handle_t *crcl__find_goal_handle(
     rcl_action_goal_handle_t **handles = NULL;
     size_t num_goals = 0;
     if (rcl_action_server_get_goal_handles(&s->server, &handles, &num_goals) != RCL_RET_OK) {
+        // Reset the thread-local rcl error state: the caller reports its own
+        // "unknown goal id" diagnostic and a stale error would otherwise
+        // pollute (or trigger overwrite warnings on) later captures.
+        rcl_reset_error();
         return NULL;
     }
     for (size_t i = 0; i < num_goals; i++) {
         rcl_action_goal_info_t info = rcl_action_get_zero_initialized_goal_info();
         if (rcl_action_goal_handle_get_info(handles[i], &info) != RCL_RET_OK) {
+            rcl_reset_error();
             continue;
         }
         if (memcmp(info.goal_id.uuid, uuid, 16) == 0) {
@@ -437,6 +442,13 @@ int crcl_action_server_send_result_response(
         }
         return 0;
     }
+    // Splice constraint: `buf` is the byte-seam GetResult frame
+    // [header (4) | status (1) | pad (3) | result body], i.e. the Result
+    // body sits at fixed CDR offset 4. rmw_deserialize against the typed
+    // GetResult_Response expects the body at offset 8 when the Result's
+    // first field is 8-byte aligned (float64 / int64 / uint64). The
+    // generator rejects such actions at registry-generation time — see
+    // CActionRegistryEmitter.resultSpliceViolation in SwiftROS2Gen.
     return crcl__action_server_send(
         s, request_id, buf, len, "crcl_action_server_send_result_response",
         s->entry->get_result_response_create, s->entry->get_result_response_destroy,
@@ -490,13 +502,15 @@ int crcl_action_server_publish_status(crcl_action_server_t *s) {
     if (ret == RCL_RET_OK) {
         ret = rcl_action_publish_status(&s->server, &arr.msg);
     }
+    if (ret != RCL_RET_OK) {
+        // Capture BEFORE the fini below: a failing fini would overwrite the
+        // thread-local rcl error state and the captured message would
+        // describe the fini instead of the real failure.
+        crcl__capture_rcl_error();
+    }
     (void)rcl_action_goal_status_array_fini(&arr);
     pthread_mutex_unlock(&s->io_mutex);
-    if (ret != RCL_RET_OK) {
-        crcl__capture_rcl_error();
-        return (int)ret;
-    }
-    return 0;
+    return ret != RCL_RET_OK ? (int)ret : 0;
 }
 
 int crcl_action_server_accept_goal(

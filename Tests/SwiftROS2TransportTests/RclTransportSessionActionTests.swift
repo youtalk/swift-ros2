@@ -211,6 +211,146 @@ final class RclTransportSessionActionTests: XCTestCase {
         XCTAssertEqual(mockServer.statusPublishCount, 1)
     }
 
+    func testAcceptVsExecuteSnapshotRaceSerializesMirror() async throws {
+        // The umbrella publishes an `accepted` snapshot from the goal-response
+        // path while the executing Task publishes `executing` — concurrently.
+        // The whole mirror step (map read, acceptGoal FFI, map write) must be
+        // serialized: a racing `executing` snapshot must not observe the map
+        // entry before the accept has landed in rcl and fire EXECUTE against
+        // a goal rcl does not know yet (which would wedge rcl at ACCEPTED
+        // forever). Drive the race deterministically by holding the first
+        // acceptGoal FFI call open until the executing snapshot has been
+        // attempted from another thread.
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        let server = try s.createActionServer(
+            name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
+            qos: .default, handlers: makeHandlers())
+        let mockServer = client.actionServersCreated[0]
+        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
+
+        let acceptEntered = DispatchSemaphore(value: 0)
+        let releaseAccept = DispatchSemaphore(value: 0)
+        client.onAcceptGoal = { [weak client] in
+            client?.onAcceptGoal = nil  // hold only the first accept open
+            acceptEntered.signal()
+            releaseAccept.wait()
+        }
+
+        // Thread A: goal-response path → ensureAcceptedInRcl → acceptGoal
+        // (now parked inside the FFI call, holding the mirror step).
+        mockServer.fireGoalRequest(
+            ActionFrameDecoder.encodeSendGoalRequest(goalId: goalIdA, goalCDR: Data()),
+            requestId: requestId)
+        XCTAssertEqual(
+            acceptEntered.wait(timeout: .now() + 2), .success,
+            "acceptGoal was not reached within the timeout")
+
+        // Thread B: executing snapshot racing the in-flight accept. It must
+        // block on the mirror step instead of replaying EXECUTE early.
+        let statusDone = Box<Bool>(false)
+        Thread.detachNewThread { [goalIdA] in
+            try? feedbackImpl.publishStatus(entries: [
+                ActionStatusEntry(uuid: goalIdA, stampSec: 7, stampNanosec: 9, status: 2)
+            ])
+            statusDone.value = true
+        }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(statusDone.value, "executing snapshot overtook the in-flight accept")
+        XCTAssertTrue(mockServer.goalStateUpdates.isEmpty)
+
+        // Release the accept: the mirror must converge — accept first, then
+        // exactly one EXECUTE transition. No lost transition, no early fire.
+        releaseAccept.signal()
+        let converged = await waitUntil { statusDone.value }
+        XCTAssertTrue(converged, "executing snapshot did not complete within the timeout")
+        XCTAssertEqual(mockServer.acceptedGoals.count, 1)
+        XCTAssertEqual(mockServer.acceptedGoals.first?.goalId, goalIdA)
+        XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute])
+    }
+
+    func testStatusSnapshotRetriesAcceptAfterFailure() async throws {
+        // A failed acceptGoal must not commit the mirror entry — the next
+        // snapshot retries the accept instead of desyncing permanently.
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        let server = try s.createActionServer(
+            name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
+            qos: .default, handlers: makeHandlers())
+        let mockServer = client.actionServersCreated[0]
+        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
+        let entry = ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 2)
+
+        client.acceptGoalShouldThrow = .publishFailed("rcl says no")
+        try feedbackImpl.publishStatus(entries: [entry])
+        XCTAssertTrue(mockServer.acceptedGoals.isEmpty)
+        XCTAssertTrue(mockServer.goalStateUpdates.isEmpty, "no events against an unaccepted goal")
+
+        client.acceptGoalShouldThrow = nil
+        try feedbackImpl.publishStatus(entries: [entry])
+        XCTAssertEqual(mockServer.acceptedGoals.count, 1)
+        XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute])
+    }
+
+    func testStatusSnapshotPartialChainAdvancesMirrorToReachedState() async throws {
+        // A 1→4 snapshot replays [.execute, .succeed]. When .succeed fails,
+        // the mirror must advance only to EXECUTING (the state rcl actually
+        // reached) so the next snapshot replays just the missing .succeed —
+        // and notify-goal-done must not fire for a goal that never reached a
+        // terminal state in rcl.
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        let server = try s.createActionServer(
+            name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
+            qos: .default, handlers: makeHandlers())
+        let mockServer = client.actionServersCreated[0]
+        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
+        let succeeded = ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 4)
+
+        client.updateGoalStateShouldThrowOn = [.succeed]
+        try feedbackImpl.publishStatus(entries: [succeeded])
+        XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute])
+        XCTAssertEqual(mockServer.notifyGoalDoneCount, 0)
+
+        client.updateGoalStateShouldThrowOn = []
+        try feedbackImpl.publishStatus(entries: [succeeded])
+        XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
+        XCTAssertEqual(mockServer.notifyGoalDoneCount, 1)
+    }
+
+    func testTerminalMirrorStateIsAbsorbing() async throws {
+        // A stale CANCELING(3) snapshot racing past SUCCEEDED(4) must not
+        // regress the mirror (which would re-replay .succeed and re-fire
+        // notify-goal-done on the next SUCCEEDED snapshot).
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        let server = try s.createActionServer(
+            name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
+            qos: .default, handlers: makeHandlers())
+        let mockServer = client.actionServersCreated[0]
+        let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
+
+        try feedbackImpl.publishStatus(entries: [
+            ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 4)
+        ])
+        XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
+        XCTAssertEqual(mockServer.notifyGoalDoneCount, 1)
+
+        // Stale non-terminal snapshot after the terminal one: absorbed.
+        try feedbackImpl.publishStatus(entries: [
+            ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 3)
+        ])
+        XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
+        XCTAssertEqual(mockServer.notifyGoalDoneCount, 1)
+
+        // Repeated terminal snapshot: no event replay, no second notify.
+        try feedbackImpl.publishStatus(entries: [
+            ActionStatusEntry(uuid: goalIdA, stampSec: 3, stampNanosec: 4, status: 4)
+        ])
+        XCTAssertEqual(mockServer.goalStateUpdates.map { $0.event }, [.execute, .succeed])
+        XCTAssertEqual(mockServer.notifyGoalDoneCount, 1)
+    }
+
     func testActionServerGoalEventChains() {
         XCTAssertEqual(RclTransportActionServer.goalEvents(from: 1, to: 2), [.execute])
         XCTAssertEqual(RclTransportActionServer.goalEvents(from: 1, to: 4), [.execute, .succeed])

@@ -371,6 +371,10 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     var sendResponseShouldThrow: TransportError?
     var sendRequestShouldThrow: TransportError?
     var sendGoalRequestShouldThrow: TransportError?
+    var acceptGoalShouldThrow: TransportError?
+    /// Events for which `updateGoalState` throws — lets tests fail a chain
+    /// partway through (e.g. `.execute` lands, `.succeed` fails).
+    var updateGoalStateShouldThrowOn: Set<RclGoalEvent> = []
     var serverAvailableValue = true
     var actionServerAvailableValue = true
     /// Test hook: runs inside createSubscription before the handle is
@@ -385,6 +389,10 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     var onCreateActionClient: (() -> Void)?
     /// Test hook: fires after a goal request is recorded, with its sequence number.
     var onSendGoalRequest: ((Int64, Data) -> Void)?
+    /// Test hook: runs inside `acceptGoal` before the accept is recorded —
+    /// lets tests hold the accept FFI call open while a racing status
+    /// snapshot is attempted (the accept-vs-execute mirror race).
+    var onAcceptGoal: (() -> Void)?
     /// Test hook: fires after a response is recorded (lets tests await the
     /// async handler-to-sendResponse round trip deterministically).
     var onSendResponse: ((Data) -> Void)?
@@ -593,15 +601,20 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         _ server: any RclActionServerHandle, goalId: [UInt8], stampSec: Int32,
         stampNanosec: UInt32
     ) throws {
+        if let e = acceptGoalShouldThrow { throw e }
         guard let s = server as? MockRclActionServer, s.isActive else {
             throw TransportError.sessionClosed
         }
+        onAcceptGoal?()
         s.recordAccept(goalId: goalId, stampSec: stampSec, stampNanosec: stampNanosec)
     }
 
     func updateGoalState(_ server: any RclActionServerHandle, goalId: [UInt8], event: RclGoalEvent)
         throws
     {
+        if updateGoalStateShouldThrowOn.contains(event) {
+            throw TransportError.publishFailed("updateGoalState(\(event)) refused by test")
+        }
         guard let s = server as? MockRclActionServer, s.isActive else {
             throw TransportError.sessionClosed
         }

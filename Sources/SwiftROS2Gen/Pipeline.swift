@@ -1294,17 +1294,34 @@ extension Pipeline {
             // *message* allow-list and must not hide `.action` files.
             let actionRuns = runs.map { PackageRun(input: $0.input, typesAllowList: nil) }
             var actionsByRosName: [String: CActionRegistryEmitter.ActionRef] = [:]
+            var resultIRByRosName: [String: MessageIR] = [:]
             for run in actionRuns {
                 for act in try parseActionsIn(run: run) {
                     let ref = CActionRegistryEmitter.ActionRef(
                         package: act.package, typeName: act.typeName)
                     actionsByRosName[ref.rosName] = ref
+                    resultIRByRosName[ref.rosName] = act.actionIR.result
                 }
             }
             var selected: [CActionRegistryEmitter.ActionRef] = []
             var unknownActionTypes: [String] = []
             for name in Set(actionTypes).sorted() {
                 if let ref = actionsByRosName[name] {
+                    // GetResult splice guard: the action byte seam pins the
+                    // Result body at CDR offset 4, which is wrong for a
+                    // Result whose first field is 8-byte aligned. Hard-fail
+                    // registry generation rather than corrupt at runtime.
+                    if let result = resultIRByRosName[name],
+                        let violation = CActionRegistryEmitter.resultSpliceViolation(
+                            action: ref, result: result, registry: registry)
+                    {
+                        throw GeneratorError.parse(
+                            ParseError(
+                                file: "\(ref.package)/action/\(ref.typeName).action",
+                                line: 1,
+                                message: violation
+                            ))
+                    }
                     selected.append(ref)
                 } else {
                     unknownActionTypes.append(name)

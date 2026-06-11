@@ -116,4 +116,40 @@ struct RclActionRegistryPipelineTests {
         #expect(!paths.contains("c/Generated/crcl_action_registry.c"))
         #expect(!paths.contains("c/include/Generated/crcl_action_registry.h"))
     }
+
+    @Test("rejects an action whose Result starts with an 8-byte-aligned field (splice guard)")
+    func rejectsEightByteAlignedResultFirstField() throws {
+        // The byte seam splices the Result body at fixed CDR offset 4 after
+        // [header|status|pad3]; a Result whose first field is float64 /
+        // int64 / uint64 would be silently corrupted, so registry generation
+        // must hard-fail for it.
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("swift-ros2-splice-guard-\(UUID().uuidString)", isDirectory: true)
+        let packageDir = tmp.appendingPathComponent("bad_interfaces", isDirectory: true)
+        let actionDir = packageDir.appendingPathComponent("action", isDirectory: true)
+        try FileManager.default.createDirectory(at: actionDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let action = """
+            int32 target
+            ---
+            float64 final_position
+            ---
+            int32 progress
+            """
+        try action.write(
+            to: actionDir.appendingPathComponent("Slide.action"), atomically: true,
+            encoding: .utf8)
+        let badRun = Pipeline.PackageRun(
+            input: PackageInput(name: "bad_interfaces", directory: packageDir))
+        do {
+            _ = try Pipeline.generateRclMarshalling(
+                m8Runs() + [badRun],
+                actionTypes: Self.actionTypes + ["bad_interfaces/action/Slide"])
+            Issue.record("expected the GetResult splice guard to throw")
+        } catch let error as GeneratorError {
+            let description = "\(error)"
+            #expect(description.contains("bad_interfaces/action/Slide"))
+            #expect(description.contains("8-byte aligned"))
+        }
+    }
 }

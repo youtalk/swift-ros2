@@ -59,12 +59,14 @@ do {
     fail("ROS2Context creation threw: \(error)")
 }
 
+// Default ROS2NodeOptions: the parameter stack (six rcl_interfaces services
+// + the /parameter_events emitter) works on .rcl, so the stock createNode
+// path needs no opt-out.
 let node: ROS2Node
 do {
     node = try await ctx.createNode(
         name: "crcl_loopback",
-        namespace: "/loopback",
-        options: ROS2NodeOptions(startParameterServices: false)
+        namespace: "/loopback"
     )
 } catch {
     fail("createNode threw: \(error)")

@@ -23,9 +23,7 @@ final class RclSubscribeIntegrationTests: XCTestCase {
 
             let ctx = try await ROS2Context(transport: .rcl(domainId: 0))
             let node = try await ctx.createNode(
-                name: "swift_ros2_rcl_sub_test", namespace: "/swift_ros2_rcl",
-                options: ROS2NodeOptions(startParameterServices: false)
-            )
+                name: "swift_ros2_rcl_sub_test", namespace: "/swift_ros2_rcl")
             // Reliable to match the `ros2 topic pub` default writer QoS.
             let qos = QoSProfile(
                 reliability: .reliable, durability: .volatile, history: .keepLast(10))

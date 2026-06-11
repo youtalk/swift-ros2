@@ -221,6 +221,9 @@ func runPubSub() async throws {
     let qos = QoSProfile(
         reliability: .reliable, durability: .volatile, history: .keepLast(2_000))
     let ctx = try await ROS2Context(transport: transportConfig())
+    // Deliberate opt-out (not an rcl limitation): the parameter stack works
+    // on every backend, but six idle services + a /parameter_events
+    // publisher would add discovery traffic to a latency benchmark.
     let node = try await ctx.createNode(
         name: "rcl_bench", namespace: "/rcl_bench",
         options: ROS2NodeOptions(startParameterServices: false))

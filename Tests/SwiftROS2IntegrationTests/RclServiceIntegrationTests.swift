@@ -28,9 +28,7 @@ final class RclServiceIntegrationTests: XCTestCase {
 
             let ctx = try await ROS2Context(transport: .rcl(domainId: 0))
             let node = try await ctx.createNode(
-                name: "swift_ros2_rcl_svc_test", namespace: "/swift_ros2_rcl",
-                options: ROS2NodeOptions(startParameterServices: false)
-            )
+                name: "swift_ros2_rcl_svc_test", namespace: "/swift_ros2_rcl")
 
             // Capture the requests the handler answered so the test can assert
             // both that a call arrived and what it computed.

@@ -17,9 +17,7 @@ final class RclPublishIntegrationTests: XCTestCase {
 
             let ctx = try await ROS2Context(transport: .rcl(domainId: 0))
             let node = try await ctx.createNode(
-                name: "swift_ros2_rcl_test", namespace: "/swift_ros2_rcl",
-                options: ROS2NodeOptions(startParameterServices: false)  // M1 is publish-only
-            )
+                name: "swift_ros2_rcl_test", namespace: "/swift_ros2_rcl")
             let pub = try await node.createPublisher(Imu.self, topic: "imu")
 
             var imu = Imu()

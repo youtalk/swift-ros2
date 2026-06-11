@@ -197,54 +197,9 @@ final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
             throw TransportError.sessionClosed
         }
 
-        let table = pending
         let rclClient = client
-        let state = RclCallState()
-
-        do {
-            let body: Data = try await withTaskCancellationHandler {
-                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
-                    // registerAndSend holds the table lock across the send, so
-                    // a response arriving immediately after rcl_send_request
-                    // blocks on the same lock until the continuation is
-                    // registered — no response-before-registration race. (The
-                    // response path hops off the wait thread via a Task before
-                    // taking the lock, so the destroy-join can never deadlock
-                    // against it.)
-                    let seq = table.registerAndSend(cont) {
-                        try rclClient.sendRequest(h, data: requestCDR)
-                    }
-                    guard let seq else { return }  // resumed with the send error
-                    state.setSequence(seq)
-                    // Cancellation may have fired before the sequence number
-                    // was known; settle it now.
-                    if Task.isCancelled {
-                        table.resolve(seq: seq, with: .failure(TransportError.requestCancelled))
-                        return
-                    }
-                    state.setTimeoutTask(
-                        Task { [table] in
-                            // If the sleep is cancelled (reply arrived first),
-                            // exit without resolving — same contract as the
-                            // DDS wire path's timeout helper.
-                            do {
-                                try await Task.sleep(for: timeout)
-                            } catch {
-                                return
-                            }
-                            table.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
-                        })
-                }
-            } onCancel: {
-                if let seq = state.sequence {
-                    table.resolve(seq: seq, with: .failure(TransportError.requestCancelled))
-                }
-            }
-            state.timeoutTask?.cancel()
-            return body
-        } catch {
-            state.timeoutTask?.cancel()
-            throw error
+        return try await rclAwaitCorrelatedReply(table: pending, timeout: timeout) {
+            try rclClient.sendRequest(h, data: requestCDR)
         }
     }
 
@@ -276,6 +231,62 @@ final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
             // Blocks until any in-flight onResponse invocation has returned.
             client.destroyServiceClient(h)
         }
+    }
+}
+
+// MARK: - Correlated request/response park
+
+/// Park a continuation in `table`, run `send` (which returns rcl's sequence
+/// number — the correlation key), and await the matching reply, the timeout,
+/// or task cancellation. Shared by the M7 service client and the M8 action
+/// client (per role table).
+///
+/// registerAndSend holds the table lock across the send, so a response
+/// arriving immediately after rcl's send blocks on the same lock until the
+/// continuation is registered — no response-before-registration race. (The
+/// response path hops off the wait thread via a Task before taking the lock,
+/// so the destroy-join can never deadlock against it.)
+func rclAwaitCorrelatedReply(
+    table: RclPendingCallTable,
+    timeout: Duration,
+    send: @escaping () throws -> Int64
+) async throws -> Data {
+    let state = RclCallState()
+    do {
+        let body: Data = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
+                let seq = table.registerAndSend(cont, send: send)
+                guard let seq else { return }  // resumed with the send error
+                state.setSequence(seq)
+                // Cancellation may have fired before the sequence number was
+                // known; settle it now.
+                if Task.isCancelled {
+                    table.resolve(seq: seq, with: .failure(TransportError.requestCancelled))
+                    return
+                }
+                state.setTimeoutTask(
+                    Task { [table] in
+                        // If the sleep is cancelled (reply arrived first),
+                        // exit without resolving — same contract as the DDS
+                        // wire path's timeout helper.
+                        do {
+                            try await Task.sleep(for: timeout)
+                        } catch {
+                            return
+                        }
+                        table.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
+                    })
+            }
+        } onCancel: {
+            if let seq = state.sequence {
+                table.resolve(seq: seq, with: .failure(TransportError.requestCancelled))
+            }
+        }
+        state.timeoutTask?.cancel()
+        return body
+    } catch {
+        state.timeoutTask?.cancel()
+        throw error
     }
 }
 

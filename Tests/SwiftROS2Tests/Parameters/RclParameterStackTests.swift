@@ -89,6 +89,14 @@ private final class SeamServiceClient: RclClientHandle, @unchecked Sendable {
     var isActive: Bool { true }
 }
 
+private final class SeamActionServer: RclActionServerHandle, @unchecked Sendable {
+    var isActive: Bool { true }
+}
+
+private final class SeamActionClient: RclActionClientHandle, @unchecked Sendable {
+    var isActive: Bool { true }
+}
+
 /// Minimal `RclClientProtocol` recorder: enough to observe what the default
 /// `createNode` path creates on the seam. Distinct from the transport-layer
 /// `MockRclClient` (a different test target), and intentionally thinner — no
@@ -163,4 +171,43 @@ private final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendab
     func sendRequest(_ client: any RclClientHandle, data: Data) throws -> Int64 { 1 }
     func serverAvailable(_ client: any RclClientHandle) -> Bool { true }
     func destroyServiceClient(_ client: any RclClientHandle) {}
+
+    func createActionServer(
+        node: any RclNodeHandle, actionTypeName: String, actionName: String, qos: TransportQoS,
+        callbacks: RclActionServerCallbacks
+    ) throws -> any RclActionServerHandle {
+        SeamActionServer()
+    }
+    func sendGoalResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+    {}
+    func sendCancelResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+    {}
+    func sendResultResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+    {}
+    func publishActionFeedback(_ server: any RclActionServerHandle, data: Data) throws {}
+    func publishActionStatus(_ server: any RclActionServerHandle) throws {}
+    func acceptGoal(
+        _ server: any RclActionServerHandle, goalId: [UInt8], stampSec: Int32,
+        stampNanosec: UInt32
+    ) throws {}
+    func updateGoalState(
+        _ server: any RclActionServerHandle, goalId: [UInt8], event: RclGoalEvent
+    ) throws {}
+    func notifyGoalDone(_ server: any RclActionServerHandle) throws {}
+    func destroyActionServer(_ server: any RclActionServerHandle) {}
+
+    func createActionClient(
+        node: any RclNodeHandle, actionTypeName: String, actionName: String, qos: TransportQoS,
+        callbacks: RclActionClientCallbacks
+    ) throws -> any RclActionClientHandle {
+        SeamActionClient()
+    }
+    func sendGoalRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 { 1 }
+    func sendCancelRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 { 1 }
+    func sendResultRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 { 1 }
+    func actionServerAvailable(_ client: any RclActionClientHandle) -> Bool { true }
+    func destroyActionClient(_ client: any RclActionClientHandle) {}
 }

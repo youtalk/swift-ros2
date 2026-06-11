@@ -290,6 +290,222 @@ private final class RclServiceClientBox: RclClientHandle, @unchecked Sendable {
     }
 }
 
+// MARK: - Action server
+
+/// Retained by `RclActionServerBox.contextBox` while the action server is
+/// alive. Same `@unchecked Sendable` justification as `RclSubscriptionContext`:
+/// the only state is an immutable `Sendable` callback bag.
+private final class RclActionServerContext: @unchecked Sendable {
+    let callbacks: RclActionServerCallbacks
+    init(callbacks: RclActionServerCallbacks) {
+        self.callbacks = callbacks
+    }
+}
+
+/// C-callable bridge matching `crcl_action_server_callback_t`. Same Unmanaged
+/// borrow contract as `rclRequestCallbackBridge`; the `role` discriminates the
+/// three request kinds.
+private func rclActionServerCallbackBridge(
+    ctx: UnsafeMutableRawPointer?,
+    role: Int32,
+    requestId: UnsafePointer<UInt8>?,
+    buf: UnsafePointer<UInt8>?,
+    len: Int
+) {
+    guard let ctx, let requestId else { return }
+    let serverContext = Unmanaged<RclActionServerContext>.fromOpaque(ctx).takeUnretainedValue()
+
+    let blob = [UInt8](UnsafeBufferPointer(start: requestId, count: Int(CRCL_REQUEST_ID_SIZE)))
+    let payload: Data
+    if let buf, len > 0 {
+        payload = Data(bytes: buf, count: len)
+    } else {
+        payload = Data()
+    }
+
+    switch role {
+    case CRCL_ACTION_SERVER_GOAL_REQUEST:
+        serverContext.callbacks.onGoalRequest(payload, blob)
+    case CRCL_ACTION_SERVER_CANCEL_REQUEST:
+        serverContext.callbacks.onCancelRequest(payload, blob)
+    case CRCL_ACTION_SERVER_RESULT_REQUEST:
+        serverContext.callbacks.onResultRequest(payload, blob)
+    default:
+        break
+    }
+}
+
+/// Per-box lock serializes destroy vs. send / publish / goal bookkeeping on
+/// the same action server pointer. Close contract mirrors `RclServiceBox`
+/// exactly, including the leak-on-failed-destroy behavior.
+private final class RclActionServerBox: RclActionServerHandle, @unchecked Sendable {
+    private var ptr: OpaquePointer?
+    private var contextBox: Unmanaged<RclActionServerContext>?
+    private let lock = NSLock()
+
+    init(_ ptr: OpaquePointer, contextBox: Unmanaged<RclActionServerContext>) {
+        self.ptr = ptr
+        self.contextBox = contextBox
+    }
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ptr != nil
+    }
+
+    func withPtr<R>(_ body: (OpaquePointer) -> R) -> R? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let p = ptr else { return nil }
+        return body(p)
+    }
+
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let p = ptr {
+            // crcl_action_server_destroy joins the wait thread before any
+            // fini, so it blocks until any in-flight callback has returned.
+            let rc = crcl_action_server_destroy(p)
+            ptr = nil
+            if rc < 0 {
+                // Refused destroy — leak the retained handler context rather
+                // than release it under a live thread.
+                contextBox = nil
+                return
+            }
+        }
+        if let box = contextBox {
+            box.release()
+            contextBox = nil
+        }
+    }
+}
+
+// MARK: - Action client
+
+/// Retained by `RclActionClientBox.contextBox` while the action client is alive.
+private final class RclActionClientContext: @unchecked Sendable {
+    let callbacks: RclActionClientCallbacks
+    init(callbacks: RclActionClientCallbacks) {
+        self.callbacks = callbacks
+    }
+}
+
+/// Parse the flattened status records the C bridge emits for
+/// CRCL_ACTION_CLIENT_STATUS (see CRCL_GOAL_STATUS_RECORD_SIZE).
+private func rclParseStatusRecords(buf: UnsafePointer<UInt8>?, len: Int) -> [RclGoalStatusRecord] {
+    let stride = Int(CRCL_GOAL_STATUS_RECORD_SIZE)
+    guard let buf, len >= stride else { return [] }
+    let count = len / stride
+    var out: [RclGoalStatusRecord] = []
+    out.reserveCapacity(count)
+    for i in 0..<count {
+        let rec = buf + i * stride
+        let goalId = [UInt8](UnsafeBufferPointer(start: rec, count: 16))
+        var sec: UInt32 = 0
+        var nsec: UInt32 = 0
+        for b in 0..<4 {
+            sec |= UInt32(rec[16 + b]) << (8 * b)
+            nsec |= UInt32(rec[20 + b]) << (8 * b)
+        }
+        out.append(
+            RclGoalStatusRecord(
+                goalId: goalId,
+                stampSec: Int32(bitPattern: sec),
+                stampNanosec: nsec,
+                status: Int8(bitPattern: rec[24])
+            ))
+    }
+    return out
+}
+
+/// C-callable bridge matching `crcl_action_client_callback_t`. Same Unmanaged
+/// borrow contract as `rclResponseCallbackBridge`.
+private func rclActionClientCallbackBridge(
+    ctx: UnsafeMutableRawPointer?,
+    role: Int32,
+    sequenceNumber: Int64,
+    buf: UnsafePointer<UInt8>?,
+    len: Int
+) {
+    guard let ctx else { return }
+    let clientContext = Unmanaged<RclActionClientContext>.fromOpaque(ctx).takeUnretainedValue()
+
+    if role == CRCL_ACTION_CLIENT_STATUS {
+        clientContext.callbacks.onStatus(rclParseStatusRecords(buf: buf, len: len))
+        return
+    }
+
+    let payload: Data
+    if let buf, len > 0 {
+        payload = Data(bytes: buf, count: len)
+    } else {
+        payload = Data()
+    }
+
+    switch role {
+    case CRCL_ACTION_CLIENT_GOAL_RESPONSE:
+        clientContext.callbacks.onGoalResponse(sequenceNumber, payload)
+    case CRCL_ACTION_CLIENT_CANCEL_RESPONSE:
+        clientContext.callbacks.onCancelResponse(sequenceNumber, payload)
+    case CRCL_ACTION_CLIENT_RESULT_RESPONSE:
+        clientContext.callbacks.onResultResponse(sequenceNumber, payload)
+    case CRCL_ACTION_CLIENT_FEEDBACK:
+        clientContext.callbacks.onFeedback(payload)
+    default:
+        break
+    }
+}
+
+/// Per-box lock serializes destroy vs. sends / availability checks on the
+/// same action client pointer. Close contract mirrors `RclServiceClientBox`
+/// exactly, including the leak-on-failed-destroy behavior.
+private final class RclActionClientBox: RclActionClientHandle, @unchecked Sendable {
+    private var ptr: OpaquePointer?
+    private var contextBox: Unmanaged<RclActionClientContext>?
+    private let lock = NSLock()
+
+    init(_ ptr: OpaquePointer, contextBox: Unmanaged<RclActionClientContext>) {
+        self.ptr = ptr
+        self.contextBox = contextBox
+    }
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ptr != nil
+    }
+
+    func withPtr<R>(_ body: (OpaquePointer) -> R) -> R? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let p = ptr else { return nil }
+        return body(p)
+    }
+
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let p = ptr {
+            // crcl_action_client_destroy joins the wait thread before any
+            // fini, so it blocks until any in-flight callback has returned.
+            let rc = crcl_action_client_destroy(p)
+            ptr = nil
+            if rc < 0 {
+                // Refused destroy — leak the retained handler context.
+                contextBox = nil
+                return
+            }
+        }
+        if let box = contextBox {
+            box.release()
+            contextBox = nil
+        }
+    }
+}
+
 // MARK: - Client
 
 /// Concrete implementation of ``RclClientProtocol`` wrapping the `CRclBridge` C FFI.
@@ -492,6 +708,228 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
 
     package func destroyServiceClient(_ client: any RclClientHandle) {
         guard let box = client as? RclServiceClientBox else { return }
+        box.close()
+    }
+
+    // MARK: Actions (M8)
+
+    package func createActionServer(
+        node: any RclNodeHandle,
+        actionTypeName: String,
+        actionName: String,
+        qos: TransportQoS,
+        callbacks: RclActionServerCallbacks
+    ) throws -> any RclActionServerHandle {
+        guard let b = node as? RclNodeBox else {
+            throw TransportError.subscriberCreationFailed("invalid node handle")
+        }
+        var q = makeCrclQoS(qos)
+
+        let contextBox = Unmanaged.passRetained(RclActionServerContext(callbacks: callbacks))
+        let contextPtr = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        guard
+            let s = crcl_action_server_create(
+                b.ptr, actionTypeName, actionName, &q, rclActionServerCallbackBridge, contextPtr)
+        else {
+            contextBox.release()
+            throw TransportError.subscriberCreationFailed(lastError())
+        }
+        return RclActionServerBox(s, contextBox: contextBox)
+    }
+
+    /// Shared body for the three action-server response sends.
+    private func sendActionResponse(
+        _ server: any RclActionServerHandle, requestId: [UInt8], data: Data,
+        send: (OpaquePointer, UnsafePointer<UInt8>?, UnsafePointer<UInt8>?, Int) -> Int32
+    ) throws {
+        guard let box = server as? RclActionServerBox else {
+            throw TransportError.publishFailed("invalid action server handle")
+        }
+        guard requestId.count == Int(CRCL_REQUEST_ID_SIZE) else {
+            throw TransportError.publishFailed(
+                "request id must be \(CRCL_REQUEST_ID_SIZE) bytes, got \(requestId.count)")
+        }
+        let rc: Int32? = requestId.withUnsafeBufferPointer { idBuf -> Int32? in
+            data.withUnsafeBytes { raw -> Int32? in
+                let base = raw.bindMemory(to: UInt8.self).baseAddress
+                return box.withPtr { p in
+                    send(p, idBuf.baseAddress, base, data.count)
+                }
+            }
+        }
+        guard let rc else { throw TransportError.sessionClosed }
+        if rc != 0 { throw TransportError.publishFailed(lastError()) }
+    }
+
+    package func sendGoalResponse(
+        _ server: any RclActionServerHandle, requestId: [UInt8], data: Data
+    ) throws {
+        try sendActionResponse(server, requestId: requestId, data: data) {
+            crcl_action_server_send_goal_response($0, $1, $2, $3)
+        }
+    }
+
+    package func sendCancelResponse(
+        _ server: any RclActionServerHandle, requestId: [UInt8], data: Data
+    ) throws {
+        try sendActionResponse(server, requestId: requestId, data: data) {
+            crcl_action_server_send_cancel_response($0, $1, $2, $3)
+        }
+    }
+
+    package func sendResultResponse(
+        _ server: any RclActionServerHandle, requestId: [UInt8], data: Data
+    ) throws {
+        try sendActionResponse(server, requestId: requestId, data: data) {
+            crcl_action_server_send_result_response($0, $1, $2, $3)
+        }
+    }
+
+    package func publishActionFeedback(_ server: any RclActionServerHandle, data: Data) throws {
+        guard let box = server as? RclActionServerBox else {
+            throw TransportError.publishFailed("invalid action server handle")
+        }
+        let rc: Int32? = data.withUnsafeBytes { raw -> Int32? in
+            let base = raw.bindMemory(to: UInt8.self).baseAddress
+            return box.withPtr { p in
+                crcl_action_server_publish_feedback(p, base, data.count)
+            }
+        }
+        guard let rc else { throw TransportError.publisherClosed }
+        if rc != 0 { throw TransportError.publishFailed(lastError()) }
+    }
+
+    package func publishActionStatus(_ server: any RclActionServerHandle) throws {
+        guard let box = server as? RclActionServerBox else {
+            throw TransportError.publishFailed("invalid action server handle")
+        }
+        let rc: Int32? = box.withPtr { crcl_action_server_publish_status($0) }
+        guard let rc else { throw TransportError.publisherClosed }
+        if rc != 0 { throw TransportError.publishFailed(lastError()) }
+    }
+
+    package func acceptGoal(
+        _ server: any RclActionServerHandle, goalId: [UInt8], stampSec: Int32,
+        stampNanosec: UInt32
+    ) throws {
+        guard let box = server as? RclActionServerBox else {
+            throw TransportError.publishFailed("invalid action server handle")
+        }
+        guard goalId.count == 16 else {
+            throw TransportError.publishFailed("goal id must be 16 bytes, got \(goalId.count)")
+        }
+        let rc: Int32? = goalId.withUnsafeBufferPointer { idBuf -> Int32? in
+            box.withPtr { p in
+                crcl_action_server_accept_goal(p, idBuf.baseAddress, stampSec, stampNanosec)
+            }
+        }
+        guard let rc else { throw TransportError.sessionClosed }
+        if rc != 0 { throw TransportError.publishFailed(lastError()) }
+    }
+
+    package func updateGoalState(
+        _ server: any RclActionServerHandle, goalId: [UInt8], event: RclGoalEvent
+    ) throws {
+        guard let box = server as? RclActionServerBox else {
+            throw TransportError.publishFailed("invalid action server handle")
+        }
+        guard goalId.count == 16 else {
+            throw TransportError.publishFailed("goal id must be 16 bytes, got \(goalId.count)")
+        }
+        let rc: Int32? = goalId.withUnsafeBufferPointer { idBuf -> Int32? in
+            box.withPtr { p in
+                crcl_action_server_update_goal_state(p, idBuf.baseAddress, event.rawValue)
+            }
+        }
+        guard let rc else { throw TransportError.sessionClosed }
+        if rc != 0 { throw TransportError.publishFailed(lastError()) }
+    }
+
+    package func notifyGoalDone(_ server: any RclActionServerHandle) throws {
+        guard let box = server as? RclActionServerBox else {
+            throw TransportError.publishFailed("invalid action server handle")
+        }
+        let rc: Int32? = box.withPtr { crcl_action_server_notify_goal_done($0) }
+        guard let rc else { throw TransportError.sessionClosed }
+        if rc != 0 { throw TransportError.publishFailed(lastError()) }
+    }
+
+    package func destroyActionServer(_ server: any RclActionServerHandle) {
+        guard let box = server as? RclActionServerBox else { return }
+        box.close()
+    }
+
+    package func createActionClient(
+        node: any RclNodeHandle,
+        actionTypeName: String,
+        actionName: String,
+        qos: TransportQoS,
+        callbacks: RclActionClientCallbacks
+    ) throws -> any RclActionClientHandle {
+        guard let b = node as? RclNodeBox else {
+            throw TransportError.subscriberCreationFailed("invalid node handle")
+        }
+        var q = makeCrclQoS(qos)
+
+        let contextBox = Unmanaged.passRetained(RclActionClientContext(callbacks: callbacks))
+        let contextPtr = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        guard
+            let c = crcl_action_client_create(
+                b.ptr, actionTypeName, actionName, &q, rclActionClientCallbackBridge, contextPtr)
+        else {
+            contextBox.release()
+            throw TransportError.subscriberCreationFailed(lastError())
+        }
+        return RclActionClientBox(c, contextBox: contextBox)
+    }
+
+    /// Shared body for the three action-client request sends.
+    private func sendActionRequest(
+        _ client: any RclActionClientHandle, data: Data,
+        send: (OpaquePointer, UnsafePointer<UInt8>?, Int, UnsafeMutablePointer<Int64>) -> Int32
+    ) throws -> Int64 {
+        guard let box = client as? RclActionClientBox else {
+            throw TransportError.publishFailed("invalid action client handle")
+        }
+        var seq: Int64 = 0
+        let rc: Int32? = data.withUnsafeBytes { raw -> Int32? in
+            let base = raw.bindMemory(to: UInt8.self).baseAddress
+            return box.withPtr { p in
+                send(p, base, data.count, &seq)
+            }
+        }
+        guard let rc else { throw TransportError.sessionClosed }
+        if rc != 0 { throw TransportError.publishFailed(lastError()) }
+        return seq
+    }
+
+    package func sendGoalRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 {
+        try sendActionRequest(client, data: data) {
+            crcl_action_client_send_goal_request($0, $1, $2, $3)
+        }
+    }
+
+    package func sendCancelRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 {
+        try sendActionRequest(client, data: data) {
+            crcl_action_client_send_cancel_request($0, $1, $2, $3)
+        }
+    }
+
+    package func sendResultRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 {
+        try sendActionRequest(client, data: data) {
+            crcl_action_client_send_result_request($0, $1, $2, $3)
+        }
+    }
+
+    package func actionServerAvailable(_ client: any RclActionClientHandle) -> Bool {
+        guard let box = client as? RclActionClientBox else { return false }
+        return box.withPtr { crcl_action_client_server_available($0) == 1 } ?? false
+    }
+
+    package func destroyActionClient(_ client: any RclActionClientHandle) {
+        guard let box = client as? RclActionClientBox else { return }
         box.close()
     }
 

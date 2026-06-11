@@ -17,6 +17,8 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     var subscribers: [RclTransportSubscriber] = []
     var serviceServers: [RclTransportServiceServer] = []
     var serviceClients: [RclTransportServiceClient] = []
+    var actionServers: [RclTransportActionServer] = []
+    var actionClients: [RclTransportActionClient] = []
 
     public var transportType: TransportType { .rcl }
 
@@ -107,6 +109,10 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     public func close() throws {
         lock.lock()
         let wasOpen = isOpen
+        let actClients = actionClients
+        actionClients.removeAll()
+        let actServers = actionServers
+        actionServers.removeAll()
         let srvClients = serviceClients
         serviceClients.removeAll()
         let srvServers = serviceServers
@@ -121,11 +127,14 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         isOpen = false
         _sessionId = ""
         lock.unlock()
-        // Wait-thread entities first (service clients, then service servers,
-        // then subscribers): each close joins the entity's wait thread, so no
-        // handler can fire against a node/context being torn down below.
-        // Service clients go before servers so pending calls resume with
-        // sessionClosed before their server disappears.
+        // Wait-thread entities first (action clients, action servers, service
+        // clients, service servers, then subscribers): each close joins the
+        // entity's wait thread, so no handler can fire against a node/context
+        // being torn down below. Clients go before their server counterparts
+        // so pending calls / goals resume with sessionClosed before the
+        // server disappears.
+        for c in actClients { try? c.close() }
+        for s in actServers { try? s.close() }
         for c in srvClients { try? c.close() }
         for s in srvServers { try? s.close() }
         for s in subs { try? s.close() }
@@ -201,6 +210,32 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
             throw TransportError.notConnected
         }
         serviceClients.append(serviceClient)
+        lock.unlock()
+    }
+
+    /// Register a created action server, re-checking that the session is
+    /// still open — same close-race contract as `appendSubscriber`.
+    func appendActionServer(_ server: RclTransportActionServer) throws {
+        lock.lock()
+        guard isOpen else {
+            lock.unlock()
+            try? server.close()
+            throw TransportError.notConnected
+        }
+        actionServers.append(server)
+        lock.unlock()
+    }
+
+    /// Register a created action client, re-checking that the session is
+    /// still open — same close-race contract as `appendSubscriber`.
+    func appendActionClient(_ actionClient: RclTransportActionClient) throws {
+        lock.lock()
+        guard isOpen else {
+            lock.unlock()
+            try? actionClient.close()
+            throw TransportError.notConnected
+        }
+        actionClients.append(actionClient)
         lock.unlock()
     }
 }

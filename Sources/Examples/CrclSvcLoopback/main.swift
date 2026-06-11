@@ -27,7 +27,7 @@ import Foundation
 import SwiftROS2
 
 // Last-resort in-process bound (120 s): the per-phase budgets below sum to
-// ~45 s worst case (service waitForService 10 + two 5 s calls + param
+// ~55 s worst case (service waitForService 10 + two 5 s calls + param
 // waitForService 10 + three 5 s param calls + 10 s event wait — typical runs
 // settle in seconds) and ASan startup adds more, so leave real headroom while
 // staying under ci-rcl's outer 150 s bound. If anything wedges past every
@@ -208,7 +208,7 @@ let eventDeadline = Date().addingTimeInterval(10)
 var sawChange = false
 while Date() < eventDeadline {
     if eventBox.snapshot.contains(where: { event in
-        event.changedParameters.contains { $0.name == "answer" }
+        event.changedParameters.contains { $0.name == "answer" && $0.value.integerValue == 42 }
     }) {
         sawChange = true
         break

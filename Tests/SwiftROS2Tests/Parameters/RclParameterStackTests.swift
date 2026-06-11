@@ -27,25 +27,16 @@ final class RclParameterStackTests: XCTestCase {
 
         let created = seam.servicesCreated
         XCTAssertEqual(created.count, 6)
+        // Assert (name, type) as pairs so crossed name-to-type wiring fails too.
         XCTAssertEqual(
-            Set(created.map(\.serviceName)),
+            Set(created.map { "\($0.serviceName)|\($0.srvTypeName)" }),
             [
-                "/t/param_node/get_parameters",
-                "/t/param_node/get_parameter_types",
-                "/t/param_node/set_parameters",
-                "/t/param_node/set_parameters_atomically",
-                "/t/param_node/list_parameters",
-                "/t/param_node/describe_parameters",
-            ])
-        XCTAssertEqual(
-            Set(created.map(\.srvTypeName)),
-            [
-                "rcl_interfaces/srv/GetParameters",
-                "rcl_interfaces/srv/GetParameterTypes",
-                "rcl_interfaces/srv/SetParameters",
-                "rcl_interfaces/srv/SetParametersAtomically",
-                "rcl_interfaces/srv/ListParameters",
-                "rcl_interfaces/srv/DescribeParameters",
+                "/t/param_node/get_parameters|rcl_interfaces/srv/GetParameters",
+                "/t/param_node/get_parameter_types|rcl_interfaces/srv/GetParameterTypes",
+                "/t/param_node/set_parameters|rcl_interfaces/srv/SetParameters",
+                "/t/param_node/set_parameters_atomically|rcl_interfaces/srv/SetParametersAtomically",
+                "/t/param_node/list_parameters|rcl_interfaces/srv/ListParameters",
+                "/t/param_node/describe_parameters|rcl_interfaces/srv/DescribeParameters",
             ])
     }
 

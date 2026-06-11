@@ -160,9 +160,12 @@ jobs:
       # the per-entity wait threads, the request-id correlation table, and the
       # rmw_serialize / rmw_deserialize marshalling run under AddressSanitizer.
       # Two sequential calls with distinct operands gate against correlation
-      # bugs. Same headless-runner caveats as crcl-loopback: bound the run
-      # (alarm 150 — readiness poll + two calls + ASan slowdown) and decide
-      # success on the OK line + the absence of any ASan/leak report.
+      # bugs, then a parameter phase (default node options, declare/get/set
+      # via ROS2ParameterClient + /parameter_events) verifies the param stack.
+      # Same headless-runner caveats as crcl-loopback: bound the run
+      # (alarm 150 — readiness polls + service calls + param round-trip +
+      # event wait + ASan slowdown) and decide success on the OK line + the
+      # absence of any ASan/leak report.
       - name: Build + run crcl-svc-loopback (Catalyst, ASan)
         run: |
           xcodebuild -scheme crcl-svc-loopback \

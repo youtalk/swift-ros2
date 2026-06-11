@@ -138,6 +138,26 @@ patch_sources() {
     }
     { print }
   ' "$f" > "$tmp" && mv "$tmp" "$f"
+
+  # rcl exports rcl_logging_interface but not the concrete logging
+  # implementation it links (RCL_LOGGING_IMPLEMENTATION=rcl_logging_noop in
+  # colcon-defaults.meta). With static libraries the implementation target
+  # stays in rcl's exported link interface, so the first downstream
+  # find_package(rcl) consumer (rcl_action, added in M8) fails with
+  # "rcl_logging_noop::rcl_logging_noop ... target was not found". Export the
+  # selected implementation alongside the interface so rclConfig.cmake pulls
+  # it in via find_dependency. Idempotent.
+  local rcl_cmake="$SRC/ros2/rcl/rcl/CMakeLists.txt"
+  if [[ -f "$rcl_cmake" ]] && ! grep -q 'ament_export_dependencies(${RCL_LOGGING_IMPLEMENTATION})' "$rcl_cmake"; then
+    local tmp2; tmp2="$(mktemp)"
+    awk '
+      { print }
+      /^ament_export_dependencies\(rcl_logging_interface\)$/ && !done {
+        print "ament_export_dependencies(${RCL_LOGGING_IMPLEMENTATION})"
+        done = 1
+      }
+    ' "$rcl_cmake" > "$tmp2" && mv "$tmp2" "$rcl_cmake"
+  fi
 }
 
 mkdir -p "$BUILD"

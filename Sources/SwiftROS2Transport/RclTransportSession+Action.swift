@@ -331,6 +331,20 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
     /// transports).
     let pending = ActionPendingTable()
 
+    /// Feedback / status samples hop off the wait thread through this single
+    /// ordered pump instead of one unstructured Task per callback: per-Task
+    /// hops have no mutual ordering, so an `executing` snapshot could be
+    /// overtaken by the terminal one (which finishes the per-goal streams)
+    /// and silently dropped — same for a feedback frame racing the terminal
+    /// status. `AsyncStream.Continuation.yield` is synchronous and
+    /// thread-safe, so the wait thread never blocks (M7 contract) and
+    /// arrival order is preserved end-to-end.
+    private enum GoalEvent: Sendable {
+        case feedback(goalId: [UInt8], cdr: Data)
+        case status(goalId: [UInt8], status: Int8)
+    }
+    private let eventCont: AsyncStream<GoalEvent>.Continuation
+
     public var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -341,6 +355,21 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
     init(client: any RclClientProtocol, name: String) {
         self.client = client
         self.name = name
+        var cont: AsyncStream<GoalEvent>.Continuation!
+        let events = AsyncStream<GoalEvent> { cont = $0 }
+        self.eventCont = cont
+        // The pump captures only the table (not self) — no retain cycle; it
+        // exits when `close()` finishes the stream.
+        Task { [pending] in
+            for await event in events {
+                switch event {
+                case .feedback(let goalId, let cdr):
+                    await pending.yieldFeedback(goalId: goalId, cdr: cdr)
+                case .status(let goalId, let status):
+                    await pending.yieldStatus(goalId: goalId, status: status)
+                }
+            }
+        }
     }
 
     func attachHandle(_ handle: any RclActionClientHandle) {
@@ -521,11 +550,13 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
         handle = nil
         lock.unlock()
 
-        // Resume every parked request exactly once with sessionClosed, then
-        // fail the per-goal streams / result continuations (actor hop).
+        // Resume every parked request exactly once with sessionClosed, stop
+        // the feedback / status pump, then fail the per-goal streams /
+        // result continuations (actor hop).
         goalPending.failAll(TransportError.sessionClosed)
         cancelPending.failAll(TransportError.sessionClosed)
         resultPending.failAll(TransportError.sessionClosed)
+        eventCont.finish()
         Task { [pending] in
             await pending.failAll(TransportError.sessionClosed)
         }
@@ -538,9 +569,12 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
 
     // MARK: Internal — wait-thread callbacks
 
-    /// All four resolve paths hop off the wait thread via a Task before
-    /// touching the tables / actor, so `close()`'s destroy-join can never
-    /// deadlock against a callback blocked on a lock (M7 contract).
+    /// Every resolve path hops off the wait thread before touching the
+    /// tables / actor — the three response roles via a Task each (their
+    /// correlation is sequence-keyed, so mutual ordering is irrelevant),
+    /// feedback / status via the ordered event pump — so `close()`'s
+    /// destroy-join can never deadlock against a callback blocked on a lock
+    /// (M7 contract).
     func handleGoalResponse(sequenceNumber: Int64, data: Data) {
         let table = goalPending
         Task { [table] in
@@ -565,17 +599,12 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
     func handleFeedback(data: Data) {
         guard let (goalId, fbCDR) = try? ActionFrameDecoder.decodeFeedbackMessage(from: data)
         else { return }
-        Task { [pending] in
-            await pending.yieldFeedback(goalId: goalId, cdr: fbCDR)
-        }
+        eventCont.yield(.feedback(goalId: goalId, cdr: fbCDR))
     }
 
     func handleStatus(records: [RclGoalStatusRecord]) {
-        guard !records.isEmpty else { return }
-        Task { [pending] in
-            for record in records {
-                await pending.yieldStatus(goalId: record.goalId, status: record.status)
-            }
+        for record in records {
+            eventCont.yield(.status(goalId: record.goalId, status: record.status))
         }
     }
 }

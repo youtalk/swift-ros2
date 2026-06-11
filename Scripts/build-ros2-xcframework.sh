@@ -54,8 +54,11 @@ DEPLOY_MAC=13.1
 DEPLOY_VISIONOS=1.0
 # std_srvs + example_interfaces carry the service types the M7 service shim
 # registers (SetBool/Trigger/Empty, AddTwoInts); rcl_interfaces (parameter
-# services) is already in the closure via rcl.
-PKGS_UP_TO=(rcl "$RMW_PKG" builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces)
+# services) is already in the closure via rcl. rcl_action carries the action
+# server/client API the M8 action shim drives; its typesupport deps
+# (action_msgs, unique_identifier_msgs) are already in the closure, and
+# example_interfaces brings the Fibonacci action wrapper types.
+PKGS_UP_TO=(rcl "$RMW_PKG" rcl_action builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces)
 # C++ test-only / lint vendor packages get dragged into the --packages-up-to
 # closure via <test_depend>, but never link into the runtime libraries. They
 # build shared libs / executables (e.g. osrf_testing_tools_cpp's malloc

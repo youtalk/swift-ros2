@@ -407,6 +407,36 @@ int crcl_action_server_send_result_response(
         crcl__set_error("crcl_action_server_send_result_response: NULL server");
         return -1;
     }
+    // A goal that terminated without a result body (canceled / aborted)
+    // arrives as the minimal frame [header (4) | status (1) | pad (3)] — the
+    // umbrella caches an empty result CDR for those terminal states.
+    // rmw_deserialize would fail on the truncated buffer (the typed
+    // GetResult_Response always contains a complete result struct), so build
+    // the typed response directly: a zero-initialized result (rosidl
+    // __create) plus the status byte. rosidl emits `int8 status` as the
+    // FIRST field of every action's GetResult_Response, so writing it
+    // through an int8_t* is layout-safe for every registry entry. A full
+    // response can never be 8 bytes: even an empty rosidl message
+    // contributes a dummy byte past the status padding.
+    if (request_id && buf && len == 8) {
+        void *response = s->entry->get_result_response_create();
+        if (!response) {
+            crcl__set_error("crcl_action_server_send_result_response: response create failed");
+            return -1;
+        }
+        *(int8_t *)response = (int8_t)buf[4];
+        rmw_request_id_t id;
+        crcl__unpack_request_id(request_id, &id);
+        pthread_mutex_lock(&s->io_mutex);
+        rcl_ret_t ret = rcl_action_send_result_response(&s->server, &id, response);
+        pthread_mutex_unlock(&s->io_mutex);
+        s->entry->get_result_response_destroy(response);
+        if (ret != RCL_RET_OK) {
+            crcl__capture_rcl_error();
+            return (int)ret;
+        }
+        return 0;
+    }
     return crcl__action_server_send(
         s, request_id, buf, len, "crcl_action_server_send_result_response",
         s->entry->get_result_response_create, s->entry->get_result_response_destroy,

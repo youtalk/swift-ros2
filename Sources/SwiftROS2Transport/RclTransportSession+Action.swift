@@ -90,6 +90,27 @@ extension RclTransportSession {
     }
 }
 
+/// The umbrella API encodes every outbound user payload (goal, feedback,
+/// result body) with a leading XCDR v1 encapsulation header. The wire
+/// transports splice that payload into frames consumed by another peer's
+/// `ActionFrameDecoder`, so the extra 4 bytes round-trip symmetrically. On
+/// `.rcl` the frame is consumed by `rmw_deserialize` against the typed
+/// wrapper struct, which expects the bare body at the splice offset — an
+/// embedded header there is read as field bytes (e.g. a Fibonacci goal
+/// decodes order 256 and the result/feedback sequence counts go wild). Strip
+/// the inner header before splicing. Inbound frames need no inverse: the C
+/// bridge `rmw_serialize`s the typed wrapper, so user payloads arrive
+/// header-less and the umbrella's `prependHeaderIfMissing` restores the
+/// header for `CDRDecoder`.
+private func crclStripInnerEncapsulationHeader(_ payload: Data) -> Data {
+    guard payload.count >= 4 else { return payload }
+    let base = payload.startIndex
+    guard payload[base] == 0x00, payload[base + 1] == 0x01,
+        payload[base + 2] == 0x00, payload[base + 3] == 0x00
+    else { return payload }
+    return Data(payload.suffix(from: base + 4))
+}
+
 // MARK: - RCL Transport Action Server
 
 final class RclTransportActionServer: TransportActionServer, @unchecked Sendable {
@@ -203,7 +224,8 @@ final class RclTransportActionServer: TransportActionServer, @unchecked Sendable
                 let goalId = try ActionFrameDecoder.decodeGetResultRequest(from: data)
                 let ack = try await handlers.onGetResult(goalId)
                 let response = ActionFrameDecoder.encodeGetResultResponse(
-                    status: ack.status, resultCDR: ack.resultCDR
+                    status: ack.status,
+                    resultCDR: crclStripInnerEncapsulationHeader(ack.resultCDR)
                 )
                 guard let self, let h = self.handleSnapshot() else { return }
                 try? self.client.sendResultResponse(h, requestId: requestId, data: response)
@@ -239,7 +261,7 @@ extension RclTransportActionServer: PublishesActionFeedback {
     func publishFeedback(goalId: [UInt8], feedbackCDR: Data) throws {
         guard let h = handleSnapshot() else { throw TransportError.publisherClosed }
         let frame = ActionFrameDecoder.encodeFeedbackMessage(
-            goalId: goalId, feedbackCDR: feedbackCDR
+            goalId: goalId, feedbackCDR: crclStripInnerEncapsulationHeader(feedbackCDR)
         )
         try client.publishActionFeedback(h, data: frame)
     }
@@ -424,7 +446,8 @@ final class RclTransportActionClient: TransportActionClient, @unchecked Sendable
             throw TransportError.sessionClosed
         }
 
-        let frame = ActionFrameDecoder.encodeSendGoalRequest(goalId: goalId, goalCDR: goalCDR)
+        let frame = ActionFrameDecoder.encodeSendGoalRequest(
+            goalId: goalId, goalCDR: crclStripInnerEncapsulationHeader(goalCDR))
         let rclClient = client
 
         let replyCDR: Data

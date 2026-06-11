@@ -126,18 +126,20 @@ ignore_unbuildable() {
 # __has_include-guarded Apple branch that stubs guess_iftype where the header
 # is absent (iOS); Catalyst/macOS keep the real media query. Idempotent.
 patch_sources() {
+  # Each patch below carries its own existence + already-applied guard so a
+  # previously-patched file never short-circuits the later patches.
   local f="$SRC/eclipse-cyclonedds/cyclonedds/src/ddsrt/src/ifaddrs/posix/ifaddrs.c"
-  [[ -f "$f" ]] || return 0
-  grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f" && return 0
-  local tmp; tmp="$(mktemp)"
-  awk '
-    /^#elif defined\(__APPLE__\) \|\| defined\(__QNXNTO__\)/ && !done {
-      print "#elif defined(__APPLE__) && !__has_include(<net/if_media.h>) /* SWIFT_ROS2_IOS_IFTYPE_STUB */"
-      print "static enum ddsrt_iftype guess_iftype (const struct ifaddrs *sys_ifa) { (void) sys_ifa; return DDSRT_IFTYPE_UNKNOWN; }"
-      done = 1
-    }
-    { print }
-  ' "$f" > "$tmp" && mv "$tmp" "$f"
+  if [[ -f "$f" ]] && ! grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f"; then
+    local tmp; tmp="$(mktemp)"
+    awk '
+      /^#elif defined\(__APPLE__\) \|\| defined\(__QNXNTO__\)/ && !done {
+        print "#elif defined(__APPLE__) && !__has_include(<net/if_media.h>) /* SWIFT_ROS2_IOS_IFTYPE_STUB */"
+        print "static enum ddsrt_iftype guess_iftype (const struct ifaddrs *sys_ifa) { (void) sys_ifa; return DDSRT_IFTYPE_UNKNOWN; }"
+        done = 1
+      }
+      { print }
+    ' "$f" > "$tmp" && mv "$tmp" "$f"
+  fi
 
   # rcl exports rcl_logging_interface but not the concrete logging
   # implementation it links (RCL_LOGGING_IMPLEMENTATION=rcl_logging_noop in

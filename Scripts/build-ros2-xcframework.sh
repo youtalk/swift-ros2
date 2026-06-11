@@ -54,8 +54,11 @@ DEPLOY_MAC=13.1
 DEPLOY_VISIONOS=1.0
 # std_srvs + example_interfaces carry the service types the M7 service shim
 # registers (SetBool/Trigger/Empty, AddTwoInts); rcl_interfaces (parameter
-# services) is already in the closure via rcl.
-PKGS_UP_TO=(rcl "$RMW_PKG" builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces)
+# services) is already in the closure via rcl. rcl_action carries the action
+# server/client API the M8 action shim drives; its typesupport deps
+# (action_msgs, unique_identifier_msgs) are already in the closure, and
+# example_interfaces brings the Fibonacci action wrapper types.
+PKGS_UP_TO=(rcl "$RMW_PKG" rcl_action builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces)
 # C++ test-only / lint vendor packages get dragged into the --packages-up-to
 # closure via <test_depend>, but never link into the runtime libraries. They
 # build shared libs / executables (e.g. osrf_testing_tools_cpp's malloc
@@ -123,18 +126,42 @@ ignore_unbuildable() {
 # __has_include-guarded Apple branch that stubs guess_iftype where the header
 # is absent (iOS); Catalyst/macOS keep the real media query. Idempotent.
 patch_sources() {
+  # Each patch below carries its own existence + already-applied guard so a
+  # previously-patched file never short-circuits the later patches.
   local f="$SRC/eclipse-cyclonedds/cyclonedds/src/ddsrt/src/ifaddrs/posix/ifaddrs.c"
-  [[ -f "$f" ]] || return 0
-  grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f" && return 0
-  local tmp; tmp="$(mktemp)"
-  awk '
-    /^#elif defined\(__APPLE__\) \|\| defined\(__QNXNTO__\)/ && !done {
-      print "#elif defined(__APPLE__) && !__has_include(<net/if_media.h>) /* SWIFT_ROS2_IOS_IFTYPE_STUB */"
-      print "static enum ddsrt_iftype guess_iftype (const struct ifaddrs *sys_ifa) { (void) sys_ifa; return DDSRT_IFTYPE_UNKNOWN; }"
-      done = 1
-    }
-    { print }
-  ' "$f" > "$tmp" && mv "$tmp" "$f"
+  if [[ -f "$f" ]] && ! grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f"; then
+    local tmp; tmp="$(mktemp)"
+    awk '
+      /^#elif defined\(__APPLE__\) \|\| defined\(__QNXNTO__\)/ && !done {
+        print "#elif defined(__APPLE__) && !__has_include(<net/if_media.h>) /* SWIFT_ROS2_IOS_IFTYPE_STUB */"
+        print "static enum ddsrt_iftype guess_iftype (const struct ifaddrs *sys_ifa) { (void) sys_ifa; return DDSRT_IFTYPE_UNKNOWN; }"
+        done = 1
+      }
+      { print }
+    ' "$f" > "$tmp" && mv "$tmp" "$f"
+  fi
+
+  # rcl exports rcl_logging_interface but not the concrete logging
+  # implementation it links (RCL_LOGGING_IMPLEMENTATION=rcl_logging_noop,
+  # pinned in both colcon-defaults.meta and colcon-defaults-zenoh.meta —
+  # the dds and zenoh variants share this patch). With static libraries
+  # the implementation target
+  # stays in rcl's exported link interface, so the first downstream
+  # find_package(rcl) consumer (rcl_action, added in M8) fails with
+  # "rcl_logging_noop::rcl_logging_noop ... target was not found". Export the
+  # selected implementation alongside the interface so rclConfig.cmake pulls
+  # it in via find_dependency. Idempotent.
+  local rcl_cmake="$SRC/ros2/rcl/rcl/CMakeLists.txt"
+  if [[ -f "$rcl_cmake" ]] && ! grep -q 'ament_export_dependencies(${RCL_LOGGING_IMPLEMENTATION})' "$rcl_cmake"; then
+    local tmp2; tmp2="$(mktemp)"
+    awk '
+      { print }
+      /^ament_export_dependencies\(rcl_logging_interface\)$/ && !done {
+        print "ament_export_dependencies(${RCL_LOGGING_IMPLEMENTATION})"
+        done = 1
+      }
+    ' "$rcl_cmake" > "$tmp2" && mv "$tmp2" "$rcl_cmake"
+  fi
 }
 
 mkdir -p "$BUILD"

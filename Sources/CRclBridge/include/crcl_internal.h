@@ -12,6 +12,7 @@
 
 #include <rcl/publisher.h>
 #include <rcl/rcl.h>
+#include <rmw/types.h>  // rmw_request_id_t (request-id blob pack helpers)
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,13 @@ struct crcl_node_s {
     rcl_node_t node;
     rcl_context_t *ctx;  // borrowed; context must outlive the node
 };
+
+/// Pack / unpack an rmw_request_id_t to / from the opaque 24-byte FFI blob
+/// (16-byte writer GUID + int64 sequence number in little-endian byte order;
+/// 24 == CRCL_REQUEST_ID_SIZE in rcl_bridge.h). Defined in rcl_service.c and
+/// shared with the rcl_action_* bridge sources.
+void crcl__pack_request_id(const rmw_request_id_t *id, uint8_t out[24]);
+void crcl__unpack_request_id(const uint8_t in[24], rmw_request_id_t *id);
 
 /// Copy `msg` into the thread-local error buffer surfaced by crcl_last_error().
 void crcl__set_error(const char *msg);

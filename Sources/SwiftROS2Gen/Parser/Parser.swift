@@ -172,7 +172,9 @@ public enum Parser {
         package: String,
         typeName: String
     ) throws -> IDLAction {
-        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+        // Same CRLF normalization as parseMessage — see the comment there.
+        let normalized = normalizeLineEndings(source)
+        let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false)
         var separatorIndices: [Int] = []
         for (i, raw) in lines.enumerated() {
             let stripped = stripCommentAndTrim(String(raw))

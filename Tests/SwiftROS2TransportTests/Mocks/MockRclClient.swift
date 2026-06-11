@@ -166,6 +166,168 @@ final class MockRclServiceClient: RclClientHandle, @unchecked Sendable {
     }
 }
 
+final class MockRclActionServer: RclActionServerHandle, @unchecked Sendable {
+    let node: any RclNodeHandle
+    let actionName: String
+    let actionTypeName: String
+    let qos: TransportQoS
+    private let callbacks: RclActionServerCallbacks
+    private let lock = NSLock()
+    private var destroyed = false
+    /// Responses recorded by the three send calls, in send order, tagged by role.
+    private(set) var goalResponsesSent: [(requestId: [UInt8], data: Data)] = []
+    private(set) var cancelResponsesSent: [(requestId: [UInt8], data: Data)] = []
+    private(set) var resultResponsesSent: [(requestId: [UInt8], data: Data)] = []
+    private(set) var feedbackPublished: [Data] = []
+    private(set) var statusPublishCount = 0
+    private(set) var acceptedGoals: [(goalId: [UInt8], stampSec: Int32, stampNanosec: UInt32)] = []
+    private(set) var goalStateUpdates: [(goalId: [UInt8], event: RclGoalEvent)] = []
+    private(set) var notifyGoalDoneCount = 0
+
+    init(
+        node: any RclNodeHandle, actionName: String, actionTypeName: String, qos: TransportQoS,
+        callbacks: RclActionServerCallbacks
+    ) {
+        self.node = node
+        self.actionName = actionName
+        self.actionTypeName = actionTypeName
+        self.qos = qos
+        self.callbacks = callbacks
+    }
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !destroyed
+    }
+
+    func markDestroyed() {
+        lock.lock()
+        defer { lock.unlock() }
+        destroyed = true
+    }
+
+    func sync(_ body: () -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        body()
+    }
+
+    func recordGoalResponse(requestId: [UInt8], data: Data) {
+        sync { goalResponsesSent.append((requestId, data)) }
+    }
+    func recordCancelResponse(requestId: [UInt8], data: Data) {
+        sync { cancelResponsesSent.append((requestId, data)) }
+    }
+    func recordResultResponse(requestId: [UInt8], data: Data) {
+        sync { resultResponsesSent.append((requestId, data)) }
+    }
+    func recordFeedback(_ data: Data) {
+        sync { feedbackPublished.append(data) }
+    }
+    func recordStatusPublish() {
+        sync { statusPublishCount += 1 }
+    }
+    func recordAccept(goalId: [UInt8], stampSec: Int32, stampNanosec: UInt32) {
+        sync { acceptedGoals.append((goalId, stampSec, stampNanosec)) }
+    }
+    func recordGoalStateUpdate(goalId: [UInt8], event: RclGoalEvent) {
+        sync { goalStateUpdates.append((goalId, event)) }
+    }
+    func recordNotifyGoalDone() {
+        sync { notifyGoalDoneCount += 1 }
+    }
+
+    /// Test hooks: simulate the wait thread delivering one taken request.
+    func fireGoalRequest(_ data: Data, requestId: [UInt8]) {
+        callbacks.onGoalRequest(data, requestId)
+    }
+    func fireCancelRequest(_ data: Data, requestId: [UInt8]) {
+        callbacks.onCancelRequest(data, requestId)
+    }
+    func fireResultRequest(_ data: Data, requestId: [UInt8]) {
+        callbacks.onResultRequest(data, requestId)
+    }
+}
+
+final class MockRclActionClient: RclActionClientHandle, @unchecked Sendable {
+    let node: any RclNodeHandle
+    let actionName: String
+    let actionTypeName: String
+    let qos: TransportQoS
+    private let callbacks: RclActionClientCallbacks
+    private let lock = NSLock()
+    private var destroyed = false
+    private var nextSeq: Int64 = 0
+    /// Requests recorded by the three send calls, in send order, tagged by
+    /// role; the recorded sequence number is what the send returned.
+    private(set) var goalRequestsSent: [(seq: Int64, data: Data)] = []
+    private(set) var cancelRequestsSent: [(seq: Int64, data: Data)] = []
+    private(set) var resultRequestsSent: [(seq: Int64, data: Data)] = []
+
+    init(
+        node: any RclNodeHandle, actionName: String, actionTypeName: String, qos: TransportQoS,
+        callbacks: RclActionClientCallbacks
+    ) {
+        self.node = node
+        self.actionName = actionName
+        self.actionTypeName = actionTypeName
+        self.qos = qos
+        self.callbacks = callbacks
+    }
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !destroyed
+    }
+
+    func markDestroyed() {
+        lock.lock()
+        defer { lock.unlock() }
+        destroyed = true
+    }
+
+    func recordGoalRequest(_ data: Data) -> Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        nextSeq += 1
+        goalRequestsSent.append((nextSeq, data))
+        return nextSeq
+    }
+    func recordCancelRequest(_ data: Data) -> Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        nextSeq += 1
+        cancelRequestsSent.append((nextSeq, data))
+        return nextSeq
+    }
+    func recordResultRequest(_ data: Data) -> Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        nextSeq += 1
+        resultRequestsSent.append((nextSeq, data))
+        return nextSeq
+    }
+
+    /// Test hooks: simulate the wait thread delivering one taken message.
+    func fireGoalResponse(sequenceNumber: Int64, data: Data) {
+        callbacks.onGoalResponse(sequenceNumber, data)
+    }
+    func fireCancelResponse(sequenceNumber: Int64, data: Data) {
+        callbacks.onCancelResponse(sequenceNumber, data)
+    }
+    func fireResultResponse(sequenceNumber: Int64, data: Data) {
+        callbacks.onResultResponse(sequenceNumber, data)
+    }
+    func fireFeedback(_ data: Data) {
+        callbacks.onFeedback(data)
+    }
+    func fireStatus(_ records: [RclGoalStatusRecord]) {
+        callbacks.onStatus(records)
+    }
+}
+
 final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private func sync<T>(_ b: () -> T) -> T {
@@ -192,6 +354,10 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     private(set) var servicesDestroyed: [(serviceName: String, srvTypeName: String)] = []
     private(set) var serviceClientsCreated: [MockRclServiceClient] = []
     private(set) var serviceClientsDestroyed: [(serviceName: String, srvTypeName: String)] = []
+    private(set) var actionServersCreated: [MockRclActionServer] = []
+    private(set) var actionServersDestroyed: [(actionName: String, actionTypeName: String)] = []
+    private(set) var actionClientsCreated: [MockRclActionClient] = []
+    private(set) var actionClientsDestroyed: [(actionName: String, actionTypeName: String)] = []
     /// Teardown order log: "subscription:<topic>" / "service:<name>" /
     /// "client:<name>" / "node:<name>" / "context".
     private(set) var teardownEvents: [String] = []
@@ -200,9 +366,17 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     var createSubscriptionShouldThrow: TransportError?
     var createServiceServerShouldThrow: TransportError?
     var createServiceClientShouldThrow: TransportError?
+    var createActionServerShouldThrow: TransportError?
+    var createActionClientShouldThrow: TransportError?
     var sendResponseShouldThrow: TransportError?
     var sendRequestShouldThrow: TransportError?
+    var sendGoalRequestShouldThrow: TransportError?
+    var acceptGoalShouldThrow: TransportError?
+    /// Events for which `updateGoalState` throws — lets tests fail a chain
+    /// partway through (e.g. `.execute` lands, `.succeed` fails).
+    var updateGoalStateShouldThrowOn: Set<RclGoalEvent> = []
     var serverAvailableValue = true
+    var actionServerAvailableValue = true
     /// Test hook: runs inside createSubscription before the handle is
     /// returned — lets tests interleave a session close() into the
     /// preflight-create-append window.
@@ -210,6 +384,15 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     /// Same close-race hooks for the service entities.
     var onCreateServiceServer: (() -> Void)?
     var onCreateServiceClient: (() -> Void)?
+    /// Same close-race hooks for the action entities.
+    var onCreateActionServer: (() -> Void)?
+    var onCreateActionClient: (() -> Void)?
+    /// Test hook: fires after a goal request is recorded, with its sequence number.
+    var onSendGoalRequest: ((Int64, Data) -> Void)?
+    /// Test hook: runs inside `acceptGoal` before the accept is recorded —
+    /// lets tests hold the accept FFI call open while a racing status
+    /// snapshot is attempted (the accept-vs-execute mirror race).
+    var onAcceptGoal: (() -> Void)?
     /// Test hook: fires after a response is recorded (lets tests await the
     /// async handler-to-sendResponse round trip deterministically).
     var onSendResponse: ((Data) -> Void)?
@@ -352,6 +535,159 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         sync {
             serviceClientsDestroyed.append((c.serviceName, c.srvTypeName))
             teardownEvents.append("client:\(c.serviceName)")
+        }
+    }
+
+    // MARK: Actions
+
+    func createActionServer(
+        node: any RclNodeHandle,
+        actionTypeName: String,
+        actionName: String,
+        qos: TransportQoS,
+        callbacks: RclActionServerCallbacks
+    ) throws -> any RclActionServerHandle {
+        if let e = createActionServerShouldThrow { throw e }
+        onCreateActionServer?()
+        let server = MockRclActionServer(
+            node: node, actionName: actionName, actionTypeName: actionTypeName, qos: qos,
+            callbacks: callbacks)
+        sync { actionServersCreated.append(server) }
+        return server
+    }
+
+    func sendGoalResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+    {
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.sessionClosed
+        }
+        s.recordGoalResponse(requestId: requestId, data: data)
+    }
+
+    func sendCancelResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+    {
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.sessionClosed
+        }
+        s.recordCancelResponse(requestId: requestId, data: data)
+    }
+
+    func sendResultResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+    {
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.sessionClosed
+        }
+        s.recordResultResponse(requestId: requestId, data: data)
+    }
+
+    func publishActionFeedback(_ server: any RclActionServerHandle, data: Data) throws {
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.publisherClosed
+        }
+        s.recordFeedback(data)
+    }
+
+    func publishActionStatus(_ server: any RclActionServerHandle) throws {
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.publisherClosed
+        }
+        s.recordStatusPublish()
+    }
+
+    func acceptGoal(
+        _ server: any RclActionServerHandle, goalId: [UInt8], stampSec: Int32,
+        stampNanosec: UInt32
+    ) throws {
+        if let e = acceptGoalShouldThrow { throw e }
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.sessionClosed
+        }
+        onAcceptGoal?()
+        s.recordAccept(goalId: goalId, stampSec: stampSec, stampNanosec: stampNanosec)
+    }
+
+    func updateGoalState(_ server: any RclActionServerHandle, goalId: [UInt8], event: RclGoalEvent)
+        throws
+    {
+        if updateGoalStateShouldThrowOn.contains(event) {
+            throw TransportError.publishFailed("updateGoalState(\(event)) refused by test")
+        }
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.sessionClosed
+        }
+        s.recordGoalStateUpdate(goalId: goalId, event: event)
+    }
+
+    func notifyGoalDone(_ server: any RclActionServerHandle) throws {
+        guard let s = server as? MockRclActionServer, s.isActive else {
+            throw TransportError.sessionClosed
+        }
+        s.recordNotifyGoalDone()
+    }
+
+    func destroyActionServer(_ server: any RclActionServerHandle) {
+        guard let s = server as? MockRclActionServer else { return }
+        s.markDestroyed()
+        sync {
+            actionServersDestroyed.append((s.actionName, s.actionTypeName))
+            teardownEvents.append("actionServer:\(s.actionName)")
+        }
+    }
+
+    func createActionClient(
+        node: any RclNodeHandle,
+        actionTypeName: String,
+        actionName: String,
+        qos: TransportQoS,
+        callbacks: RclActionClientCallbacks
+    ) throws -> any RclActionClientHandle {
+        if let e = createActionClientShouldThrow { throw e }
+        onCreateActionClient?()
+        let actionClient = MockRclActionClient(
+            node: node, actionName: actionName, actionTypeName: actionTypeName, qos: qos,
+            callbacks: callbacks)
+        sync { actionClientsCreated.append(actionClient) }
+        return actionClient
+    }
+
+    func sendGoalRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 {
+        if let e = sendGoalRequestShouldThrow { throw e }
+        guard let c = client as? MockRclActionClient, c.isActive else {
+            throw TransportError.sessionClosed
+        }
+        let seq = c.recordGoalRequest(data)
+        onSendGoalRequest?(seq, data)
+        return seq
+    }
+
+    func sendCancelRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 {
+        guard let c = client as? MockRclActionClient, c.isActive else {
+            throw TransportError.sessionClosed
+        }
+        return c.recordCancelRequest(data)
+    }
+
+    func sendResultRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64 {
+        guard let c = client as? MockRclActionClient, c.isActive else {
+            throw TransportError.sessionClosed
+        }
+        return c.recordResultRequest(data)
+    }
+
+    func actionServerAvailable(_ client: any RclActionClientHandle) -> Bool {
+        guard let c = client as? MockRclActionClient, c.isActive else { return false }
+        return actionServerAvailableValue
+    }
+
+    func destroyActionClient(_ client: any RclActionClientHandle) {
+        guard let c = client as? MockRclActionClient else { return }
+        c.markDestroyed()
+        sync {
+            actionClientsDestroyed.append((c.actionName, c.actionTypeName))
+            teardownEvents.append("actionClient:\(c.actionName)")
         }
     }
 }

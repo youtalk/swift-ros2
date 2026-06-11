@@ -29,6 +29,87 @@ package protocol RclClientHandle: AnyObject, Sendable {
     var isActive: Bool { get }
 }
 
+/// Opaque handle to an rcl_action action server owned by the client.
+package protocol RclActionServerHandle: AnyObject, Sendable {
+    var isActive: Bool { get }
+}
+
+/// Opaque handle to an rcl_action action client owned by the client.
+package protocol RclActionClientHandle: AnyObject, Sendable {
+    var isActive: Bool { get }
+}
+
+/// rcl_action goal state-machine events (mirrors `rcl_action_goal_event_t`).
+package enum RclGoalEvent: Int32, Sendable {
+    case execute = 0
+    case cancelGoal = 1
+    case succeed = 2
+    case abort = 3
+    case canceled = 4
+}
+
+/// One `action_msgs/msg/GoalStatus` entry as taken by the rcl action client.
+package struct RclGoalStatusRecord: Sendable, Equatable {
+    /// 16-byte goal id.
+    package let goalId: [UInt8]
+    package let stampSec: Int32
+    package let stampNanosec: UInt32
+    /// Raw `GoalStatus.STATUS_*` value.
+    package let status: Int8
+
+    package init(goalId: [UInt8], stampSec: Int32, stampNanosec: UInt32, status: Int8) {
+        self.goalId = goalId
+        self.stampSec = stampSec
+        self.stampNanosec = stampNanosec
+        self.status = status
+    }
+}
+
+/// Wait-thread callback bag for an rcl action server. Each closure receives
+/// the raw request CDR (incl. the 4-byte encapsulation header) plus the
+/// opaque 24-byte request-id blob to echo into the matching send call.
+package struct RclActionServerCallbacks: Sendable {
+    package let onGoalRequest: @Sendable (Data, [UInt8]) -> Void
+    package let onCancelRequest: @Sendable (Data, [UInt8]) -> Void
+    package let onResultRequest: @Sendable (Data, [UInt8]) -> Void
+
+    package init(
+        onGoalRequest: @escaping @Sendable (Data, [UInt8]) -> Void,
+        onCancelRequest: @escaping @Sendable (Data, [UInt8]) -> Void,
+        onResultRequest: @escaping @Sendable (Data, [UInt8]) -> Void
+    ) {
+        self.onGoalRequest = onGoalRequest
+        self.onCancelRequest = onCancelRequest
+        self.onResultRequest = onResultRequest
+    }
+}
+
+/// Wait-thread callback bag for an rcl action client. The three response
+/// closures receive rcl's sequence number (as returned by the matching send)
+/// plus the raw response CDR; `onFeedback` receives the FeedbackMessage CDR;
+/// `onStatus` receives the decoded status entries of one GoalStatusArray.
+package struct RclActionClientCallbacks: Sendable {
+    package let onGoalResponse: @Sendable (Int64, Data) -> Void
+    package let onCancelResponse: @Sendable (Int64, Data) -> Void
+    package let onResultResponse: @Sendable (Int64, Data) -> Void
+    package let onFeedback: @Sendable (Data) -> Void
+    package let onStatus: @Sendable ([RclGoalStatusRecord]) -> Void
+
+    package init(
+        onGoalResponse: @escaping @Sendable (Int64, Data) -> Void,
+        onCancelResponse: @escaping @Sendable (Int64, Data) -> Void,
+        onResultResponse: @escaping @Sendable (Int64, Data) -> Void,
+        onFeedback: @escaping @Sendable (Data) -> Void,
+        onStatus: @escaping @Sendable ([RclGoalStatusRecord]) -> Void
+    ) {
+        self.onGoalResponse = onGoalResponse
+        self.onCancelResponse = onCancelResponse
+        self.onResultResponse = onResultResponse
+        self.onFeedback = onFeedback
+        self.onStatus = onStatus
+    }
+}
+
 /// Lifecycle + publish + subscribe + service operations the rcl C bridge exposes.
 package protocol RclClientProtocol: Sendable {
     /// Whether the native rcl stack is linked and usable.
@@ -106,4 +187,81 @@ package protocol RclClientProtocol: Sendable {
 
     /// Destroy a service client. Blocks until any in-flight onResponse invocation completes.
     func destroyServiceClient(_ client: any RclClientHandle)
+
+    // MARK: Actions (M8)
+
+    /// Create an action server whose wait thread invokes the callback bag
+    /// once per taken goal / cancel / result request. `actionTypeName` is the
+    /// canonical ROS action type name (e.g. `example_interfaces/action/Fibonacci`).
+    func createActionServer(
+        node: any RclNodeHandle,
+        actionTypeName: String,
+        actionName: String,
+        qos: TransportQoS,
+        callbacks: RclActionServerCallbacks
+    ) throws -> any RclActionServerHandle
+
+    /// Send the SendGoal response CDR for a previously delivered 24-byte
+    /// request id. Callable from any thread.
+    func sendGoalResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+
+    /// Send the CancelGoal response CDR. Callable from any thread.
+    func sendCancelResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+
+    /// Send the GetResult response CDR. Callable from any thread.
+    func sendResultResponse(_ server: any RclActionServerHandle, requestId: [UInt8], data: Data)
+        throws
+
+    /// Publish one FeedbackMessage frame (goal_id + feedback, CDR-encapsulated).
+    func publishActionFeedback(_ server: any RclActionServerHandle, data: Data) throws
+
+    /// Publish the goal status array snapshot from rcl_action's server-side
+    /// goal tracking (kept in sync via `acceptGoal` / `updateGoalState`).
+    func publishActionStatus(_ server: any RclActionServerHandle) throws
+
+    /// Register an accepted goal with rcl_action's server-side goal tracking.
+    /// Must precede an accepted SendGoal response. Idempotent per goal id.
+    func acceptGoal(
+        _ server: any RclActionServerHandle, goalId: [UInt8], stampSec: Int32,
+        stampNanosec: UInt32
+    ) throws
+
+    /// Drive the rcl_action goal state machine for a tracked goal.
+    func updateGoalState(_ server: any RclActionServerHandle, goalId: [UInt8], event: RclGoalEvent)
+        throws
+
+    /// Notify rcl_action that tracked goals reached a terminal state (starts
+    /// the result-timeout expiry clock).
+    func notifyGoalDone(_ server: any RclActionServerHandle) throws
+
+    /// Destroy an action server. Blocks until any in-flight callback completes.
+    func destroyActionServer(_ server: any RclActionServerHandle)
+
+    /// Create an action client whose wait thread invokes the callback bag
+    /// once per taken response / feedback / status message.
+    func createActionClient(
+        node: any RclNodeHandle,
+        actionTypeName: String,
+        actionName: String,
+        qos: TransportQoS,
+        callbacks: RclActionClientCallbacks
+    ) throws -> any RclActionClientHandle
+
+    /// Send pre-serialized SendGoal request CDR; returns rcl's sequence
+    /// number — the correlation key `onGoalResponse` echoes back.
+    func sendGoalRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64
+
+    /// Send pre-serialized CancelGoal request CDR; correlates with `onCancelResponse`.
+    func sendCancelRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64
+
+    /// Send pre-serialized GetResult request CDR; correlates with `onResultResponse`.
+    func sendResultRequest(_ client: any RclActionClientHandle, data: Data) throws -> Int64
+
+    /// Whether a matching action server is currently available.
+    func actionServerAvailable(_ client: any RclActionClientHandle) -> Bool
+
+    /// Destroy an action client. Blocks until any in-flight callback completes.
+    func destroyActionClient(_ client: any RclActionClientHandle)
 }

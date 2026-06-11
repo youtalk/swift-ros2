@@ -98,6 +98,13 @@ enum ActionFrameDecoder {
     /// Note the user CDR here is the bare result body — it does NOT carry its
     /// own encapsulation header; that header was consumed when the umbrella
     /// API encoded just the body fields.
+    ///
+    /// Splice constraint: this frame pins the Result body to CDR offset 4.
+    /// Real rosidl CDR pads `status` to offset 8 when the Result's first
+    /// field is 8-byte aligned (float64 / int64 / uint64), so such an action
+    /// would decode garbage on both this path and the `.rcl` rmw_deserialize
+    /// path. The generator rejects those actions at registry-generation time
+    /// — see `CActionRegistryEmitter.resultSpliceViolation` in SwiftROS2Gen.
     static func encodeGetResultResponse(status: Int8, resultCDR: Data) -> Data {
         var out = Data(capacity: 4 + 1 + 3 + resultCDR.count)
         out.append(cdrHeader)

@@ -93,6 +93,27 @@ struct SwiftROS2GenCommand: ParsableCommand {
             "Output root for generated Swift unpackers (SwiftROS2RCL). Required with --emit-rcl-marshalling.")
     var rclSwiftOutput: String = ""
 
+    @Option(
+        name: .long,
+        help: """
+            Comma-separated canonical service names ('pkg/srv/Type') to register in the generated RCL service \
+            typesupport registry (crcl_srv_registry.c). Only meaningful with --emit-rcl-marshalling; no per-field \
+            service marshalling is emitted (M7 serialize-shim design).
+            """
+    )
+    var rclSrvTypes: String?
+
+    @Option(
+        name: .long,
+        help: """
+            Comma-separated canonical message names ('pkg/msg/Type') that get a typesupport entry in the message \
+            registry (crcl_marshal_registry.c) WITHOUT generated marshal functions — for messages published over \
+            the serialized seam whose shape exceeds the flattener (e.g. 'rcl_interfaces/msg/ParameterEvent'). \
+            Only meaningful with --emit-rcl-marshalling.
+            """
+    )
+    var rclRegistryOnlyTypes: String?
+
     func validate() throws {
         // Reject untrusted whitespace / quotes / newlines in --extra-import
         // before the value is spliced into emitted Swift `import` lines.
@@ -143,9 +164,14 @@ struct SwiftROS2GenCommand: ParsableCommand {
                     typesAllowList: allowList
                 ))
         }
+        let srvTypes: [String] =
+            rclSrvTypes.map { $0.split(separator: ",").map(String.init) } ?? []
+        let registryOnlyTypes: [String] =
+            rclRegistryOnlyTypes.map { $0.split(separator: ",").map(String.init) } ?? []
         let files: [GeneratedFile]
         do {
-            files = try Pipeline.generateRclMarshalling(runs)
+            files = try Pipeline.generateRclMarshalling(
+                runs, srvTypes: srvTypes, registryOnlyTypes: registryOnlyTypes)
         } catch let err as GeneratorError {
             FileHandle.standardError.write(Data("error: \(err)\n".utf8))
             throw ExitCode.failure

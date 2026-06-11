@@ -593,7 +593,7 @@ if enableRcl {
             name: "CRclBridge",
             dependencies: ["CRos2Jazzy"],
             path: "Sources/CRclBridge",
-            sources: ["rcl_bridge.c", "rcl_subscription.c", "Generated"],
+            sources: ["rcl_bridge.c", "rcl_subscription.c", "rcl_service.c", "rcl_client.c", "Generated"],
             publicHeadersPath: "include",
             linkerSettings: rclBridgeLinkerSettings
         ))
@@ -621,6 +621,14 @@ if enableRcl {
             linkerSettings: [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-loopback", targets: ["crcl-loopback"]))
+    targets.append(
+        .executableTarget(
+            name: "crcl-svc-loopback",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/CrclSvcLoopback",
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    products.append(.executable(name: "crcl-svc-loopback", targets: ["crcl-svc-loopback"]))
     targets.append(
         .executableTarget(
             name: "rcl-bench",

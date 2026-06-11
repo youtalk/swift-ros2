@@ -106,6 +106,16 @@ struct SwiftROS2GenCommand: ParsableCommand {
     @Option(
         name: .long,
         help: """
+            Comma-separated canonical action names ('pkg/action/Type') to register in the generated RCL action \
+            typesupport registry (crcl_action_registry.c). Only meaningful with --emit-rcl-marshalling; no \
+            per-field action marshalling is emitted (M8 serialize-shim design).
+            """
+    )
+    var rclActionTypes: String?
+
+    @Option(
+        name: .long,
+        help: """
             Comma-separated canonical message names ('pkg/msg/Type') that get a typesupport entry in the message \
             registry (crcl_marshal_registry.c) WITHOUT generated marshal functions — for messages published over \
             the serialized seam whose shape exceeds the flattener (e.g. 'rcl_interfaces/msg/ParameterEvent'). \
@@ -166,12 +176,15 @@ struct SwiftROS2GenCommand: ParsableCommand {
         }
         let srvTypes: [String] =
             rclSrvTypes.map { $0.split(separator: ",").map(String.init) } ?? []
+        let actionTypes: [String] =
+            rclActionTypes.map { $0.split(separator: ",").map(String.init) } ?? []
         let registryOnlyTypes: [String] =
             rclRegistryOnlyTypes.map { $0.split(separator: ",").map(String.init) } ?? []
         let files: [GeneratedFile]
         do {
             files = try Pipeline.generateRclMarshalling(
-                runs, srvTypes: srvTypes, registryOnlyTypes: registryOnlyTypes)
+                runs, srvTypes: srvTypes, actionTypes: actionTypes,
+                registryOnlyTypes: registryOnlyTypes)
         } catch let err as GeneratorError {
             FileHandle.standardError.write(Data("error: \(err)\n".utf8))
             throw ExitCode.failure

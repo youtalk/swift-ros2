@@ -31,6 +31,11 @@ typedef struct crcl_client_s crcl_client_t;
 // Generated/crcl_srv_registry.c.
 #include "crcl_srv_registry.h"
 
+// Action typesupport registry (M8 serialize-shim): crcl_action_entry_t +
+// crcl_action_registry_lookup. The table itself is generated into
+// Generated/crcl_action_registry.c.
+#include "crcl_action_registry.h"
+
 /// QoS mapped from Swift TransportQoS (primitives only — no rmw types leak).
 typedef struct crcl_qos_s {
     int reliability;  // 0 = best_effort, 1 = reliable

@@ -1120,6 +1120,13 @@ extension Pipeline {
     ///     Per the M7 serialize-shim design no per-field service marshalling
     ///     is emitted — only typesupport + `__create`/`__destroy` bindings.
     ///     When empty, no service registry files are emitted at all.
+    ///   - actionTypes: Canonical `"<pkg>/action/<Type>"` names to register in
+    ///     the generated action typesupport registry
+    ///     (`crcl_action_registry.c`). Per the M8 serialize-shim design no
+    ///     per-field action marshalling is emitted — only the action
+    ///     typesupport plus the five wrapper-role *message* typesupports and
+    ///     their `__create`/`__destroy` bindings. When empty, no action
+    ///     registry files are emitted at all.
     ///   - registryOnlyTypes: Canonical `"<pkg>/msg/<Type>"` names that get a
     ///     typesupport entry in the *message* registry
     ///     (`crcl_marshal_registry.c`) without any generated marshal
@@ -1131,6 +1138,7 @@ extension Pipeline {
     public static func generateRclMarshalling(
         _ runs: [PackageRun],
         srvTypes: [String] = [],
+        actionTypes: [String] = [],
         registryOnlyTypes: [String] = []
     ) throws -> [GeneratedFile] {
         // Build the registry from allow-list-free runs so every nested
@@ -1275,6 +1283,45 @@ extension Pipeline {
                 GeneratedFile(
                     relativePath: "c/include/Generated/crcl_srv_registry.h",
                     contents: CSrvRegistryEmitter.emitHeader(selected)
+                ))
+        }
+
+        // Action typesupport registry (M8 serialize-shim): emitted only when
+        // the caller requested action types, so message-/service-only
+        // invocations keep producing the historical file set.
+        if !actionTypes.isEmpty {
+            // Parse actions allow-list-free: the CLI's `--types` filter is a
+            // *message* allow-list and must not hide `.action` files.
+            let actionRuns = runs.map { PackageRun(input: $0.input, typesAllowList: nil) }
+            var actionsByRosName: [String: CActionRegistryEmitter.ActionRef] = [:]
+            for run in actionRuns {
+                for act in try parseActionsIn(run: run) {
+                    let ref = CActionRegistryEmitter.ActionRef(
+                        package: act.package, typeName: act.typeName)
+                    actionsByRosName[ref.rosName] = ref
+                }
+            }
+            var selected: [CActionRegistryEmitter.ActionRef] = []
+            var unknownActionTypes: [String] = []
+            for name in Set(actionTypes).sorted() {
+                if let ref = actionsByRosName[name] {
+                    selected.append(ref)
+                } else {
+                    unknownActionTypes.append(name)
+                }
+            }
+            if !unknownActionTypes.isEmpty {
+                throw GeneratorError.unknownRequestedTypes(unknownActionTypes)
+            }
+            files.append(
+                GeneratedFile(
+                    relativePath: "c/Generated/crcl_action_registry.c",
+                    contents: CActionRegistryEmitter.emit(selected)
+                ))
+            files.append(
+                GeneratedFile(
+                    relativePath: "c/include/Generated/crcl_action_registry.h",
+                    contents: CActionRegistryEmitter.emitHeader(selected)
                 ))
         }
         return files

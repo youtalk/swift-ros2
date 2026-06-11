@@ -5,7 +5,7 @@ import XCTest
 
 /// Serves example_interfaces/AddTwoInts through the real rcl +
 /// rmw_cyclonedds_cpp stack and asserts a request from a real ROS 2 host was
-/// answered correctly (plan task T5: macOS serves, the host calls).
+/// answered correctly (plan task T6: macOS serves, the host calls).
 /// Gated: requires the RCL backend built (SWIFT_ROS2_RCL) and a reachable
 /// Jazzy host (LINUX_IP). This is a runbook test — CI never runs it. Start
 /// the test, then within 60 s issue the call from the host:

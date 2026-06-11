@@ -28,6 +28,9 @@ struct crcl_service_s {
     rcl_wait_set_t wait_set;
     pthread_t thread;
     atomic_bool stop;
+    // Serializes rcl_take_request_with_info (wait thread) against
+    // rcl_send_response (caller threads) — see crcl__service_thread_main.
+    pthread_mutex_t io_mutex;
     crcl_request_callback_t cb;
     void *cb_ctx;
 };
@@ -61,8 +64,16 @@ static void crcl__unpack_request_id(const uint8_t in[CRCL_REQUEST_ID_SIZE], rmw_
 // bytes plus the packed request id to the callback (serialize-shim, spec
 // §20.2). The wait set and service are touched by this thread only while it
 // runs; crcl_service_destroy joins it before any fini, so there is no
-// concurrent access to rcl entities (rcl_send_response is the documented
-// exception — thread-safe with respect to take/wait).
+// concurrent access to rcl entities — with one exception: rcl_send_response
+// runs on caller threads while this thread takes. rcl does NOT document that
+// pairing as safe (rcl_take_request_with_info is "Thread-Safe: No", and
+// rcl_send_response's "Yes [1]" note forbids concurrency with non-thread-safe
+// service functions); current rmw implementations only tolerate it by
+// accident. The bridge makes the safety contractual instead: io_mutex
+// serializes the take below against crcl_service_send_response. It is held
+// only across the take — never across rcl_wait or the callback — so the cost
+// is bounded (worst case the take stalls behind one in-flight send, e.g.
+// rmw_cyclonedds's ~100 ms send-side match poll).
 static void *crcl__service_thread_main(void *arg) {
     crcl_service_t *s = arg;
     const int64_t timeout_ns = 100LL * 1000 * 1000;  // 100 ms
@@ -91,35 +102,43 @@ static void *crcl__service_thread_main(void *arg) {
         // latency under sustained load (M4 pattern). Every taken request
         // struct is __destroy'd on every path, success or failure.
         while (!atomic_load(&s->stop)) {
+            // Allocate everything BEFORE the take (M4 pattern,
+            // rcl_subscription.c): an allocation failure here leaves the
+            // request queued in the middleware instead of silently dropping
+            // an already-consumed one.
+            rcl_serialized_message_t msg = rmw_get_zero_initialized_serialized_message();
+            rcutils_allocator_t alloc = rcutils_get_default_allocator();
+            if (rmw_serialized_message_init(&msg, 0, &alloc) != RMW_RET_OK) {
+                rcl_reset_error();
+                break;
+            }
             void *request = s->entry->request_create();
             if (!request) {
+                (void)rmw_serialized_message_fini(&msg);
                 break;  // allocation failure — back to waiting
             }
             rmw_service_info_t info;
             memset(&info, 0, sizeof(info));
+            pthread_mutex_lock(&s->io_mutex);
             rcl_ret_t take = rcl_take_request_with_info(&s->service, &info, request);
+            pthread_mutex_unlock(&s->io_mutex);
             if (take != RCL_RET_OK) {
                 s->entry->request_destroy(request);
+                (void)rmw_serialized_message_fini(&msg);
                 // RCL_RET_SERVICE_TAKE_FAILED == nothing pending (not an
                 // error); anything else is a real failure — either way stop
                 // draining and go back to waiting.
                 rcl_reset_error();
                 break;
             }
-            rcl_serialized_message_t msg = rmw_get_zero_initialized_serialized_message();
-            rcutils_allocator_t alloc = rcutils_get_default_allocator();
-            if (rmw_serialized_message_init(&msg, 0, &alloc) == RMW_RET_OK) {
-                if (rmw_serialize(request, s->entry->request_typesupport(), &msg) == RMW_RET_OK) {
-                    uint8_t blob[CRCL_REQUEST_ID_SIZE];
-                    crcl__pack_request_id(&info.request_id, blob);
-                    s->cb(s->cb_ctx, blob, msg.buffer, msg.buffer_length);
-                } else {
-                    rcl_reset_error();
-                }
-                (void)rmw_serialized_message_fini(&msg);
+            if (rmw_serialize(request, s->entry->request_typesupport(), &msg) == RMW_RET_OK) {
+                uint8_t blob[CRCL_REQUEST_ID_SIZE];
+                crcl__pack_request_id(&info.request_id, blob);
+                s->cb(s->cb_ctx, blob, msg.buffer, msg.buffer_length);
             } else {
                 rcl_reset_error();
             }
+            (void)rmw_serialized_message_fini(&msg);
             s->entry->request_destroy(request);
         }
     }
@@ -192,8 +211,18 @@ crcl_service_t *crcl_service_create(
         return NULL;
     }
 
+    if (pthread_mutex_init(&s->io_mutex, NULL) != 0) {
+        crcl__set_error("crcl_service_create: pthread_mutex_init failed");
+        (void)rcl_wait_set_fini(&s->wait_set);
+        (void)rcl_guard_condition_fini(&s->stop_gc);
+        (void)rcl_service_fini(&s->service, s->node);
+        free(s);
+        return NULL;
+    }
+
     if (pthread_create(&s->thread, NULL, crcl__service_thread_main, s) != 0) {
         crcl__set_error("crcl_service_create: pthread_create failed");
+        (void)pthread_mutex_destroy(&s->io_mutex);
         (void)rcl_wait_set_fini(&s->wait_set);
         (void)rcl_guard_condition_fini(&s->stop_gc);
         (void)rcl_service_fini(&s->service, s->node);
@@ -205,8 +234,14 @@ crcl_service_t *crcl_service_create(
 
 int crcl_service_send_response(
     crcl_service_t *s, const uint8_t *request_id, const uint8_t *buf, size_t len) {
-    if (!s || !request_id || (!buf && len > 0)) {
-        crcl__set_error("crcl_service_send_response: NULL service/request_id/buffer");
+    if (!s || !request_id) {
+        crcl__set_error("crcl_service_send_response: NULL service/request_id");
+        return -1;
+    }
+    // Valid CDR is at least the 4-byte encapsulation header — mirror the
+    // Swift-side check instead of feeding a short buffer to rmw_deserialize.
+    if (!buf || len < 4) {
+        crcl__set_error("crcl_service_send_response: buffer missing 4-byte CDR encapsulation header");
         return -1;
     }
     void *response = s->entry->response_create();
@@ -228,7 +263,12 @@ int crcl_service_send_response(
     }
     rmw_request_id_t id;
     crcl__unpack_request_id(request_id, &id);
+    // io_mutex: rcl does not document rcl_send_response as safe against a
+    // concurrent rcl_take_request_with_info — serialize against the wait
+    // thread's take (see crcl__service_thread_main).
+    pthread_mutex_lock(&s->io_mutex);
     rcl_ret_t ret = rcl_send_response(&s->service, &id, response);
+    pthread_mutex_unlock(&s->io_mutex);
     s->entry->response_destroy(response);
     if (ret != RCL_RET_OK) {
         crcl__capture_rcl_error();
@@ -265,6 +305,9 @@ int crcl_service_destroy(crcl_service_t *s) {
         crcl__set_error("crcl_service_destroy: pthread_join failed");
         return -1;
     }
+    // After the join no other crcl entry point may run (Swift drops the
+    // handle before destroy), so the mutex is free; destroy before the finis.
+    (void)pthread_mutex_destroy(&s->io_mutex);
     int rc = 0;
     if (rcl_service_fini(&s->service, s->node) != RCL_RET_OK) {
         crcl__capture_rcl_error();

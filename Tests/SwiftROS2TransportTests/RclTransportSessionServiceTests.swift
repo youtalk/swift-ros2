@@ -317,6 +317,35 @@ final class RclTransportSessionServiceTests: XCTestCase {
         XCTAssertFalse(serviceClient.isActive)
     }
 
+    /// Residual close-vs-call race: call() can snapshot closed=false/handle,
+    /// then close() fully runs (failAll sweeps a still-empty table) before
+    /// registerAndSend executes. The interleaving cannot be scheduled through
+    /// the mock seam — registerAndSend holds the table lock across the send
+    /// hook and failAll takes the same lock, so close() can never complete
+    /// while a send is blocked inside the hook. Drive the table directly
+    /// instead: a registerAndSend that starts after failAll must resume the
+    /// continuation with sessionClosed without sending.
+    func testPendingTableRegisterAfterFailAllResumesWithSessionClosed() async throws {
+        let table = RclPendingCallTable()
+        table.failAll(TransportError.sessionClosed)
+        let sendRan = Box<Bool>(false)
+        do {
+            _ = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
+                let seq = table.registerAndSend(cont) {
+                    sendRan.value = true
+                    return 1
+                }
+                XCTAssertNil(seq, "registerAndSend after failAll must not return a sequence number")
+            }
+            XCTFail("expected sessionClosed")
+        } catch let e as TransportError {
+            guard case .sessionClosed = e else { return XCTFail("got \(e)") }
+        }
+        XCTAssertFalse(sendRan.value, "send must not run once the table is closed")
+        // And a late resolve for the never-registered sequence stays a no-op.
+        XCTAssertFalse(table.resolve(seq: 1, with: .success(Data())))
+    }
+
     func testClientCallAfterCloseThrowsSessionClosed() async throws {
         let client = MockRclClient()
         let s = try await openSession(client)

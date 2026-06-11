@@ -289,19 +289,32 @@ final class RclTransportServiceClient: TransportClient, @unchecked Sendable {
 /// and the registration as one atomic step. The response side takes the same
 /// lock in `resolve`, which makes a response observed between send and
 /// registration impossible.
-private final class RclPendingCallTable: @unchecked Sendable {
+///
+/// The table is close-aware: `failAll` latches `isClosed` under the lock, and
+/// a `registerAndSend` that loses the race against `close()` (snapshot read
+/// before close, registration after `failAll`'s sweep) resumes promptly with
+/// `sessionClosed` instead of parking a continuation nobody will sweep.
+/// Internal (not private) so the close-race unit test can drive it directly.
+final class RclPendingCallTable: @unchecked Sendable {
     private let lock = NSLock()
     private var pending: [Int64: CheckedContinuation<Data, Error>] = [:]
+    private var isClosed = false
 
     /// Runs `send` and registers `cont` under the returned sequence number
     /// while holding the lock. Returns the sequence number on success; on a
     /// send failure the continuation is resumed with the thrown error and nil
-    /// is returned.
+    /// is returned. If `failAll` already ran, the continuation is resumed
+    /// with `sessionClosed` without sending.
     func registerAndSend(
         _ cont: CheckedContinuation<Data, Error>,
         send: () throws -> Int64
     ) -> Int64? {
         lock.lock()
+        guard !isClosed else {
+            lock.unlock()
+            cont.resume(throwing: TransportError.sessionClosed)
+            return nil
+        }
         do {
             let seq = try send()
             pending[seq] = cont
@@ -325,6 +338,7 @@ private final class RclPendingCallTable: @unchecked Sendable {
 
     func failAll(_ error: Error) {
         lock.lock()
+        isClosed = true
         let snapshot = pending
         pending.removeAll()
         lock.unlock()

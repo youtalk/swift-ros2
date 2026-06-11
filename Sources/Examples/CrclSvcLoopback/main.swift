@@ -15,10 +15,13 @@
 import Foundation
 import SwiftROS2
 
-// Last-resort in-process bound (~20 s): if anything below wedges past every
-// per-phase timeout, SIGALRM's default disposition kills the process before
-// the OK line is printed, so the CI grep still fails deterministically.
-alarm(20)
+// Last-resort in-process bound (60 s): the per-phase budgets below already
+// sum to 20 s (waitForService 10 + two 5 s calls) and ASan startup adds
+// seconds, so leave real headroom while staying far under ci-rcl's outer
+// 150 s bound. If anything wedges past every per-phase timeout, SIGALRM's
+// default disposition kills the process before the OK line is printed, so
+// the CI grep still fails deterministically.
+alarm(60)
 
 func fail(_ reason: String) -> Never {
     print("crcl_svc_loopback FAIL: \(reason)")

@@ -634,6 +634,14 @@ if enableRcl {
     products.append(.executable(name: "crcl-svc-loopback", targets: ["crcl-svc-loopback"]))
     targets.append(
         .executableTarget(
+            name: "crcl-action-loopback",
+            dependencies: ["SwiftROS2"],
+            path: "Sources/Examples/CrclActionLoopback",
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
+    products.append(.executable(name: "crcl-action-loopback", targets: ["crcl-action-loopback"]))
+    targets.append(
+        .executableTarget(
             name: "rcl-bench",
             dependencies: ["SwiftROS2", "SwiftROS2RCL"],
             path: "Sources/Examples/RclBench",

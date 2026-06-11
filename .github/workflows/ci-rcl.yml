@@ -178,3 +178,27 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "crcl_svc_loopback OK:"
           ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
+
+      # In-process action round-trip (M8): createActionServer /
+      # createActionClient for example_interfaces/Fibonacci through the
+      # serialize-shim C bridge — the rcl_action wait threads, the per-role
+      # request correlation tables, the goal-state mirroring into rcl's state
+      # machine, and the feedback / status marshalling run under
+      # AddressSanitizer. Two sequential goals with distinct orders gate
+      # against goal-id correlation bugs, then a mid-flight cancel asserts the
+      # CANCELED terminal result. Same headless-runner caveats as the other
+      # loopbacks: bound the run (alarm 150 — readiness polls + three goals +
+      # cancel + ASan slowdown) and decide success on the OK line + the
+      # absence of any ASan/leak report.
+      - name: Build + run crcl-action-loopback (Catalyst, ASan)
+        run: |
+          xcodebuild -scheme crcl-action-loopback \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            -derivedDataPath build/dd-ci-crclactionloopback -enableAddressSanitizer YES \
+            build CODE_SIGNING_ALLOWED=NO
+          bin="$(find build/dd-ci-crclactionloopback -name crcl-action-loopback -type f -perm +111 | head -1)"
+          echo "Running action loopback: $bin"
+          out="$(perl -e 'alarm 150; exec @ARGV' "$bin" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "crcl_action_loopback OK:"
+          ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"

@@ -1,13 +1,20 @@
-name: ci-rcl
-# RCL (native rcl + rmw_cyclonedds_cpp) backend CI. Opt-in / scheduled only:
-# the cost driver is cross-compiling the real ROS 2 stack into
-# CRos2Jazzy.xcframework (~30-60 min), so this is NOT run on every PR. The
-# mock-based RCL unit tests need no xcframework and already run in ci.yml; this
-# job covers the parts that require the real xcframework + Mac Catalyst.
+name: CI (RCL)
+# RCL (native rcl + rmw_cyclonedds_cpp) backend CI. Runs on every PR as a
+# required check: the cost driver is cross-compiling the real ROS 2 stack into
+# CRos2Jazzy.xcframework (~20-25 min for the single maccatalyst slice), which
+# is accepted for main-line protection. The mock-based RCL unit tests need no
+# xcframework and already run in ci.yml; this job covers the parts that
+# require the real xcframework + Mac Catalyst.
 on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   rcl-build-smoke:

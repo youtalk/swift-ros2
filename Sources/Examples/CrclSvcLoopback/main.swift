@@ -1,13 +1,24 @@
-// crcl-svc-loopback — M7 service round-trip gate.
+// crcl-svc-loopback — M7 service + parameter round-trip gate.
 //
-// One process, one rcl context: a service server and a service client for
-// example_interfaces/AddTwoInts share the name "add_two_ints". Every call
-// travels the full public createService / createClient surface end-to-end:
-// CDREncoder -> rmw_deserialize shim -> typed rcl service server ->
-// user handler -> rmw_serialize shim -> rcl_take_response -> CDRDecoder.
-// Two sequential calls with distinct operands discriminate correlation bugs
-// (a response wired to the wrong request cannot satisfy both sums). On
-// success prints "crcl_svc_loopback OK: …" + flush, then exits 0 (before
+// One process, one rcl context, two phases:
+//
+// 1. Services: a service server and a service client for
+//    example_interfaces/AddTwoInts share the name "add_two_ints". Every call
+//    travels the full public createService / createClient surface end-to-end:
+//    CDREncoder -> rmw_deserialize shim -> typed rcl service server ->
+//    user handler -> rmw_serialize shim -> rcl_take_response -> CDRDecoder.
+//    Two sequential calls with distinct operands discriminate correlation
+//    bugs (a response wired to the wrong request cannot satisfy both sums).
+//
+// 2. Parameters: the node is created with DEFAULT ROS2NodeOptions — the
+//    first time the stock createNode path runs on .rcl — so the six
+//    rcl_interfaces parameter services register at creation and
+//    /parameter_events publishes over the registry-only serialized seam
+//    (zero parameter-specific transport work). A ROS2ParameterClient
+//    pointed at the node's own services declares/gets/sets a parameter and
+//    a /parameter_events subscription asserts the change event arrives.
+//
+// On success prints "crcl_svc_loopback OK: …" + flush, then exits 0 (before
 // context teardown, which can block on headless runners — ci-rcl bounds the
 // run with SIGALRM and decides success on the OK line, consistent with
 // crcl-loopback / crcl-golden / crcl-smoke).
@@ -15,13 +26,14 @@
 import Foundation
 import SwiftROS2
 
-// Last-resort in-process bound (60 s): the per-phase budgets below already
-// sum to 20 s (waitForService 10 + two 5 s calls) and ASan startup adds
-// seconds, so leave real headroom while staying far under ci-rcl's outer
-// 150 s bound. If anything wedges past every per-phase timeout, SIGALRM's
-// default disposition kills the process before the OK line is printed, so
-// the CI grep still fails deterministically.
-alarm(60)
+// Last-resort in-process bound (120 s): the per-phase budgets below sum to
+// ~45 s worst case (service waitForService 10 + two 5 s calls + param
+// waitForService 10 + three 5 s param calls + 10 s event wait — typical runs
+// settle in seconds) and ASan startup adds more, so leave real headroom while
+// staying under ci-rcl's outer 150 s bound. If anything wedges past every
+// per-phase timeout, SIGALRM's default disposition kills the process before
+// the OK line is printed, so the CI grep still fails deterministically.
+alarm(120)
 
 func fail(_ reason: String) -> Never {
     print("crcl_svc_loopback FAIL: \(reason)")
@@ -36,15 +48,15 @@ do {
     fail("ROS2Context creation threw: \(error)")
 }
 
-// Parameter services are deferred on the rcl backend (they land in a
-// follow-up after the services PR) — start the node without them, same as
-// crcl-loopback.
+// Default ROS2NodeOptions on purpose: createNode itself registers the six
+// rcl_interfaces parameter services and installs the /parameter_events
+// emitter, so this single node serves both the AddTwoInts phase and the
+// parameter phase below.
 let node: ROS2Node
 do {
     node = try await ctx.createNode(
         name: "crcl_svc_loopback",
-        namespace: "/loopback",
-        options: ROS2NodeOptions(startParameterServices: false)
+        namespace: "/loopback"
     )
 } catch {
     fail("createNode threw: \(error)")
@@ -98,10 +110,125 @@ guard second.sum == 33 else {
     fail("call #2 sum mismatch: \(second.sum) != 33")
 }
 
-print("crcl_svc_loopback OK: AddTwoInts 2+3=5, -7+40=33")
+// --- Parameter phase ---
+//
+// Subscribe to /parameter_events before any parameter mutation so the
+// change event cannot race the reader-writer match (the publisher QoS is
+// transient-local, but the gate shouldn't have to rely on replay).
+final class EventBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [ParameterEvent] = []
+
+    func record(_ event: ParameterEvent) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+    }
+
+    var snapshot: [ParameterEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
+}
+
+let eventBox = EventBox()
+let eventSub: ROS2Subscription<ParameterEvent>
+do {
+    eventSub = try await node.createSubscription(
+        ParameterEvent.self, topic: "/parameter_events", qos: .parameterEvents)
+} catch {
+    fail("createSubscription(/parameter_events) threw: \(error)")
+}
+let eventConsumer = Task {
+    for await event in eventSub.messages {
+        eventBox.record(event)
+    }
+}
+
+// Declare locally; the lazy /parameter_events publisher spins up on this
+// first mutation (registry-only rcl_interfaces/msg/ParameterEvent entry
+// over the serialized seam).
+do {
+    let declared = try await node.declareParameter("answer", default: Int64(41))
+    guard declared == 41 else {
+        fail("declareParameter returned \(declared), expected 41")
+    }
+} catch {
+    fail("declareParameter threw: \(error)")
+}
+
+// Point a ROS2ParameterClient at this node's own six services — same
+// in-process loopback shape as the AddTwoInts phase.
+let paramClient: ROS2ParameterClient
+do {
+    paramClient = try await node.createParameterClient(remoteNode: node.fullyQualifiedName)
+} catch {
+    fail("createParameterClient threw: \(error)")
+}
+do {
+    try await paramClient.waitForService(timeout: .seconds(10))
+} catch {
+    fail("parameter waitForService threw: \(error)")
+}
+
+// get -> declared value.
+do {
+    let values = try await paramClient.getParameters(["answer"], timeout: .seconds(5))
+    guard values.count == 1, case .integer(let v) = values[0], v == 41 else {
+        fail("param get #1 returned \(values), expected [.integer(41)]")
+    }
+} catch {
+    fail("param get #1 threw: \(error)")
+}
+
+// set -> new value.
+do {
+    let results = try await paramClient.setParameters(
+        [ROS2Parameter(name: "answer", value: .integer(42))], timeout: .seconds(5))
+    guard results.count == 1, results[0].successful else {
+        fail("param set rejected: \(results)")
+    }
+} catch {
+    fail("param set threw: \(error)")
+}
+
+// get -> the value the set committed.
+do {
+    let values = try await paramClient.getParameters(["answer"], timeout: .seconds(5))
+    guard values.count == 1, case .integer(let v) = values[0], v == 42 else {
+        fail("param get #2 returned \(values), expected [.integer(42)]")
+    }
+} catch {
+    fail("param get #2 threw: \(error)")
+}
+
+// The set must surface on /parameter_events as a changed-parameter event.
+let eventDeadline = Date().addingTimeInterval(10)
+var sawChange = false
+while Date() < eventDeadline {
+    if eventBox.snapshot.contains(where: { event in
+        event.changedParameters.contains { $0.name == "answer" }
+    }) {
+        sawChange = true
+        break
+    }
+    try? await Task.sleep(nanoseconds: 50_000_000)
+}
+guard sawChange else {
+    fail(
+        "no /parameter_events change for 'answer' within 10 s "
+            + "(received \(eventBox.snapshot.count) events)")
+}
+
+print(
+    "crcl_svc_loopback OK: AddTwoInts 2+3=5, -7+40=33; "
+        + "param declare/get/set + event round-tripped")
 fflush(stdout)
 
 // Best-effort teardown after the OK line: on a headless runner CycloneDDS
 // teardown can block, and ci-rcl's SIGALRM bound + OK-line grep absorb that.
+eventConsumer.cancel()
+await paramClient.close()
 await ctx.shutdown()
 exit(0)

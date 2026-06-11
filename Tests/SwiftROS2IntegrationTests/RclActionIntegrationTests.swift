@@ -18,6 +18,14 @@ import XCTest
 /// 3, 5]" with status SUCCEEDED. If no goal arrives within 60 s the test
 /// skips (the host side is manual), unless RCL_SVC_EXPECT_CALL=1 is set — in
 /// which case the absence of a goal is a failure.
+///
+/// If the host's send_goal stays at "Waiting for an action server" the LAN
+/// likely drops multicast (typical on Wi-Fi): set unicast peers on BOTH
+/// sides via CYCLONEDDS_URI, each pointing at the other machine —
+/// `<CycloneDDS><Domain><Discovery><Peers><Peer address="<other-ip>"/>
+/// </Peers></Discovery></Domain></CycloneDDS>` (verified 2026-06-11:
+/// multicast discovery failed Mac<->host, unicast peers round-tripped the
+/// full goal/feedback/result exchange).
 final class RclActionIntegrationTests: XCTestCase {
     func testServeFibonacciOverRcl() async throws {
         #if !SWIFT_ROS2_RCL

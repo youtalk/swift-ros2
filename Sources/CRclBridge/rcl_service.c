@@ -38,8 +38,9 @@ struct crcl_service_s {
 // Pack an rmw_request_id_t into the opaque FFI blob: 16-byte writer GUID
 // followed by the int64 sequence number in little-endian byte order. Swift
 // never interprets the blob; the explicit LE packing just makes the layout
-// deterministic regardless of host endianness.
-static void crcl__pack_request_id(const rmw_request_id_t *id, uint8_t out[CRCL_REQUEST_ID_SIZE]) {
+// deterministic regardless of host endianness. Shared with the action bridge
+// sources via crcl_internal.h (M8 reuses the same 24-byte blob shape).
+void crcl__pack_request_id(const rmw_request_id_t *id, uint8_t out[CRCL_REQUEST_ID_SIZE]) {
     memcpy(out, id->writer_guid, 16);
     uint64_t seq = (uint64_t)id->sequence_number;
     for (int i = 0; i < 8; i++) {
@@ -47,7 +48,7 @@ static void crcl__pack_request_id(const rmw_request_id_t *id, uint8_t out[CRCL_R
     }
 }
 
-static void crcl__unpack_request_id(const uint8_t in[CRCL_REQUEST_ID_SIZE], rmw_request_id_t *id) {
+void crcl__unpack_request_id(const uint8_t in[CRCL_REQUEST_ID_SIZE], rmw_request_id_t *id) {
     memset(id, 0, sizeof(*id));
     memcpy(id->writer_guid, in, 16);
     uint64_t seq = 0;

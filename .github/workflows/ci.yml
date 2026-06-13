@@ -51,6 +51,29 @@ jobs:
             exit 1
           fi
 
+  parity-matrix:
+    name: Parity matrix drift guard
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.3-jammy
+    steps:
+      # `submodules: recursive` is required even though parity-tool itself
+      # depends on nothing under vendor/: `swift run parity-tool` makes
+      # SwiftPM load the WHOLE package graph, which path-validates the
+      # Linux-arm source targets (CZenohPico over vendor/zenoh-pico). The
+      # dirs must exist or resolution errors — building only parity-tool
+      # still avoids compiling CycloneDDS / zenoh-pico.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Validate matrix JSON
+        run: swift run parity-tool validate
+      - name: Re-render and check for drift
+        run: |
+          swift run parity-tool render
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git diff --exit-code docs/PARITY.md docs/parity-matrix.json
+
   build-macos:
     name: Build & Test (macOS)
     needs: [lint-swift-format]

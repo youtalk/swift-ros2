@@ -679,6 +679,14 @@ if enableRcl {
             path: "Sources/SwiftROS2RCL"
         ))
     products.append(.library(name: "SwiftROS2RCL", targets: ["SwiftROS2RCL"]))
+    targets.append(
+        .testTarget(
+            name: "SwiftROS2RCLTests",
+            dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages"],
+            path: "Tests/SwiftROS2RCLTests",
+            swiftSettings: [.define("SWIFT_ROS2_RCL")],
+            linkerSettings: [.linkedLibrary("c++")]
+        ))
 }
 
 // Only pull in swift-docc-plugin when actually building documentation

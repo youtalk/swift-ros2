@@ -21,4 +21,15 @@ final class ParityMatrixTests: XCTestCase {
         XCTAssertEqual(matrix.capabilities[1].rcl, .pending)
         XCTAssertNil(matrix.capabilities[1].evidence)
     }
+
+    func testRenderMarkdown() throws {
+        let matrix = try loadSample()
+        let md = matrix.renderMarkdown()
+        XCTAssertTrue(md.hasPrefix("# Parity Matrix"))
+        XCTAssertTrue(md.contains("| Capability | pure-Swift | RCL | Severity |"))
+        XCTAssertTrue(md.contains("publish.typed.sensor_msgs/Imu"))
+        XCTAssertTrue(md.contains("subscribe.serialized.sensor_msgs/Image"))
+        // Deterministic: rendering twice yields identical output.
+        XCTAssertEqual(md, matrix.renderMarkdown())
+    }
 }

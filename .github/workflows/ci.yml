@@ -68,9 +68,10 @@ jobs:
           submodules: recursive
       - name: Validate matrix JSON
         run: swift run parity-tool validate
-      - name: Re-render and check for drift
+      - name: Re-render, canonicalize, and check for drift
         run: |
           swift run parity-tool render
+          swift run parity-tool canonicalize
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git diff --exit-code docs/PARITY.md docs/parity-matrix.json
 

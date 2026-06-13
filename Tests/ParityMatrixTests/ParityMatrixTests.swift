@@ -10,6 +10,10 @@ final class ParityMatrixTests: XCTestCase {
         return try JSONDecoder().decode(ParityMatrix.self, from: data)
     }
 
+    private func decodeMatrix(_ json: String) throws -> ParityMatrix {
+        try JSONDecoder().decode(ParityMatrix.self, from: Data(json.utf8))
+    }
+
     func testDecodeSample() throws {
         let matrix = try loadSample()
         XCTAssertEqual(matrix.schemaVersion, 1)
@@ -44,5 +48,65 @@ final class ParityMatrixTests: XCTestCase {
     func testValidateAcceptsCleanMatrix() throws {
         let matrix = try loadSample()
         XCTAssertNoThrow(try matrix.validate())
+    }
+
+    func testCanonicalEncodeIsDeterministicAndRoundTrips() throws {
+        // b.cap before a.cap: array order is preserved; .sortedKeys only orders
+        // keys *within* each object. evidence carries a slash to prove no escaping.
+        let matrix = try decodeMatrix(
+            #"""
+            {"schemaVersion":1,"capabilities":[
+              {"id":"b.cap","apiSymbol":"B","pureSwift":"supported","rcl":"supported",
+               "platforms":["macOS"],"typeApplicability":"n-a","severity":"n-a-by-design",
+               "verification":{"latency":{"verdict":"pending"},"soak":{"verdict":"pending"},
+                 "correctness":{"verdict":"pending"},"resource":{"verdict":"pending"}},
+               "evidence":"path/with/slashes.c:10"},
+              {"id":"a.cap","apiSymbol":"A","pureSwift":"supported","rcl":"partial",
+               "platforms":["iOS"],"typeApplicability":"bundled","severity":"major",
+               "verification":{"latency":{"verdict":"pending"},"soak":{"verdict":"pending"},
+                 "correctness":{"verdict":"pending"},"resource":{"verdict":"pending"}}}
+            ]}
+            """#)
+        let first = try matrix.encodeCanonicalJSON()
+        // Idempotent: decode -> encode reproduces identical bytes.
+        let decoded = try JSONDecoder().decode(ParityMatrix.self, from: first)
+        let second = try decoded.encodeCanonicalJSON()
+        XCTAssertEqual(first, second)
+        // Slashes are not escaped, and the file ends in a newline.
+        let text = String(decoding: first, as: UTF8.self)
+        XCTAssertTrue(text.contains("path/with/slashes.c:10"))
+        XCTAssertFalse(text.contains("\\/"))
+        XCTAssertTrue(text.hasSuffix("\n"))
+    }
+
+    func testSetAxisUpdatesNamedCapabilityOnly() throws {
+        var matrix = try decodeMatrix(
+            #"""
+            {"schemaVersion":1,"capabilities":[
+              {"id":"publish.typed.sensor_msgs/Imu","apiSymbol":"p","pureSwift":"supported",
+               "rcl":"supported","platforms":["macOS"],"typeApplicability":"bundled",
+               "severity":"n-a-by-design",
+               "verification":{"latency":{"verdict":"pending"},"soak":{"verdict":"pending"},
+                 "correctness":{"verdict":"pending"},"resource":{"verdict":"pending"}}},
+              {"id":"param.declare","apiSymbol":"q","pureSwift":"supported",
+               "rcl":"supported","platforms":["macOS"],"typeApplicability":"n-a",
+               "severity":"n-a-by-design",
+               "verification":{"latency":{"verdict":"pending"},"soak":{"verdict":"pending"},
+                 "correctness":{"verdict":"pending"},"resource":{"verdict":"pending"}}}
+            ]}
+            """#)
+        try matrix.setAxis(
+            capabilityId: "publish.typed.sensor_msgs/Imu", axis: .correctness,
+            verdict: .pass, value: "CDR==rmw_serialize")
+        // The named capability + axis is updated...
+        XCTAssertEqual(matrix.capabilities[0].verification.correctness.verdict, .pass)
+        XCTAssertEqual(matrix.capabilities[0].verification.correctness.value, "CDR==rmw_serialize")
+        // ...its sibling axis is untouched...
+        XCTAssertEqual(matrix.capabilities[0].verification.latency.verdict, .pending)
+        // ...and so is every other capability.
+        XCTAssertEqual(matrix.capabilities[1].id, "param.declare")
+        XCTAssertEqual(matrix.capabilities[1].verification.correctness.verdict, .pending)
+        XCTAssertThrowsError(
+            try matrix.setAxis(capabilityId: "nope", axis: .latency, verdict: .pass, value: nil))
     }
 }

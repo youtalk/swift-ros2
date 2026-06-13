@@ -138,3 +138,38 @@ extension ParityMatrix {
         }
     }
 }
+
+extension ParityMatrix {
+    /// The four verification axes (matches `Verification`'s stored properties).
+    public enum Axis: String, Codable, Sendable, CaseIterable {
+        case latency, soak, correctness, resource
+    }
+
+    /// Record a verification-axis result for one capability id. Throws if the
+    /// id is absent. Other axes and capabilities are untouched.
+    public mutating func setAxis(
+        capabilityId: String, axis: Axis, verdict: AxisVerdict, value: String?
+    ) throws {
+        guard let idx = capabilities.firstIndex(where: { $0.id == capabilityId }) else {
+            throw ParityMatrixError("unknown capability id: \(capabilityId)")
+        }
+        let result = AxisResult(verdict: verdict, value: value)
+        switch axis {
+        case .latency: capabilities[idx].verification.latency = result
+        case .soak: capabilities[idx].verification.soak = result
+        case .correctness: capabilities[idx].verification.correctness = result
+        case .resource: capabilities[idx].verification.resource = result
+        }
+    }
+
+    /// Deterministic JSON for `docs/parity-matrix.json`: sorted keys, pretty
+    /// printed, unescaped slashes, trailing newline. Capability source order is
+    /// preserved (an array); `.sortedKeys` only orders keys *within* each object.
+    public func encodeCanonicalJSON() throws -> Data {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        var data = try enc.encode(self)
+        data.append(0x0A)  // trailing newline so the file is POSIX-clean
+        return data
+    }
+}

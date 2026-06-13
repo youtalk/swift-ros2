@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "capabilities": [
+    {
+      "id": "publish.typed.sensor_msgs/Imu",
+      "apiSymbol": "ROS2Publisher.publish(_:)",
+      "pureSwift": "supported",
+      "rcl": "supported",
+      "platforms": ["iOS", "Catalyst", "macOS", "visionOS"],
+      "typeApplicability": "bundled",
+      "severity": "n-a-by-design",
+      "verification": {
+        "latency": { "verdict": "pending" },
+        "soak": { "verdict": "pending" },
+        "correctness": { "verdict": "pending" },
+        "resource": { "verdict": "pending" }
+      },
+      "evidence": "crcl-golden Imu 324B (#121)"
+    },
+    {
+      "id": "subscribe.serialized.sensor_msgs/Image",
+      "apiSymbol": "ROS2Subscription",
+      "pureSwift": "supported",
+      "rcl": "pending",
+      "platforms": ["iOS", "Catalyst", "macOS", "visionOS"],
+      "typeApplicability": "bundled",
+      "severity": "pending",
+      "verification": {
+        "latency": { "verdict": "pending" },
+        "soak": { "verdict": "pending" },
+        "correctness": { "verdict": "pending" },
+        "resource": { "verdict": "pending" }
+      },
+      "evidence": null
+    }
+  ]
+}

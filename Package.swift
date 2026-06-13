@@ -319,6 +319,20 @@ var targets: [Target] = [
         dependencies: [],
         path: "Tests/SwiftROS2GenPluginTests"
     ),
+
+    // Parity matrix model + renderer (pure Swift, all platforms).
+    .target(
+        name: "ParityMatrix",
+        dependencies: [],
+        path: "Sources/ParityMatrix"
+    ),
+
+    .testTarget(
+        name: "ParityMatrixTests",
+        dependencies: ["ParityMatrix"],
+        path: "Tests/ParityMatrixTests",
+        resources: [.copy("Resources")]
+    ),
 ]
 
 // zenoh-pico wire family — every platform EXCEPT the zenoh-rmw RCL variant

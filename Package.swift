@@ -343,6 +343,17 @@ var targets: [Target] = [
         path: "Tests/ParityMatrixTests",
         resources: [.copy("Resources")]
     ),
+
+    // Internal benchmark / soak-analysis target — not exported as a product.
+    .target(
+        name: "SwiftROS2Bench",
+        path: "Sources/SwiftROS2Bench"
+    ),
+    .testTarget(
+        name: "SwiftROS2BenchTests",
+        dependencies: ["SwiftROS2Bench"],
+        path: "Tests/SwiftROS2BenchTests"
+    ),
 ]
 
 // zenoh-pico wire family — every platform EXCEPT the zenoh-rmw RCL variant

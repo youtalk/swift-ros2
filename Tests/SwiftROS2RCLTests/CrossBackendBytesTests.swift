@@ -47,5 +47,19 @@
             try assertByteParity(
                 wireEncode(m), rclSerializePointCloud2(m), "PointCloud2 10k pts")
         }
+
+        func testPointCloud2ByteParityLidarScale() throws {
+            // ~0.96 MB: 60_000 points × 16 B step — LiDAR-scan scale.
+            let m = VerificationCorpus.pointCloud2(width: 60_000)
+            try assertByteParity(
+                wireEncode(m), rclSerializePointCloud2(m), "PointCloud2 60k pts (~0.96 MB)")
+        }
+
+        func testCompressedImageByteParityRealSize() throws {
+            // ~900 KB: representative of a 640x480 rgb8 frame's compressed payload.
+            let m = VerificationCorpus.compressedImage(byteCount: 900_000)
+            try assertByteParity(
+                wireEncode(m), rclSerializeCompressedImage(m), "CompressedImage ~900 KB")
+        }
     }
 #endif

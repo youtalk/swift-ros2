@@ -192,6 +192,7 @@ var products: [Product] = [
     .library(name: "SwiftROS2Transport", targets: ["SwiftROS2Transport"]),
     .library(name: "SwiftROS2Gen", targets: ["SwiftROS2Gen"]),
     .executable(name: "swift-ros2-gen", targets: ["swift-ros2-gen"]),
+    .executable(name: "parity-tool", targets: ["parity-tool"]),
     .plugin(name: "SwiftROS2GenPlugin", targets: ["SwiftROS2GenPlugin"]),
 ]
 
@@ -325,6 +326,15 @@ var targets: [Target] = [
         name: "ParityMatrix",
         dependencies: [],
         path: "Sources/ParityMatrix"
+    ),
+
+    .executableTarget(
+        name: "parity-tool",
+        dependencies: [
+            "ParityMatrix",
+            .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        ],
+        path: "Sources/parity-tool"
     ),
 
     .testTarget(

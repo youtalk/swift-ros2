@@ -116,3 +116,23 @@ extension ParityMatrix {
         return lines.joined(separator: "\n")
     }
 }
+
+public struct ParityMatrixError: Error, CustomStringConvertible {
+    public let description: String
+    public init(_ description: String) { self.description = description }
+}
+
+extension ParityMatrix {
+    /// Structural invariants the JSON must hold. Throws on the first violation.
+    public func validate() throws {
+        var seen = Set<String>()
+        for cap in capabilities {
+            guard !cap.id.isEmpty else {
+                throw ParityMatrixError("empty capability id")
+            }
+            guard seen.insert(cap.id).inserted else {
+                throw ParityMatrixError("duplicate capability id: \(cap.id)")
+            }
+        }
+    }
+}

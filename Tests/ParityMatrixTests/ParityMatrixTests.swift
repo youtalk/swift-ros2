@@ -32,4 +32,17 @@ final class ParityMatrixTests: XCTestCase {
         // Deterministic: rendering twice yields identical output.
         XCTAssertEqual(md, matrix.renderMarkdown())
     }
+
+    func testValidateRejectsDuplicateIDs() throws {
+        var matrix = try loadSample()
+        matrix.capabilities.append(matrix.capabilities[0])  // duplicate id
+        XCTAssertThrowsError(try matrix.validate()) { error in
+            XCTAssertTrue("\(error)".contains("duplicate capability id"))
+        }
+    }
+
+    func testValidateAcceptsCleanMatrix() throws {
+        let matrix = try loadSample()
+        XCTAssertNoThrow(try matrix.validate())
+    }
 }

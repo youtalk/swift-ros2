@@ -117,6 +117,8 @@ extension ParityMatrix {
     }
 }
 
+/// Error thrown when the parity matrix violates a structural invariant
+/// (e.g. an empty or duplicate capability id) during `validate()`.
 public struct ParityMatrixError: Error, CustomStringConvertible {
     public let description: String
     public init(_ description: String) { self.description = description }

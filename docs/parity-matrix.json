@@ -103,7 +103,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (SwiftROS2RCLTests.CrossBackendBytesTests.testImuByteParity)",
+          "verdict" : "pass"
         },
         "latency" : {
           "verdict" : "pending"
@@ -161,7 +162,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity 10k + 60k pts (SwiftROS2RCLTests.CrossBackendBytesTests.testPointCloud2ByteParity*)",
+          "verdict" : "pass"
         },
         "latency" : {
           "verdict" : "pending"
@@ -219,7 +221,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity 64K + 900KB payloads (SwiftROS2RCLTests.CrossBackendBytesTests.testCompressedImageByteParity*)",
+          "verdict" : "pass"
         },
         "latency" : {
           "verdict" : "pending"

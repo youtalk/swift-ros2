@@ -125,6 +125,7 @@ package protocol RclClientProtocol: Sendable {
     func createPublisher(
         node: any RclNodeHandle,
         typeName: String,
+        typeHash: String?,
         topic: String,
         qos: TransportQoS
     ) throws -> any RclPublisherHandle

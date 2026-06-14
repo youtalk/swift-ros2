@@ -440,7 +440,8 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     func createPublisher(
-        node: any RclNodeHandle, typeName: String, topic: String, qos: TransportQoS
+        node: any RclNodeHandle, typeName: String, typeHash: String?, topic: String,
+        qos: TransportQoS
     ) throws -> any RclPublisherHandle {
         if let e = createPublisherShouldThrow { throw e }
         let pub = MockRclPublisher(node: node, topic: topic, typeName: typeName)

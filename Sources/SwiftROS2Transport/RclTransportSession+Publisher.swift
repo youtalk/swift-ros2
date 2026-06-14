@@ -27,7 +27,7 @@ extension RclTransportSession {
         let node = try preflightPublisher(
             topic: topic, nodeName: nodeName, nodeNamespace: nodeNamespace)
         let handle = try client.createPublisher(
-            node: node, typeName: typeName, topic: topic, qos: qos)
+            node: node, typeName: typeName, typeHash: typeHash, topic: topic, qos: qos)
         let pub = RclTransportPublisher(client: client, handle: handle, topic: topic)
         appendPublisher(pub, for: topic)
         return pub

@@ -440,7 +440,7 @@
     },
     {
       "apiSymbol" : "ROS2Publisher.publish(_:) byte seam",
-      "evidence" : "rcl_bridge.c:122-130 crcl_publisher_create rejects any type absent from crcl_marshal_registry.c ('unsupported type'); the byte seam only selects a method on an already-created bundled publisher, so non-bundled types cannot open a publisher at all — blocks Conduit AudioData + CompressedPointCloud2",
+      "evidence" : "rcl_bridge.c:122-130 crcl_publisher_create rejects any type absent from crcl_marshal_registry.c, so route (a) (typed/serialized via rmw) cannot open a publisher; on that miss RclClient.createRawWriterPublisher falls back to route (b) — the CDDSBridge raw-CDR writer below rmw (sibling participant on the context domain, DDS topic/type via SwiftROS2Wire, USER_DATA typehash). Served outside rcl's entity graph (a documented divergence) but interoperable with any ROS 2 subscriber by topic + DDS-type name. Proven in-process by crcl-nonbundled-loopback (route-b .rcl publish -> .dds wire subscribe, same domain) and by RclNonbundledPublishIntegrationTests (LAN). Unblocks Conduit AudioData + CompressedPointCloud2",
       "id" : "publish.serialized.non_bundled",
       "platforms" : [
         "iOS",
@@ -449,8 +449,8 @@
         "visionOS"
       ],
       "pureSwift" : "supported",
-      "rcl" : "missing",
-      "severity" : "blocker",
+      "rcl" : "partial",
+      "severity" : "minor",
       "typeApplicability" : "byte-seam-only",
       "verification" : {
         "correctness" : {

@@ -137,12 +137,20 @@ public struct TransportConfig: Sendable {
     /// RCL transport with explicit unicast discovery (CycloneDDS static peers)
     /// and an optional network interface. On the RCL backend these are exported
     /// as CYCLONEDDS_URI for rmw_cyclonedds (see RclClient.createContext).
+    ///
+    /// Pinning only a `interface` (no `peers`) is a valid discovery config —
+    /// the NIC is pinned while SPDP stays multicast — so it resolves to
+    /// `.multicast` and passes `validate()`. `peers: []` with no `interface`
+    /// keeps `.unicast`, which `validate()` rejects as an empty discovery
+    /// config. The discovery XML the RCL backend exports is derived from
+    /// `peers`/`interface` directly, not from this mode.
     public static func rclUnicast(
         peers: [DDSPeer], domainId: Int = 0, interface: String? = nil
     ) -> TransportConfig {
-        TransportConfig(
+        let mode: DDSDiscoveryMode = peers.isEmpty && interface != nil ? .multicast : .unicast
+        return TransportConfig(
             type: .rcl, domainId: domainId,
-            ddsDiscoveryMode: .unicast, ddsUnicastPeers: peers,
+            ddsDiscoveryMode: mode, ddsUnicastPeers: peers,
             ddsNetworkInterface: interface)
     }
 

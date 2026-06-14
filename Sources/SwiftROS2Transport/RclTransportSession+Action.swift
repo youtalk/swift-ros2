@@ -14,11 +14,27 @@
 import Foundation
 
 extension RclTransportSession {
+    // TransportSession conformance (no node identity → single-node fallback).
     package func createActionServer(
         name: String,
         actionTypeName: String,
         roleTypeHashes: ActionRoleTypeHashes,
         qos: TransportQoS,
+        handlers: TransportActionServerHandlers
+    ) throws -> any TransportActionServer {
+        try createActionServer(
+            name: name, actionTypeName: actionTypeName, roleTypeHashes: roleTypeHashes,
+            qos: qos, nodeName: nil, nodeNamespace: nil, handlers: handlers)
+    }
+
+    // NodeScopedSession conformance (node-aware creation).
+    package func createActionServer(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?,
         handlers: TransportActionServerHandlers
     ) throws -> any TransportActionServer {
         guard !name.isEmpty else {
@@ -29,7 +45,7 @@ extension RclTransportSession {
         }
         // roleTypeHashes are unused on this backend: rcl derives hashes from
         // the typesupport handle (same note as subscriber / service).
-        let node = try preflightServiceEntity()
+        let node = try preflightServiceEntity(nodeName: nodeName, nodeNamespace: nodeNamespace)
         let server = RclTransportActionServer(client: client, name: name, handlers: handlers)
         let callbacks = RclActionServerCallbacks(
             onGoalRequest: { [weak server] data, requestId in
@@ -50,11 +66,26 @@ extension RclTransportSession {
         return server
     }
 
+    // TransportSession conformance (no node identity → single-node fallback).
     package func createActionClient(
         name: String,
         actionTypeName: String,
         roleTypeHashes: ActionRoleTypeHashes,
         qos: TransportQoS
+    ) throws -> any TransportActionClient {
+        try createActionClient(
+            name: name, actionTypeName: actionTypeName, roleTypeHashes: roleTypeHashes,
+            qos: qos, nodeName: nil, nodeNamespace: nil)
+    }
+
+    // NodeScopedSession conformance (node-aware creation).
+    package func createActionClient(
+        name: String,
+        actionTypeName: String,
+        roleTypeHashes: ActionRoleTypeHashes,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?
     ) throws -> any TransportActionClient {
         guard !name.isEmpty else {
             throw TransportError.invalidConfiguration("Action name cannot be empty")
@@ -62,7 +93,7 @@ extension RclTransportSession {
         guard !actionTypeName.isEmpty else {
             throw TransportError.invalidConfiguration("Action type name cannot be empty")
         }
-        let node = try preflightServiceEntity()
+        let node = try preflightServiceEntity(nodeName: nodeName, nodeNamespace: nodeNamespace)
         let actionClient = RclTransportActionClient(client: client, name: name)
         let callbacks = RclActionClientCallbacks(
             onGoalResponse: { [weak actionClient] sequenceNumber, data in

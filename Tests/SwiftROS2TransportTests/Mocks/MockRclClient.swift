@@ -12,11 +12,13 @@ final class MockRclNode: RclNodeHandle, @unchecked Sendable {
 }
 
 final class MockRclPublisher: RclPublisherHandle, @unchecked Sendable {
+    let node: any RclNodeHandle
     let topic: String
     let typeName: String
     private let lock = NSLock()
     private var closed = false
-    init(topic: String, typeName: String) {
+    init(node: any RclNodeHandle, topic: String, typeName: String) {
+        self.node = node
         self.topic = topic
         self.typeName = typeName
     }
@@ -347,6 +349,9 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     private(set) var nodeHandles: [MockRclNode] = []
     private(set) var nodesDestroyed: [(name: String, namespace: String)] = []
     private(set) var publishersCreated: [(topic: String, typeName: String)] = []
+    /// Publisher handles returned by createPublisher, in creation order — lets
+    /// tests assert entity-to-node attachment by identity (mirrors subscriptionsCreated).
+    private(set) var publisherHandles: [MockRclPublisher] = []
     private(set) var publishedPayloads: [Data] = []
     private(set) var subscriptionsCreated: [MockRclSubscription] = []
     private(set) var subscriptionsDestroyed: [(topic: String, typeName: String)] = []
@@ -432,8 +437,12 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         node: any RclNodeHandle, typeName: String, topic: String, qos: TransportQoS
     ) throws -> any RclPublisherHandle {
         if let e = createPublisherShouldThrow { throw e }
-        sync { publishersCreated.append((topic, typeName)) }
-        return MockRclPublisher(topic: topic, typeName: typeName)
+        let pub = MockRclPublisher(node: node, topic: topic, typeName: typeName)
+        sync {
+            publishersCreated.append((topic, typeName))
+            publisherHandles.append(pub)
+        }
+        return pub
     }
 
     func publishSerialized(_ publisher: any RclPublisherHandle, data: Data) throws {

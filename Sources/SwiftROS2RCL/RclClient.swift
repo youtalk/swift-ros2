@@ -524,7 +524,16 @@ private final class RclActionClientBox: RclActionClientHandle, @unchecked Sendab
 public final class RclClient: RclClientProtocol, @unchecked Sendable {
     private var ctx: OpaquePointer?
     private let lock = NSLock()
-    /// Process-global slot for restoring CYCLONEDDS_URI on destroyContext.
+    /// Serializes every CYCLONEDDS_URI read/write across all RclClient instances
+    /// in the process. CYCLONEDDS_URI is a single process-global slot and
+    /// setenv/getenv are not mutually thread-safe, so the save+export and the
+    /// read+restore must each run as one critical section under a SHARED lock —
+    /// the per-instance `lock` cannot guard a process-global. (Concurrent
+    /// contexts still share that one env slot; rmw_cyclonedds reads it once at
+    /// first-participant creation, so this serializes the mutations rather than
+    /// giving each context an independent value.)
+    private static let envLock = NSLock()
+    /// Saved CYCLONEDDS_URI to restore on destroyContext. Guarded by `envLock`.
     /// Outer optional = "we saved"; inner = "was previously set".
     private var priorCyclonedDDSURI: String??
 
@@ -578,12 +587,15 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
                 domainId: domainId, unicastPeerAddresses: unicastPeerAddresses,
                 networkInterface: networkInterface)
         else { return false }
-        lock.lock()
+        // Save + export under the shared lock as one critical section: getenv and
+        // setenv must not interleave with another instance's, or the saved value
+        // and the live env desynchronize.
+        Self.envLock.lock()
+        defer { Self.envLock.unlock() }
         // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
         // ("saved, was unset") rather than collapsing to .none ("never saved") —
         // restoreDiscoveryEnv relies on that distinction to unset vs. no-op.
         priorCyclonedDDSURI = Optional(getenv("CYCLONEDDS_URI").map { String(cString: $0) })
-        lock.unlock()
         setenv("CYCLONEDDS_URI", xml, 1)
         return true
     }
@@ -591,13 +603,13 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// Restore CYCLONEDDS_URI to its pre-applyDiscoveryEnv value (unset it if it
     /// was previously unset). Idempotent: a no-op when nothing was saved.
     package func restoreDiscoveryEnv() {
-        lock.lock()
-        let prior = priorCyclonedDDSURI
+        // Read + restore under the shared lock as one critical section (see
+        // applyDiscoveryEnv): the saved slot and the live env move together.
+        Self.envLock.lock()
+        defer { Self.envLock.unlock() }
+        guard let prior = priorCyclonedDDSURI else { return }
         priorCyclonedDDSURI = nil
-        lock.unlock()
-        if let prior {
-            if let p = prior { setenv("CYCLONEDDS_URI", p, 1) } else { unsetenv("CYCLONEDDS_URI") }
-        }
+        if let p = prior { setenv("CYCLONEDDS_URI", p, 1) } else { unsetenv("CYCLONEDDS_URI") }
     }
 
     package func createContext(

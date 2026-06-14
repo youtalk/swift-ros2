@@ -46,7 +46,14 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         guard client.isAvailable else {
             throw TransportError.unsupportedFeature("RCL transport not available (CRos2Jazzy not built)")
         }
-        try client.createContext(domainId: Int32(config.domainId))
+        // Bare host addresses (`peer.address`), mirroring the wire DDS path
+        // (DDSTransportSession): the C bridge drops each verbatim into
+        // `<Peer address="%s"/>`, where CycloneDDS needs a bare host (not a
+        // `udp/host:port` locator).
+        try client.createContext(
+            domainId: Int32(config.domainId),
+            unicastPeerAddresses: config.ddsUnicastPeers.map { $0.address },
+            networkInterface: config.ddsNetworkInterface)
         lock.lock()
         isOpen = true
         _sessionId = "rcl-\(config.domainId)"

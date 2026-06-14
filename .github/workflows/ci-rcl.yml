@@ -155,6 +155,28 @@ jobs:
           printf '%s\n' "$out" | grep -q "crcl_loopback OK:"
           ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
 
+      # In-process route-(b) non-bundled publish round-trip: an unbundled type
+      # (audio_common_msgs/AudioData, absent from the marshal registry) is
+      # published on the .rcl backend via RclClient's CDDSBridge raw-CDR
+      # fallback below rmw, and received by a pure-Swift .dds wire subscription
+      # on the same domain — proving the two CycloneDDS instances (rcl's and the
+      # standalone bridge's) coexist in-process and interoperate by topic +
+      # DDS-type name. Same headless-runner caveats as crcl-loopback: bound the
+      # run (alarm 120 — the example's own 20 s bound + ASan slowdown) and
+      # decide success on the OK line + the absence of any ASan/leak report.
+      - name: Build + run crcl-nonbundled-loopback (Catalyst, ASan)
+        run: |
+          xcodebuild -scheme crcl-nonbundled-loopback \
+            -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+            -derivedDataPath build/dd-ci-crclnonbundledloopback -enableAddressSanitizer YES \
+            build CODE_SIGNING_ALLOWED=NO
+          bin="$(find build/dd-ci-crclnonbundledloopback -name crcl-nonbundled-loopback -type f -perm +111 | head -1)"
+          echo "Running nonbundled loopback: $bin"
+          out="$(perl -e 'alarm 120; exec @ARGV' "$bin" 2>&1)" || true
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "crcl_nonbundled_loopback OK"
+          ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
+
       # In-process service round-trip (M7): createService / createClient for
       # example_interfaces/AddTwoInts through the serialize-shim C bridge —
       # the per-entity wait threads, the request-id correlation table, and the

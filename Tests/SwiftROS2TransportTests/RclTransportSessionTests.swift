@@ -313,4 +313,22 @@ final class RclTransportSessionTests: XCTestCase {
             nodeName: "node_a", nodeNamespace: "/", handler: { _, _ in })
         XCTAssertTrue(client.subscriptionsCreated.first?.node === client.nodeHandles[0])
     }
+
+    /// An unknown (name, namespace) must error, not silently bind to the
+    /// last-registered node — otherwise a caller bug (or an entity created for a
+    /// node already unregistered) misroutes onto an unrelated node.
+    func testCreatePublisherWithUnknownNodeThrowsInsteadOfMisrouting() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "node_a", namespace: "/")  // currentNode = node_a
+
+        XCTAssertThrowsError(
+            try s.createPublisher(
+                topic: "/t", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData,
+                nodeName: "ghost", nodeNamespace: "/")
+        )
+        XCTAssertTrue(
+            client.publisherHandles.isEmpty,
+            "no publisher should be created for an unknown node — silent misroute regression")
+    }
 }

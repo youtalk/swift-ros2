@@ -79,16 +79,16 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         }
     }
 
-    /// Resolve the node a new entity attaches to: look up by (name, namespace)
-    /// when supplied, else fall back to the last-registered node (single-node
-    /// back-compat). An unknown (name, namespace) also falls back to
-    /// `currentNode`. Caller holds `lock`.
+    /// Resolve the node a new entity attaches to. With a `name` (the node-aware
+    /// path: `ROS2Node` always passes its own name/namespace) the entity binds
+    /// to that exact registered node — an unknown (name, namespace) returns nil
+    /// so the caller errors rather than silently misrouting onto an unrelated
+    /// node. With `name == nil` (the plain `TransportSession` path) it falls
+    /// back to the last-registered node for single-node back-compat. Caller
+    /// holds `lock`.
     private func resolveNodeLocked(_ name: String?, _ namespace: String?) -> (any RclNodeHandle)? {
-        if let name {
-            let ns = namespace ?? "/"
-            if let node = nodes[nodeKey(name, ns)] { return node }
-        }
-        return currentNode
+        guard let name else { return currentNode }
+        return nodes[nodeKey(name, namespace ?? "/")]
     }
 
     /// Atomically validate the session is open, the topic is free, and a node

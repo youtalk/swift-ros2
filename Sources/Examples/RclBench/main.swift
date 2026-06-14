@@ -3,18 +3,21 @@
 // never share a participant.
 //
 // Usage:
-//   rcl-bench <rcl|dds> <publish|roundtrip|encode> [imu|image64k|cloud120k]
-//             [--count N] [--rate-hz N]
+//   rcl-bench <rcl|dds> <publish|roundtrip|roundtrip-lan|encode> [imu|image64k|cloud120k]
+//             [--count N] [--rate-hz N] [--domain N]
 //
 // Modes:
-//   publish   — per-publish call latency + max-rate throughput (no subscriber)
-//   roundtrip — in-process pub -> sub end-to-end latency via header.stamp
-//               (send time embedded; receiver computes now - stamp on the
-//               delivery callback thread)
-//   encode    — serialization only: CDREncoder (dds) vs marshal + rmw_serialize
-//               (rcl, via the rclSerialize<Type> golden entry points; the
-//               typed publish path has no marshal-only seam, so this is the
-//               documented encode-side proxy)
+//   publish       — per-publish call latency + max-rate throughput (no subscriber)
+//   roundtrip     — in-process pub -> sub end-to-end latency via header.stamp
+//                   (send time embedded; receiver computes now - stamp on the
+//                   delivery callback thread)
+//   roundtrip-lan — end-to-end latency vs a LAN host that relays `bench` ->
+//                   `bench_echo` (run `ros2 run topic_tools relay <ns>/bench
+//                   <ns>/bench_echo` on the host)
+//   encode        — serialization only: CDREncoder (dds) vs marshal + rmw_serialize
+//                   (rcl, via the rclSerialize<Type> golden entry points; the
+//                   typed publish path has no marshal-only seam, so this is the
+//                   documented encode-side proxy)
 //
 // Results print as single `rcl_bench RESULT ...` key=value lines (µs).
 
@@ -28,15 +31,16 @@ let args = CommandLine.arguments
 guard args.count >= 3 else {
     print(
         """
-        usage: rcl-bench <rcl|dds> <publish|roundtrip|encode> \
-        [imu|image64k|cloud120k] [--count N] [--rate-hz N]
+        usage: rcl-bench <rcl|dds> <publish|roundtrip|roundtrip-lan|encode> \
+        [imu|image64k|cloud120k] [--count N] [--rate-hz N] [--domain N]
         """)
     exit(2)
 }
 let backend = args[1]
 let mode = args[2]
 let payload = args.count > 3 && !args[3].hasPrefix("--") ? args[3] : "imu"
-guard ["rcl", "dds"].contains(backend), ["publish", "roundtrip", "encode"].contains(mode),
+guard ["rcl", "dds"].contains(backend),
+    ["publish", "roundtrip", "roundtrip-lan", "encode"].contains(mode),
     ["imu", "image64k", "cloud120k"].contains(payload)
 else {
     print("rcl_bench FAIL: unknown backend/mode/payload \(backend)/\(mode)/\(payload)")
@@ -55,8 +59,7 @@ let count = intOption(
     "--count", default: mode == "encode" ? (isLarge ? 5_000 : 100_000) : (isLarge ? 1_000 : 10_000))
 let rateHz = intOption("--rate-hz", default: 0)  // 0 = max rate
 let warmup = isLarge ? 100 : 1_000
-// Isolated domain so LAN nodes never interfere with the measurement.
-let domainId = 42
+let domainId = intOption("--domain", default: 42)
 
 // MARK: - timing helpers
 
@@ -235,17 +238,20 @@ func runPubSub() async throws {
         let s = stampedNS(t)
         if s != 0 { collector.record(nowNS() &- s) }
     }
-    if mode == "roundtrip" {
+    let isRoundtrip = mode == "roundtrip" || mode == "roundtrip-lan"
+    let subTopic = mode == "roundtrip-lan" ? "bench_echo" : "bench"
+    if isRoundtrip {
         switch payload {
         case "imu":
-            let sub = try await node.createSubscription(Imu.self, topic: "bench", qos: qos)
+            let sub = try await node.createSubscription(Imu.self, topic: subTopic, qos: qos)
             sub.onMessage { m in recordStamped(m.header.stamp) }
         case "image64k":
             let sub = try await node.createSubscription(
-                CompressedImage.self, topic: "bench", qos: qos)
+                CompressedImage.self, topic: subTopic, qos: qos)
             sub.onMessage { m in recordStamped(m.header.stamp) }
         default:
-            let sub = try await node.createSubscription(PointCloud2.self, topic: "bench", qos: qos)
+            let sub = try await node.createSubscription(
+                PointCloud2.self, topic: subTopic, qos: qos)
             sub.onMessage { m in recordStamped(m.header.stamp) }
         }
     }
@@ -261,7 +267,7 @@ func runPubSub() async throws {
     {
         let pub = try await node.createPublisher(M.self, topic: "bench", qos: qos)
         // Discovery settle (repo precedent: 2 s loopback, 3 s LAN).
-        try await Task.sleep(for: .seconds(2))
+        try await Task.sleep(for: .seconds(mode == "roundtrip-lan" ? 3 : 2))
         var msg = make()
         for _ in 0..<warmup { try await pub.publish(msg) }
         let start = nowNS()
@@ -290,7 +296,7 @@ func runPubSub() async throws {
     }
 
     var received = collector.snapshot.count
-    if mode == "roundtrip" {
+    if isRoundtrip {
         // Drain window for in-flight messages.
         let deadline = nowNS() + 5_000_000_000
         while received < count && nowNS() < deadline {
@@ -299,10 +305,10 @@ func runPubSub() async throws {
         }
     }
 
-    let p = mode == "roundtrip" ? percentiles(collector.snapshot) : percentiles(callNS)
+    let p = isRoundtrip ? percentiles(collector.snapshot) : percentiles(callNS)
     printResult([
         "backend": backend, "mode": mode, "payload": payload, "count": "\(count)",
-        "received": mode == "roundtrip" ? "\(received)" : "-",
+        "received": isRoundtrip ? "\(received)" : "-",
         "rate_hz": rateHz > 0 ? "\(rateHz)" : "max",
         "msgs_per_s": String(format: "%.0f", Double(count) / wall),
         "p50us": String(format: "%.2f", p.p50), "p95us": String(format: "%.2f", p.p95),

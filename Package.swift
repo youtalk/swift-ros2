@@ -712,7 +712,9 @@ if enableRcl {
     targets.append(
         .testTarget(
             name: "SwiftROS2RCLTests",
-            dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages"],
+            dependencies: [
+                "SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages", "CDDSBridge",
+            ],
             path: "Tests/SwiftROS2RCLTests",
             swiftSettings: [.define("SWIFT_ROS2_RCL")],
             linkerSettings: [.linkedLibrary("c++")]

@@ -136,7 +136,8 @@ private final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendab
     func destroyNode(_ node: any RclNodeHandle) {}
 
     func createPublisher(
-        node: any RclNodeHandle, typeName: String, topic: String, qos: TransportQoS
+        node: any RclNodeHandle, typeName: String, typeHash: String?, topic: String,
+        qos: TransportQoS
     ) throws -> any RclPublisherHandle {
         sync { _publishersCreated.append((topic, typeName)) }
         return SeamPublisher()

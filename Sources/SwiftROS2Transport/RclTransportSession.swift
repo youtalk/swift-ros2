@@ -79,28 +79,47 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         }
     }
 
+    /// Resolve the node a new entity attaches to: look up by (name, namespace)
+    /// when supplied, else fall back to the last-registered node (single-node
+    /// back-compat). An unknown (name, namespace) also falls back to
+    /// `currentNode`. Caller holds `lock`.
+    private func resolveNodeLocked(_ name: String?, _ namespace: String?) -> (any RclNodeHandle)? {
+        if let name {
+            let ns = namespace ?? "/"
+            if let node = nodes[nodeKey(name, ns)] { return node }
+        }
+        return currentNode
+    }
+
     /// Atomically validate the session is open, the topic is free, and a node
-    /// exists; returns the node a new publisher attaches to (M1 single-node).
-    func preflightPublisher(topic: String) throws -> any RclNodeHandle {
+    /// exists; returns the node a new publisher attaches to. With
+    /// `nodeName`/`nodeNamespace` the entity binds to that registered node
+    /// (multi-node); nil falls back to the last-registered node.
+    func preflightPublisher(
+        topic: String, nodeName: String?, nodeNamespace: String?
+    ) throws -> any RclNodeHandle {
         lock.lock()
         defer { lock.unlock() }
         guard isOpen else { throw TransportError.notConnected }
         guard publishers[topic] == nil else {
             throw TransportError.publisherCreationFailed("Publisher already exists for topic: \(topic)")
         }
-        guard let node = currentNode else {
+        guard let node = resolveNodeLocked(nodeName, nodeNamespace) else {
             throw TransportError.publisherCreationFailed("no node registered — create a node first")
         }
         return node
     }
 
     /// Atomically validate the session is open and a node exists; returns the
-    /// node a new subscriber attaches to (inherits the M1 single-node binding).
-    func preflightSubscriber() throws -> any RclNodeHandle {
+    /// node a new subscriber attaches to. Resolves by (name, namespace) when
+    /// supplied, else the last-registered node.
+    func preflightSubscriber(
+        nodeName: String?, nodeNamespace: String?
+    ) throws -> any RclNodeHandle {
         lock.lock()
         defer { lock.unlock() }
         guard isOpen else { throw TransportError.notConnected }
-        guard let node = currentNode else {
+        guard let node = resolveNodeLocked(nodeName, nodeNamespace) else {
             throw TransportError.subscriberCreationFailed("no node registered — create a node first")
         }
         return node
@@ -175,13 +194,15 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     }
 
     /// Atomically validate the session is open and a node exists; returns the
-    /// node a new service server / client attaches to (inherits the M1
-    /// single-node binding).
-    func preflightServiceEntity() throws -> any RclNodeHandle {
+    /// node a new service / action server / client attaches to. Resolves by
+    /// (name, namespace) when supplied, else the last-registered node.
+    func preflightServiceEntity(
+        nodeName: String?, nodeNamespace: String?
+    ) throws -> any RclNodeHandle {
         lock.lock()
         defer { lock.unlock() }
         guard isOpen else { throw TransportError.notConnected }
-        guard let node = currentNode else {
+        guard let node = resolveNodeLocked(nodeName, nodeNamespace) else {
             throw TransportError.subscriberCreationFailed("no node registered — create a node first")
         }
         return node
@@ -239,3 +260,12 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         lock.unlock()
     }
 }
+
+// MARK: - NodeScopedSession conformance
+//
+// Additive node-aware seam (see `NodeScopedSession.swift`). The node-aware
+// 6-arg create methods live in the `RclTransportSession+{Publisher,Subscriber,
+// Service,Action}.swift` extensions and satisfy these requirements; the plain
+// `TransportSession` 4-/5-arg methods there forward to them with
+// `nodeName: nil, nodeNamespace: nil`.
+extension RclTransportSession: NodeScopedSession {}

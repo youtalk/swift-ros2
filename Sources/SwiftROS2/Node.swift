@@ -69,12 +69,24 @@ public final class ROS2Node: @unchecked Sendable {
         let transportQoS = qos.toTransportQoS()
         let effectiveTypeHash = context.distro.supportsTypeHash ? typeInfo.typeHash : nil
 
-        let transportPub = try session.createPublisher(
-            topic: fullTopic,
-            typeName: typeInfo.typeName,
-            typeHash: effectiveTypeHash,
-            qos: transportQoS
-        )
+        let transportPub: any TransportPublisher
+        if let scoped = session as? NodeScopedSession {
+            transportPub = try scoped.createPublisher(
+                topic: fullTopic,
+                typeName: typeInfo.typeName,
+                typeHash: effectiveTypeHash,
+                qos: transportQoS,
+                nodeName: name,
+                nodeNamespace: namespace
+            )
+        } else {
+            transportPub = try session.createPublisher(
+                topic: fullTopic,
+                typeName: typeInfo.typeName,
+                typeHash: effectiveTypeHash,
+                qos: transportQoS
+            )
+        }
 
         let publisher = ROS2Publisher<M>(
             transportPublisher: transportPub,
@@ -99,22 +111,38 @@ public final class ROS2Node: @unchecked Sendable {
 
         let subscription = ROS2Subscription<M>()
 
-        let transportSub = try session.createSubscriber(
-            topic: fullTopic,
-            typeName: typeInfo.typeName,
-            typeHash: effectiveTypeHash,
-            qos: transportQoS,
-            handler: { [weak subscription, isLegacy = context.distro.isLegacySchema] data, _ in
-                guard let subscription = subscription else { return }
-                do {
-                    let decoder = try CDRDecoder(data: data, isLegacySchema: isLegacy)
-                    let message = try M(from: decoder)
-                    subscription.receive(message)
-                } catch {
-                    // Log deserialization error - silently drop malformed messages
-                }
+        let handler: @Sendable (Data, UInt64) -> Void = {
+            [weak subscription, isLegacy = context.distro.isLegacySchema] data, _ in
+            guard let subscription = subscription else { return }
+            do {
+                let decoder = try CDRDecoder(data: data, isLegacySchema: isLegacy)
+                let message = try M(from: decoder)
+                subscription.receive(message)
+            } catch {
+                // Log deserialization error - silently drop malformed messages
             }
-        )
+        }
+
+        let transportSub: any TransportSubscriber
+        if let scoped = session as? NodeScopedSession {
+            transportSub = try scoped.createSubscriber(
+                topic: fullTopic,
+                typeName: typeInfo.typeName,
+                typeHash: effectiveTypeHash,
+                qos: transportQoS,
+                nodeName: name,
+                nodeNamespace: namespace,
+                handler: handler
+            )
+        } else {
+            transportSub = try session.createSubscriber(
+                topic: fullTopic,
+                typeName: typeInfo.typeName,
+                typeHash: effectiveTypeHash,
+                qos: transportQoS,
+                handler: handler
+            )
+        }
 
         subscription.setTransportSubscriber(transportSub)
         appendSubscription(subscription)
@@ -169,14 +197,28 @@ public final class ROS2Node: @unchecked Sendable {
             return encoder.getData()
         }
 
-        let transportSvc = try session.createServiceServer(
-            name: fullName,
-            serviceTypeName: typeInfo.serviceName,
-            requestTypeHash: requestHash,
-            responseTypeHash: responseHash,
-            qos: transportQoS,
-            handler: cdrHandler
-        )
+        let transportSvc: any TransportService
+        if let scoped = session as? NodeScopedSession {
+            transportSvc = try scoped.createServiceServer(
+                name: fullName,
+                serviceTypeName: typeInfo.serviceName,
+                requestTypeHash: requestHash,
+                responseTypeHash: responseHash,
+                qos: transportQoS,
+                nodeName: self.name,
+                nodeNamespace: namespace,
+                handler: cdrHandler
+            )
+        } else {
+            transportSvc = try session.createServiceServer(
+                name: fullName,
+                serviceTypeName: typeInfo.serviceName,
+                requestTypeHash: requestHash,
+                responseTypeHash: responseHash,
+                qos: transportQoS,
+                handler: cdrHandler
+            )
+        }
 
         let service = ROS2Service<S>(transport: transportSvc)
         appendService(service)
@@ -196,13 +238,26 @@ public final class ROS2Node: @unchecked Sendable {
         let requestHash = supportsHash ? typeInfo.requestTypeHash : nil
         let responseHash = supportsHash ? typeInfo.responseTypeHash : nil
 
-        let transportClient = try session.createServiceClient(
-            name: fullName,
-            serviceTypeName: typeInfo.serviceName,
-            requestTypeHash: requestHash,
-            responseTypeHash: responseHash,
-            qos: transportQoS
-        )
+        let transportClient: any TransportClient
+        if let scoped = session as? NodeScopedSession {
+            transportClient = try scoped.createServiceClient(
+                name: fullName,
+                serviceTypeName: typeInfo.serviceName,
+                requestTypeHash: requestHash,
+                responseTypeHash: responseHash,
+                qos: transportQoS,
+                nodeName: self.name,
+                nodeNamespace: namespace
+            )
+        } else {
+            transportClient = try session.createServiceClient(
+                name: fullName,
+                serviceTypeName: typeInfo.serviceName,
+                requestTypeHash: requestHash,
+                responseTypeHash: responseHash,
+                qos: transportQoS
+            )
+        }
 
         let client = ROS2Client<S>(
             transport: transportClient,
@@ -238,13 +293,26 @@ public final class ROS2Node: @unchecked Sendable {
 
         let serverHolder = WeakHolder<ROS2ActionServer<H>>()
         let handlers = ROS2ActionServer<H>.makeHandlers { serverHolder.value }
-        let transportServer = try session.createActionServer(
-            name: fullName,
-            actionTypeName: typeInfo.actionName,
-            roleTypeHashes: hashes,
-            qos: transportQoS,
-            handlers: handlers
-        )
+        let transportServer: any TransportActionServer
+        if let scoped = session as? NodeScopedSession {
+            transportServer = try scoped.createActionServer(
+                name: fullName,
+                actionTypeName: typeInfo.actionName,
+                roleTypeHashes: hashes,
+                qos: transportQoS,
+                nodeName: self.name,
+                nodeNamespace: namespace,
+                handlers: handlers
+            )
+        } else {
+            transportServer = try session.createActionServer(
+                name: fullName,
+                actionTypeName: typeInfo.actionName,
+                roleTypeHashes: hashes,
+                qos: transportQoS,
+                handlers: handlers
+            )
+        }
         let server = ROS2ActionServer<H>(
             transport: transportServer,
             handler: handler,
@@ -276,12 +344,24 @@ public final class ROS2Node: @unchecked Sendable {
             statusArray: supportsHash ? GoalStatusArray.typeInfo.typeHash : nil
         )
 
-        let transportClient = try session.createActionClient(
-            name: fullName,
-            actionTypeName: typeInfo.actionName,
-            roleTypeHashes: hashes,
-            qos: transportQoS
-        )
+        let transportClient: any TransportActionClient
+        if let scoped = session as? NodeScopedSession {
+            transportClient = try scoped.createActionClient(
+                name: fullName,
+                actionTypeName: typeInfo.actionName,
+                roleTypeHashes: hashes,
+                qos: transportQoS,
+                nodeName: self.name,
+                nodeNamespace: namespace
+            )
+        } else {
+            transportClient = try session.createActionClient(
+                name: fullName,
+                actionTypeName: typeInfo.actionName,
+                roleTypeHashes: hashes,
+                qos: transportQoS
+            )
+        }
         let client = ROS2ActionClient<A>(
             transport: transportClient,
             isLegacySchema: context.distro.isLegacySchema

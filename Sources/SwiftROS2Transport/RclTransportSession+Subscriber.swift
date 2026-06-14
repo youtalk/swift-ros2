@@ -4,11 +4,27 @@
 import Foundation
 
 extension RclTransportSession {
+    // TransportSession conformance (no node identity → single-node fallback).
     package func createSubscriber(
         topic: String,
         typeName: String,
         typeHash: String?,
         qos: TransportQoS,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> any TransportSubscriber {
+        try createSubscriber(
+            topic: topic, typeName: typeName, typeHash: typeHash, qos: qos,
+            nodeName: nil, nodeNamespace: nil, handler: handler)
+    }
+
+    // NodeScopedSession conformance (node-aware creation).
+    package func createSubscriber(
+        topic: String,
+        typeName: String,
+        typeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any TransportSubscriber {
         guard !topic.isEmpty else {
@@ -20,7 +36,7 @@ extension RclTransportSession {
         // typeHash is unused on this backend: rcl derives the hash from the
         // typesupport handle, so the wire-level pin the Zenoh/DDS sessions
         // need does not apply here.
-        let node = try preflightSubscriber()
+        let node = try preflightSubscriber(nodeName: nodeName, nodeNamespace: nodeNamespace)
         let handle = try client.createSubscription(
             node: node, typeName: typeName, topic: topic, qos: qos, handler: handler)
         let sub = RclTransportSubscriber(client: client, handle: handle, topic: topic)

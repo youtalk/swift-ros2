@@ -10,12 +10,30 @@
 import Foundation
 
 extension RclTransportSession {
+    // TransportSession conformance (no node identity → single-node fallback).
     package func createServiceServer(
         name: String,
         serviceTypeName: String,
         requestTypeHash: String?,
         responseTypeHash: String?,
         qos: TransportQoS,
+        handler: @escaping @Sendable (Data) async throws -> Data
+    ) throws -> any TransportService {
+        try createServiceServer(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            responseTypeHash: responseTypeHash, qos: qos, nodeName: nil, nodeNamespace: nil,
+            handler: handler)
+    }
+
+    // NodeScopedSession conformance (node-aware creation).
+    package func createServiceServer(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?,
         handler: @escaping @Sendable (Data) async throws -> Data
     ) throws -> any TransportService {
         guard !name.isEmpty else {
@@ -26,7 +44,7 @@ extension RclTransportSession {
         }
         // requestTypeHash / responseTypeHash are unused on this backend: rcl
         // derives hashes from the typesupport handle (same note as subscriber).
-        let node = try preflightServiceEntity()
+        let node = try preflightServiceEntity(nodeName: nodeName, nodeNamespace: nodeNamespace)
         let server = RclTransportServiceServer(client: client, name: name, handler: handler)
         let handle = try client.createServiceServer(
             node: node, srvTypeName: serviceTypeName, serviceName: name, qos: qos,
@@ -38,6 +56,7 @@ extension RclTransportSession {
         return server
     }
 
+    // TransportSession conformance (no node identity → single-node fallback).
     package func createServiceClient(
         name: String,
         serviceTypeName: String,
@@ -45,13 +64,28 @@ extension RclTransportSession {
         responseTypeHash: String?,
         qos: TransportQoS
     ) throws -> any TransportClient {
+        try createServiceClient(
+            name: name, serviceTypeName: serviceTypeName, requestTypeHash: requestTypeHash,
+            responseTypeHash: responseTypeHash, qos: qos, nodeName: nil, nodeNamespace: nil)
+    }
+
+    // NodeScopedSession conformance (node-aware creation).
+    package func createServiceClient(
+        name: String,
+        serviceTypeName: String,
+        requestTypeHash: String?,
+        responseTypeHash: String?,
+        qos: TransportQoS,
+        nodeName: String?,
+        nodeNamespace: String?
+    ) throws -> any TransportClient {
         guard !name.isEmpty else {
             throw TransportError.invalidConfiguration("Service name cannot be empty")
         }
         guard !serviceTypeName.isEmpty else {
             throw TransportError.invalidConfiguration("Service type name cannot be empty")
         }
-        let node = try preflightServiceEntity()
+        let node = try preflightServiceEntity(nodeName: nodeName, nodeNamespace: nodeNamespace)
         let serviceClient = RclTransportServiceClient(client: client, name: name)
         let handle = try client.createServiceClient(
             node: node, srvTypeName: serviceTypeName, serviceName: name, qos: qos,

@@ -275,4 +275,42 @@ final class RclTransportSessionTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Multi-node entity binding (node.multi)
+
+    func testCreatePublisherBindsToNamedNodeNotLastRegistered() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "node_a", namespace: "/")
+        try s.registerNode(name: "node_b", namespace: "/")  // currentNode is now node_b
+
+        _ = try s.createPublisher(
+            topic: "/t", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData,
+            nodeName: "node_a", nodeNamespace: "/")
+
+        XCTAssertTrue(
+            client.publisherHandles.first?.node === client.nodeHandles[0],
+            "publisher bound to the wrong node — node.multi misroute")
+        XCTAssertFalse(client.publisherHandles.first?.node === client.nodeHandles[1])
+    }
+
+    func testCreatePublisherWithNilNodeFallsBackToCurrentNode() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "only", namespace: "/")
+        _ = try s.createPublisher(
+            topic: "/t", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        XCTAssertTrue(client.publisherHandles.first?.node === client.nodeHandles[0])
+    }
+
+    func testCreateSubscriberBindsToNamedNode() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "node_a", namespace: "/")
+        try s.registerNode(name: "node_b", namespace: "/")
+        _ = try s.createSubscriber(
+            topic: "/t", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData,
+            nodeName: "node_a", nodeNamespace: "/", handler: { _, _ in })
+        XCTAssertTrue(client.subscriptionsCreated.first?.node === client.nodeHandles[0])
+    }
 }

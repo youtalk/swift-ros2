@@ -60,7 +60,7 @@
     },
     {
       "apiSymbol" : "ROS2Context multi-node",
-      "evidence" : "RclTransportSession.swift:66 registerNode overwrites a single currentNode; preflightPublisher/Subscriber/ServiceEntity bind every entity to the last-registered node, so entities misroute under >1 node (wire path has no such ceiling)",
+      "evidence" : "RclTransportSession.resolveNodeLocked binds each entity to nodes[nodeKey(name,ns)] (passed from ROS2Node.name/namespace), falling back to currentNode for nil; RclTransportSessionTests.testCreatePublisherBindsToNamedNodeNotLastRegistered",
       "id" : "node.multi",
       "platforms" : [
         "iOS",
@@ -69,8 +69,8 @@
         "visionOS"
       ],
       "pureSwift" : "supported",
-      "rcl" : "partial",
-      "severity" : "major",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {

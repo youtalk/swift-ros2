@@ -694,7 +694,9 @@ if enableRcl {
     targets.append(
         .target(
             name: "SwiftROS2RCL",
-            dependencies: ["CRclBridge", "SwiftROS2Transport", "SwiftROS2Messages"],
+            dependencies: [
+                "CRclBridge", "CDDSBridge", "SwiftROS2Transport", "SwiftROS2Messages", "SwiftROS2Wire",
+            ],
             path: "Sources/SwiftROS2RCL"
         ))
     products.append(.library(name: "SwiftROS2RCL", targets: ["SwiftROS2RCL"]))

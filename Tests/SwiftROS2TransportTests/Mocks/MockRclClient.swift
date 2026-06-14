@@ -343,6 +343,8 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     private(set) var contextCreated = false
     private(set) var contextDestroyed = false
     private(set) var lastDomainId: Int32 = -1
+    private(set) var lastUnicastPeerAddresses: [String] = []
+    private(set) var lastNetworkInterface: String?
     private(set) var nodesCreated: [(name: String, namespace: String)] = []
     /// Handles returned by createNode, in creation order — lets tests assert
     /// entity-to-node attachment by identity.
@@ -404,10 +406,14 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     /// Test hook: fires after a request is recorded, with its sequence number.
     var onSendRequest: ((Int64, Data) -> Void)?
 
-    func createContext(domainId: Int32) throws {
+    func createContext(
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+    ) throws {
         sync {
             contextCreated = true
             lastDomainId = domainId
+            lastUnicastPeerAddresses = unicastPeerAddresses
+            lastNetworkInterface = networkInterface
         }
     }
     func destroyContext() {

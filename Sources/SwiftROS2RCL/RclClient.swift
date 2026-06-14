@@ -1,6 +1,7 @@
 // RclClient.swift
 // Concrete RclClientProtocol over the CRclBridge C FFI. Apple-only, gated.
 
+import CDDSBridge
 import CRclBridge
 import Foundation
 import SwiftROS2Transport
@@ -523,19 +524,99 @@ private final class RclActionClientBox: RclActionClientHandle, @unchecked Sendab
 public final class RclClient: RclClientProtocol, @unchecked Sendable {
     private var ctx: OpaquePointer?
     private let lock = NSLock()
+    /// Process-global slot for restoring CYCLONEDDS_URI on destroyContext.
+    /// Outer optional = "we saved"; inner = "was previously set".
+    private var priorCyclonedDDSURI: String??
 
     public init() {}
 
     package var isAvailable: Bool { true }
 
-    package func createContext(domainId: Int32) throws {
+    /// Build the CycloneDDS domain-config XML via the SHARED CDDSBridge builder
+    /// (byte-identical to the wire DDS path → Axis-3 parity). Pure: no env, no
+    /// DDS runtime. Returns nil on OOM. `package` so SwiftROS2RCLTests can assert
+    /// the XML shape without starting rmw.
+    package func makeDiscoveryURIXML(
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+    ) -> String? {
+        var cConfig = bridge_discovery_config_t()
+        cConfig.mode =
+            unicastPeerAddresses.isEmpty ? BRIDGE_DISCOVERY_MULTICAST : BRIDGE_DISCOVERY_UNICAST
+        var peerCStrings: [UnsafeMutablePointer<CChar>?] = unicastPeerAddresses.map { strdup($0) }
+        peerCStrings.append(nil)
+        let peersPtr = UnsafeMutablePointer<UnsafePointer<CChar>?>.allocate(
+            capacity: peerCStrings.count)
+        defer {
+            for s in peerCStrings where s != nil { free(s) }
+            peersPtr.deallocate()
+        }
+        for (i, s) in peerCStrings.enumerated() { peersPtr[i] = s.map { UnsafePointer($0) } }
+        if !unicastPeerAddresses.isEmpty {
+            cConfig.unicast_peers = peersPtr
+            cConfig.peer_count = Int32(unicastPeerAddresses.count)
+        }
+        var interfaceCString: UnsafeMutablePointer<CChar>?
+        if let networkInterface {
+            interfaceCString = strdup(networkInterface)
+            cConfig.network_interface = UnsafePointer(interfaceCString)
+        }
+        defer { if let s = interfaceCString { free(s) } }
+        guard let xmlPtr = dds_bridge_build_domain_config_xml(domainId, &cConfig) else { return nil }
+        defer { dds_bridge_free_string(xmlPtr) }
+        return String(cString: xmlPtr)
+    }
+
+    /// Export the discovery XML as CYCLONEDDS_URI (saving the prior value) when
+    /// discovery is non-default. Returns true if it set the env. rmw_cyclonedds
+    /// reads CYCLONEDDS_URI once, at the first participant; pair with
+    /// restoreDiscoveryEnv() on teardown or on a failed createContext.
+    package func applyDiscoveryEnv(
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+    ) -> Bool {
+        guard !unicastPeerAddresses.isEmpty || networkInterface != nil,
+            let xml = makeDiscoveryURIXML(
+                domainId: domainId, unicastPeerAddresses: unicastPeerAddresses,
+                networkInterface: networkInterface)
+        else { return false }
+        lock.lock()
+        // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
+        // ("saved, was unset") rather than collapsing to .none ("never saved") —
+        // restoreDiscoveryEnv relies on that distinction to unset vs. no-op.
+        priorCyclonedDDSURI = Optional(getenv("CYCLONEDDS_URI").map { String(cString: $0) })
+        lock.unlock()
+        setenv("CYCLONEDDS_URI", xml, 1)
+        return true
+    }
+
+    /// Restore CYCLONEDDS_URI to its pre-applyDiscoveryEnv value (unset it if it
+    /// was previously unset). Idempotent: a no-op when nothing was saved.
+    package func restoreDiscoveryEnv() {
+        lock.lock()
+        let prior = priorCyclonedDDSURI
+        priorCyclonedDDSURI = nil
+        lock.unlock()
+        if let prior {
+            if let p = prior { setenv("CYCLONEDDS_URI", p, 1) } else { unsetenv("CYCLONEDDS_URI") }
+        }
+    }
+
+    package func createContext(
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+    ) throws {
         lock.lock()
         guard ctx == nil else {
             lock.unlock()
             throw TransportError.alreadyConnected
         }
         lock.unlock()
+        // rmw_cyclonedds reads CYCLONEDDS_URI once, at the first participant. Only
+        // export when discovery is non-default; restore the prior value on
+        // teardown OR if context creation fails (so a failed open doesn't leak it).
+        let appliedDiscoveryEnv = applyDiscoveryEnv(
+            domainId: domainId, unicastPeerAddresses: unicastPeerAddresses,
+            networkInterface: networkInterface)
         guard let c = crcl_context_create(Int(domainId)) else {
+            if appliedDiscoveryEnv { restoreDiscoveryEnv() }
             throw TransportError.connectionFailed(lastError())
         }
         lock.lock()
@@ -549,6 +630,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         ctx = nil
         lock.unlock()
         if let c { crcl_context_destroy(c) }
+        restoreDiscoveryEnv()
     }
 
     package func createNode(name: String, namespace: String) throws -> any RclNodeHandle {

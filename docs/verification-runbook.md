@@ -34,8 +34,9 @@ ros2 run topic_tools relay /rcl_bench/bench /rcl_bench/bench_echo
 ```
 
 On the **Apple host**, measure (domain 0 reaches the LAN; under `.rcl` the link
-is multicast — the `transport.dds` unicast-config gap means `ddsUnicastPeers`
-is ignored on the RCL backend, so the LAN must carry multicast):
+can be multicast or, via `.rclUnicast`, static unicast — `ddsUnicastPeers` /
+`ddsNetworkInterface` are now honoured on the RCL backend, exported as
+`CYCLONEDDS_URI`, so the LAN need not carry multicast):
 
 ```bash
 SWIFT_ROS2_ENABLE_RCL=1 swift run -c release rcl-bench rcl roundtrip-lan imu --domain 0 --count 5000
@@ -90,5 +91,6 @@ recorded here in W4 — they are intentionally left `pending` by the harness PRs
 - **Axis 4 (resource: binary-size / CPU / battery on a real iPhone)** is
   Conduit-side (needs the Conduit repo + a physical device + the
   `conduit-run-on-iphone` / `oslog-stream-to-file` skills), tracked separately.
-- **DDS unicast on the RCL backend** is blocked by the `transport.dds` matrix
-  gap; LAN runs use multicast (RCL) or the pure-Swift `.ddsUnicast` path.
+- **DDS unicast on the RCL backend** is supported via `.rclUnicast` (peers +
+  optional interface exported as `CYCLONEDDS_URI`); LAN runs can use multicast
+  (RCL), `.rclUnicast` (RCL), or the pure-Swift `.ddsUnicast` path.

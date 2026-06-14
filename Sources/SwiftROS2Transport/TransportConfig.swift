@@ -134,6 +134,18 @@ public struct TransportConfig: Sendable {
         )
     }
 
+    /// RCL transport with explicit unicast discovery (CycloneDDS static peers)
+    /// and an optional network interface. On the RCL backend these are exported
+    /// as CYCLONEDDS_URI for rmw_cyclonedds (see RclClient.createContext).
+    public static func rclUnicast(
+        peers: [DDSPeer], domainId: Int = 0, interface: String? = nil
+    ) -> TransportConfig {
+        TransportConfig(
+            type: .rcl, domainId: domainId,
+            ddsDiscoveryMode: .unicast, ddsUnicastPeers: peers,
+            ddsNetworkInterface: interface)
+    }
+
     public init(
         type: TransportType,
         domainId: Int = 0,
@@ -168,7 +180,10 @@ public struct TransportConfig: Sendable {
                 throw TransportError.invalidConfiguration("DDS \(ddsDiscoveryMode) mode requires peer configuration")
             }
         case .rcl:
-            break
+            if ddsDiscoveryMode.requiresPeerConfiguration && ddsUnicastPeers.isEmpty {
+                throw TransportError.invalidConfiguration(
+                    "RCL \(ddsDiscoveryMode) mode requires peer configuration")
+            }
         }
     }
 }

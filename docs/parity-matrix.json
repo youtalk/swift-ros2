@@ -817,7 +817,7 @@
     },
     {
       "apiSymbol" : "TransportConfig.type=.dds",
-      "evidence" : "RCL rides rmw_cyclonedds (DDS wire works, integration-tested) but RclTransportSession.open reads only domainId; ddsDiscoveryMode/ddsUnicastPeers/ddsNetworkInterface are silently ignored — unicast/interface only via CYCLONEDDS_URI env var. Conduit exposes dds_discovery_mode/dds_unicast_peers",
+      "evidence" : "RclTransportSession.open forwards ddsUnicastPeers (bare host) + ddsNetworkInterface; RclClient.makeDiscoveryURIXML builds the SAME CycloneDDS discovery XML as the wire DDS path via the shared dds_bridge_build_domain_config_xml, exported as CYCLONEDDS_URI around context creation (restored on teardown). .rclUnicast factory + validate() peer check close the config hole. RclDiscoveryEnvTests asserts the XML shape; RclUnicastIntegrationTests is the LAN proof",
       "id" : "transport.dds",
       "platforms" : [
         "iOS",
@@ -826,8 +826,8 @@
         "visionOS"
       ],
       "pureSwift" : "supported",
-      "rcl" : "partial",
-      "severity" : "major",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {

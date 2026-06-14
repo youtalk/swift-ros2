@@ -125,7 +125,9 @@ private final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendab
         sync { _servicesCreated }
     }
 
-    func createContext(domainId: Int32) throws {}
+    func createContext(
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+    ) throws {}
     func destroyContext() {}
 
     func createNode(name: String, namespace: String) throws -> any RclNodeHandle {

@@ -22,6 +22,16 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(s.sessionId, "rcl-5")
     }
 
+    func testRclOpenForwardsUnicastDiscoveryToClient() async throws {
+        let client = MockRclClient()
+        let session = RclTransportSession(client: client)
+        let peer = DDSPeer(address: "192.168.1.85", port: DDSPeer.discoveryPort(forDomain: 0))
+        try await session.open(
+            config: .rclUnicast(peers: [peer], domainId: 0, interface: "en0"))
+        XCTAssertEqual(client.lastUnicastPeerAddresses, [peer.address])
+        XCTAssertEqual(client.lastNetworkInterface, "en0")
+    }
+
     func testOpenRejectsNonRclConfig() async {
         let s = RclTransportSession(client: MockRclClient())
         do {

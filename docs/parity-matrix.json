@@ -116,7 +116,8 @@
           "verdict" : "pass"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "in-proc publish p50=1.25us p99=3.50us @max(672k/s); in-proc rt p50=94.7us p99=206us @100Hz; LAN rt 1000/1000 interop OK (rcl-bench; LAN abs latency dominated by python relay — no topic_tools)",
+          "verdict" : "pass"
         },
         "resource" : {
           "verdict" : "pending"
@@ -179,7 +180,8 @@
           "verdict" : "pass"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "in-proc publish p99=29.6us; in-proc rt p99=490us @100Hz (rcl-bench)",
+          "verdict" : "pass"
         },
         "resource" : {
           "verdict" : "pending"
@@ -240,7 +242,8 @@
           "verdict" : "pass"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "in-proc publish p99=28.0us; in-proc rt p99=374us @100Hz (rcl-bench)",
+          "verdict" : "pass"
         },
         "resource" : {
           "verdict" : "pending"
@@ -517,7 +520,8 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "round-trip receive side; in-proc rt p99=206us @100Hz; LAN rt 1000/1000 (rcl-bench roundtrip)",
+          "verdict" : "pass"
         },
         "resource" : {
           "value" : "n/a — not a Conduit on-device publish path",
@@ -581,7 +585,8 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "round-trip receive side; in-proc rt p99=490us @100Hz (rcl-bench roundtrip)",
+          "verdict" : "pass"
         },
         "resource" : {
           "value" : "n/a — not a Conduit on-device publish path",

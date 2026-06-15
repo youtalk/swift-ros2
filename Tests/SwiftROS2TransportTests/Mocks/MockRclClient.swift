@@ -38,18 +38,20 @@ final class MockRclSubscription: RclSubscriptionHandle, @unchecked Sendable {
     let node: any RclNodeHandle
     let topic: String
     let typeName: String
+    let typeHash: String?
     let qos: TransportQoS
     private let handler: @Sendable (Data, UInt64) -> Void
     private let lock = NSLock()
     private var destroyed = false
 
     init(
-        node: any RclNodeHandle, topic: String, typeName: String, qos: TransportQoS,
-        handler: @escaping @Sendable (Data, UInt64) -> Void
+        node: any RclNodeHandle, topic: String, typeName: String, typeHash: String?,
+        qos: TransportQoS, handler: @escaping @Sendable (Data, UInt64) -> Void
     ) {
         self.node = node
         self.topic = topic
         self.typeName = typeName
+        self.typeHash = typeHash
         self.qos = qos
         self.handler = handler
     }
@@ -459,6 +461,7 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     func createSubscription(
         node: any RclNodeHandle,
         typeName: String,
+        typeHash: String?,
         topic: String,
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
@@ -466,7 +469,8 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         if let e = createSubscriptionShouldThrow { throw e }
         onCreateSubscription?()
         let sub = MockRclSubscription(
-            node: node, topic: topic, typeName: typeName, qos: qos, handler: handler)
+            node: node, topic: topic, typeName: typeName, typeHash: typeHash, qos: qos,
+            handler: handler)
         sync { subscriptionsCreated.append(sub) }
         return sub
     }

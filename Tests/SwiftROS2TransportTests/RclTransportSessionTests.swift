@@ -107,6 +107,16 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertTrue(sub.isActive)
     }
 
+    func testCreateSubscriberForwardsTypeHashToClient() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        _ = try s.createSubscriber(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_deadbeef",
+            qos: .sensorData, handler: { _, _ in })
+        XCTAssertEqual(client.subscriptionsCreated.first?.typeHash, "RIHS01_deadbeef")
+    }
+
     func testSubscriberHandlerReceivesDataAndTimestamp() async throws {
         let client = MockRclClient()
         let s = try await openSession(client)

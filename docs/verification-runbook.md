@@ -86,6 +86,42 @@ Every `parity-tool set` re-renders `docs/PARITY.md` and re-canonicalizes
 parity-matrix drift guard enforces the canonical form. Latency/soak verdicts are
 recorded here in W4 — they are intentionally left `pending` by the harness PRs.
 
+## Applicability map (W4)
+
+Not every axis applies to every row. The full assignment is in the W4 plan's
+"30-row × 4-axis applicability map"; the rule:
+
+- **latency / soak** — only the corpus data paths. Measured on `imu` / `image64k`
+  (`CompressedImage`) / `cloud120k` (`PointCloud2`); latency also on the
+  corresponding subscribe rows (round-trip). Every other row is `na`: small/scalar
+  bundled types are *represented by* the `Imu` corpus row (same typed-publish path);
+  route-b `non_bundled` rows are the pure-Swift DDS path (DDS baseline); lifecycle /
+  service / param / action / qos / transport rows are not data paths; soak has no
+  separate subscribe harness (covered by the publish-side soak).
+- **correctness** — every row with an RCL implementation: byte parity for the 11
+  bundled typed types (`crcl-golden`), behavioral + LAN parity for the rest. `na`
+  for `*/Image` (RCL missing — raw Image is byte-seam-only) and `transport.zenoh`
+  (verified in M9, design §19.5; separate xcframework, out of DDS scope).
+- **resource** — the on-device Conduit publish surface only (the 11 bundled typed
+  sensor rows + `publish.serialized.non_bundled`); every other row is `na`.
+
+## Pass/fail thresholds (W4)
+
+The verdict is "real-time-adequate / production-viable for Conduit," **not** "RCL
+beats the pure-Swift wire path" (M5 showed wire wins end-to-end ~2× while RCL wins
+publish-call cost; both sub-millisecond p99 — acceptable).
+
+- **latency (Axis 1):** PASS if end-to-end **p99 ≤ 2 ms at 100 Hz** for all three
+  corpus types **and** publish-call **p99 ≤ 1 ms**. Record p50/p95/p99/max + msgs/s.
+- **soak (Axis 2):** PASS if `SoakAnalysis` reports `healthy` for the full run
+  (RSS slope ≤ 1 MB/min, FD net growth ≤ 8, throughput degradation ≤ 20 %) **and**
+  the injected-fault time-series recovers.
+- **correctness (Axis 3):** PASS if byte-identical (`CDREncoder == rmw_serialize`,
+  for typed rows) **and** the LAN/behavioral parity check for the row holds.
+- **resource (Axis 4):** PASS if device (arm64) Release binary-size delta
+  **≤ +2 MiB**, CPU within a few % of the `.dds` build, no `serious`/`critical`
+  thermal escalation under load, and battery drain comparable.
+
 ## Out of scope
 
 - **Axis 4 (resource: binary-size / CPU / battery on a real iPhone)** is

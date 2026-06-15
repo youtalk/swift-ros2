@@ -64,7 +64,7 @@ struct ParityTool: ParsableCommand {
         @Option(name: .long, help: "latency | soak | correctness | resource")
         var axis: String
 
-        @Option(name: .long, help: "pass | fail | pending")
+        @Option(name: .long, help: "pass | fail | pending | na")
         var verdict: String
 
         @Option(name: .long, help: "free-form measured value (optional)")
@@ -81,7 +81,7 @@ struct ParityTool: ParsableCommand {
                 throw ValidationError("axis must be one of: latency, soak, correctness, resource")
             }
             guard let verdictEnum = AxisVerdict(rawValue: verdict) else {
-                throw ValidationError("verdict must be one of: pass, fail, pending")
+                throw ValidationError("verdict must be one of: pass, fail, pending, na")
             }
             var matrix = try ParityTool.loadMatrix(input)
             try matrix.setAxis(

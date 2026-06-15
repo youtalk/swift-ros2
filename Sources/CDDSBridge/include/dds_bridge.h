@@ -68,6 +68,17 @@ typedef struct {
     const char* network_interface;
 } bridge_discovery_config_t;
 
+/// Build the CycloneDDS domain-config XML (Peers / multicast-disable /
+/// NetworkInterface) for the given domain + discovery config. Heap-allocated;
+/// free with dds_bridge_free_string(). Returns NULL on OOM. Shared by the
+/// pure-Swift DDS path and the RCL path (exported as CYCLONEDDS_URI) so both
+/// backends discover identically.
+char* dds_bridge_build_domain_config_xml(
+    int32_t domain_id, const bridge_discovery_config_t* config);
+
+/// Free a string returned by dds_bridge_build_domain_config_xml().
+void dds_bridge_free_string(char* s);
+
 // =============================================================================
 // MARK: - QoS Configuration
 // =============================================================================

@@ -115,7 +115,8 @@ package protocol RclClientProtocol: Sendable {
     /// Whether the native rcl stack is linked and usable.
     var isAvailable: Bool { get }
 
-    func createContext(domainId: Int32) throws
+    func createContext(
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?) throws
     func destroyContext()
 
     func createNode(name: String, namespace: String) throws -> any RclNodeHandle
@@ -264,4 +265,11 @@ package protocol RclClientProtocol: Sendable {
 
     /// Destroy an action client. Blocks until any in-flight callback completes.
     func destroyActionClient(_ client: any RclActionClientHandle)
+}
+
+extension RclClientProtocol {
+    /// Back-compat: multicast discovery (no peers / no pinned interface).
+    func createContext(domainId: Int32) throws {
+        try createContext(domainId: domainId, unicastPeerAddresses: [], networkInterface: nil)
+    }
 }

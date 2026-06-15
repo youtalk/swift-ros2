@@ -82,6 +82,30 @@ final class TransportConfigTests: XCTestCase {
         }
     }
 
+    func testRclUnicastFactoryAndValidate() throws {
+        let peer = DDSPeer(address: "192.168.1.85", port: DDSPeer.discoveryPort(forDomain: 0))
+        let cfg = TransportConfig.rclUnicast(peers: [peer], domainId: 0, interface: "en0")
+        XCTAssertEqual(cfg.type, .rcl)
+        XCTAssertEqual(cfg.ddsDiscoveryMode, .unicast)
+        XCTAssertEqual(cfg.ddsUnicastPeers, [peer])
+        XCTAssertEqual(cfg.ddsNetworkInterface, "en0")
+        XCTAssertNoThrow(try cfg.validate())
+        let bad = TransportConfig.rclUnicast(peers: [], domainId: 0, interface: nil)
+        XCTAssertThrowsError(try bad.validate())
+    }
+
+    /// Interface-only (no static peers) is a valid RCL discovery config — pin
+    /// the NIC, keep multicast SPDP — and must pass validate(); applyDiscoveryEnv
+    /// honours it (its guard is `!peers.isEmpty || interface != nil`).
+    func testRclUnicastInterfaceOnlyIsValid() throws {
+        let cfg = TransportConfig.rclUnicast(peers: [], domainId: 0, interface: "en0")
+        XCTAssertEqual(cfg.type, .rcl)
+        XCTAssertEqual(cfg.ddsDiscoveryMode, .multicast)
+        XCTAssertTrue(cfg.ddsUnicastPeers.isEmpty)
+        XCTAssertEqual(cfg.ddsNetworkInterface, "en0")
+        XCTAssertNoThrow(try cfg.validate())
+    }
+
     // MARK: - validate()
 
     func testValidateRejectsNegativeDomainId() {

@@ -180,7 +180,7 @@ static bool xml_append(char** xml_out, size_t* offset, const char* fmt, ...) {
 
 /// Build XML configuration string for CycloneDDS domain
 /// Returns a malloc'd string that must be freed by the caller
-static char* build_domain_config_xml(int32_t domain_id, const bridge_discovery_config_t* config) {
+char* dds_bridge_build_domain_config_xml(int32_t domain_id, const bridge_discovery_config_t* config) {
     char* xml = malloc(DOMAIN_CONFIG_XML_SIZE);
     if (!xml) {
         return NULL;
@@ -265,7 +265,17 @@ static char* build_domain_config_xml(int32_t domain_id, const bridge_discovery_c
 
     return xml;
 }
+#else
+char* dds_bridge_build_domain_config_xml(int32_t domain_id, const bridge_discovery_config_t* config) {
+    (void)domain_id;
+    (void)config;
+    return NULL;
+}
 #endif
+
+void dds_bridge_free_string(char* s) {
+    free(s);
+}
 
 bridge_dds_session_t* dds_bridge_create_session(
     int32_t domain_id,
@@ -289,7 +299,7 @@ bridge_dds_session_t* dds_bridge_create_session(
 
 #ifdef DDS_AVAILABLE
     // Build XML configuration for discovery peers
-    char* config_xml = build_domain_config_xml(domain_id, discovery_config);
+    char* config_xml = dds_bridge_build_domain_config_xml(domain_id, discovery_config);
     if (config_xml) {
         // Create domain with XML configuration only if not yet created or domain ID changed.
         // CycloneDDS domains are shared: all participants with the same domain_id

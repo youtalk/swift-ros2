@@ -23,6 +23,10 @@ public enum AxisVerdict: String, Codable, Sendable {
     case pass
     case fail
     case pending
+    /// The axis is structurally inapplicable to this capability row (e.g.
+    /// latency on a lifecycle row, or a type represented by a corpus row) rather
+    /// than simply unmeasured. Carries the rationale in `AxisResult.value`.
+    case na = "na"
 }
 
 /// One verification-axis result: a verdict plus an optional free-form measured value.

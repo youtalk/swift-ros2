@@ -109,4 +109,29 @@ final class ParityMatrixTests: XCTestCase {
         XCTAssertThrowsError(
             try matrix.setAxis(capabilityId: "nope", axis: .latency, verdict: .pass, value: nil))
     }
+
+    func testAxisVerdictNARawValue() throws {
+        XCTAssertEqual(AxisVerdict(rawValue: "na"), .na)
+        XCTAssertEqual(AxisVerdict.na.rawValue, "na")
+    }
+
+    func testSetAxisNARoundTripsThroughCanonicalJSON() throws {
+        var matrix = try loadSample()
+        try matrix.setAxis(
+            capabilityId: "publish.typed.sensor_msgs/Imu", axis: .latency,
+            verdict: .na, value: "n/a — represented by corpus")
+        let data = try matrix.encodeCanonicalJSON()
+        let decoded = try JSONDecoder().decode(ParityMatrix.self, from: data)
+        XCTAssertEqual(decoded.capabilities[0].verification.latency.verdict, .na)
+        XCTAssertEqual(
+            decoded.capabilities[0].verification.latency.value, "n/a — represented by corpus")
+    }
+
+    func testRenderShowsNAVerdict() throws {
+        var matrix = try loadSample()
+        try matrix.setAxis(
+            capabilityId: "publish.typed.sensor_msgs/Imu", axis: .resource,
+            verdict: .na, value: nil)
+        XCTAssertTrue(matrix.renderMarkdown().contains(" na "))
+    }
 }

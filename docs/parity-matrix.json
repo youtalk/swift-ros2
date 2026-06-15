@@ -585,7 +585,7 @@
     },
     {
       "apiSymbol" : "ROS2Node service server",
-      "evidence" : "rcl_service.c crcl_service_create gated on crcl_srv_registry_lookup (12 bundled srv types, crcl_srv_registry.c); no byte-seam fallback for services. Wire path serves any ROS2ServiceType",
+      "evidence" : "rcl_service.c crcl_service_create gated on crcl_srv_registry_lookup (12 bundled srv types, crcl_srv_registry.c); no byte-seam fallback for services. Wire path serves any ROS2ServiceType Non-bundled (arbitrary-type) services deferred-by-decision — no consumer (Conduit is a publisher); the pure-Swift wire path serves any ROS2ServiceType; a route-b raw-CDR fallback would require request/response GUID correlation for no current need (design 2026-06-13 §9 non-goal). Bundled types fully supported.",
       "id" : "service.server",
       "platforms" : [
         "iOS",
@@ -595,7 +595,7 @@
       ],
       "pureSwift" : "supported",
       "rcl" : "partial",
-      "severity" : "major",
+      "severity" : "minor",
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
@@ -614,7 +614,7 @@
     },
     {
       "apiSymbol" : "ROS2Node service client",
-      "evidence" : "rcl_client.c:135-143 crcl_client_create gated on the 12-entry srv registry; ROS2Client is generic over any service on the wire path",
+      "evidence" : "rcl_client.c:135-143 crcl_client_create gated on the 12-entry srv registry; ROS2Client is generic over any service on the wire path Non-bundled (arbitrary-type) services deferred-by-decision — no consumer (Conduit is a publisher); the pure-Swift wire path serves any ROS2ServiceType; a route-b raw-CDR fallback would require request/response GUID correlation for no current need (design 2026-06-13 §9 non-goal). Bundled types fully supported.",
       "id" : "service.client",
       "platforms" : [
         "iOS",
@@ -624,7 +624,7 @@
       ],
       "pureSwift" : "supported",
       "rcl" : "partial",
-      "severity" : "major",
+      "severity" : "minor",
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
@@ -730,7 +730,7 @@
     },
     {
       "apiSymbol" : "ROS2Node action server",
-      "evidence" : "rcl_action_server.c:212-220 crcl_action_server_create gated on crcl_action_registry_lookup; registry holds 1 entry (example_interfaces/action/Fibonacci). Wire path serves any action",
+      "evidence" : "rcl_action_server.c:212-220 crcl_action_server_create gated on crcl_action_registry_lookup; registry holds 1 entry (example_interfaces/action/Fibonacci). Wire path serves any action Non-bundled (arbitrary-type) actions deferred-by-decision — no consumer (Conduit is a publisher); the pure-Swift wire path serves any action; a route-b fallback would require the full goal state machine (3 services + 2 topics) for no current need (design 2026-06-13 §9 non-goal). Bundled types (Fibonacci) fully supported.",
       "id" : "action.server",
       "platforms" : [
         "iOS",
@@ -740,7 +740,7 @@
       ],
       "pureSwift" : "supported",
       "rcl" : "partial",
-      "severity" : "major",
+      "severity" : "minor",
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
@@ -759,7 +759,7 @@
     },
     {
       "apiSymbol" : "ROS2Node action client",
-      "evidence" : "rcl_action_client.c crcl_action_client_create gated on crcl_action_registry (CRCL_ACTION_REGISTRY_ENTRY_COUNT 1, Fibonacci only)",
+      "evidence" : "rcl_action_client.c crcl_action_client_create gated on crcl_action_registry (CRCL_ACTION_REGISTRY_ENTRY_COUNT 1, Fibonacci only) Non-bundled (arbitrary-type) actions deferred-by-decision — no consumer (Conduit is a publisher); the pure-Swift wire path serves any action; a route-b fallback would require the full goal state machine (3 services + 2 topics) for no current need (design 2026-06-13 §9 non-goal). Bundled types (Fibonacci) fully supported.",
       "id" : "action.client",
       "platforms" : [
         "iOS",
@@ -769,7 +769,7 @@
       ],
       "pureSwift" : "supported",
       "rcl" : "partial",
-      "severity" : "major",
+      "severity" : "minor",
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {

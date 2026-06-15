@@ -4,8 +4,19 @@
 import Foundation
 
 extension RclTransportSession {
+    // TransportSession conformance (no node identity → single-node fallback).
     package func createPublisher(
         topic: String, typeName: String, typeHash: String?, qos: TransportQoS
+    ) throws -> any TransportPublisher {
+        try createPublisher(
+            topic: topic, typeName: typeName, typeHash: typeHash, qos: qos,
+            nodeName: nil, nodeNamespace: nil)
+    }
+
+    // NodeScopedSession conformance (node-aware creation).
+    package func createPublisher(
+        topic: String, typeName: String, typeHash: String?, qos: TransportQoS,
+        nodeName: String?, nodeNamespace: String?
     ) throws -> any TransportPublisher {
         guard !topic.isEmpty else {
             throw TransportError.invalidConfiguration("Topic name cannot be empty")
@@ -13,7 +24,8 @@ extension RclTransportSession {
         guard !typeName.isEmpty else {
             throw TransportError.invalidConfiguration("Type name cannot be empty")
         }
-        let node = try preflightPublisher(topic: topic)
+        let node = try preflightPublisher(
+            topic: topic, nodeName: nodeName, nodeNamespace: nodeNamespace)
         let handle = try client.createPublisher(
             node: node, typeName: typeName, topic: topic, qos: qos)
         let pub = RclTransportPublisher(client: client, handle: handle, topic: topic)

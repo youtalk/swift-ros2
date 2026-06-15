@@ -140,6 +140,7 @@ package protocol RclClientProtocol: Sendable {
     func createSubscription(
         node: any RclNodeHandle,
         typeName: String,
+        typeHash: String?,
         topic: String,
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void

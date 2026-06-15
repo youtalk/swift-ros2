@@ -163,6 +163,64 @@ private final class RclSubscriptionBox: RclSubscriptionHandle, @unchecked Sendab
     }
 }
 
+/// C-callable bridge matching `dds_bridge_data_callback_t` for route-(b) raw
+/// readers. Borrows the `Unmanaged<RclSubscriptionContext>` (passRetained in
+/// `createRawReaderSubscription`); retention is released in
+/// `RclRawSubscriptionBox.close()`.
+private func rclRawReaderCallbackBridge(
+    cdrData: UnsafePointer<UInt8>?,
+    cdrLen: Int,
+    timestampNs: UInt64,
+    context: UnsafeMutableRawPointer?
+) {
+    guard let context else { return }
+    let subscriptionContext =
+        Unmanaged<RclSubscriptionContext>.fromOpaque(context).takeUnretainedValue()
+    let payload: Data
+    if let cdrData, cdrLen > 0 {
+        payload = Data(bytes: cdrData, count: cdrLen)
+    } else {
+        payload = Data()
+    }
+    subscriptionContext.handler(payload, timestampNs)
+}
+
+/// Route-(b) subscription handle for non-bundled (registry-miss) types. Wraps a
+/// `CDDSBridge` raw-CDR reader on the sibling CycloneDDS participant — received
+/// below rmw, outside rcl's wait-set but interoperable with any ROS 2 publisher
+/// by topic name + DDS type name. The mirror of `RclRawPublisherBox`; the same
+/// machinery the pure-Swift DDS backend ships.
+private final class RclRawSubscriptionBox: RclSubscriptionHandle, @unchecked Sendable {
+    private var reader: OpaquePointer?
+    private var contextBox: Unmanaged<RclSubscriptionContext>?
+    private let lock = NSLock()
+    init(reader: OpaquePointer, contextBox: Unmanaged<RclSubscriptionContext>) {
+        self.reader = reader
+        self.contextBox = contextBox
+    }
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let r = reader else { return false }
+        return dds_bridge_reader_is_active(r)
+    }
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let r = reader {
+            // dds_bridge_destroy_reader blocks until any in-flight callback
+            // returns (CycloneDDS contract); only then is releasing the retained
+            // closure context safe.
+            dds_bridge_destroy_reader(r)
+            reader = nil
+        }
+        if let box = contextBox {
+            box.release()
+            contextBox = nil
+        }
+    }
+}
+
 // MARK: - Service server
 
 /// Retained by `RclServiceBox.contextBox` while the service is alive. Same
@@ -832,9 +890,50 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         return RclRawPublisherBox(writer: w)
     }
 
+    /// Open a route-(b) raw-CDR reader for an unbundled type: a sibling
+    /// participant on the context domain, keyed by the DDS topic + DDS type name
+    /// (via SwiftROS2Wire) + USER_DATA typehash. The mirror of
+    /// `createRawWriterPublisher`; receipt is via the CycloneDDS listener
+    /// callback (timestamp from the DDS source timestamp), outside rcl's wait-set
+    /// — the same documented divergence as the writer.
+    private func createRawReaderSubscription(
+        typeName: String, typeHash: String?, topic: String, qos: TransportQoS,
+        handler: @escaping @Sendable (Data, UInt64) -> Void
+    ) throws -> any RclSubscriptionHandle {
+        let session = try ensureRawSession()
+        let ddsTopic = DDSWireCodec().ddsTopic(from: topic)  // "rt/<topic>"
+        let ddsType = TypeNameConverter.toDDSTypeName(typeName)  // "<pkg>::msg::dds_::<Type>_"
+        let userData: String? = typeHash.map { "typehash=\($0);" }
+        var cQos = makeBridgeQoS(qos)
+
+        let contextBox = Unmanaged.passRetained(RclSubscriptionContext(handler: handler))
+        let contextPtr = UnsafeMutableRawPointer(contextBox.toOpaque())
+
+        let reader: OpaquePointer? = ddsTopic.withCString { t in
+            ddsType.withCString { ty in
+                if let ud = userData {
+                    return ud.withCString {
+                        dds_bridge_create_raw_reader(
+                            session, t, ty, &cQos, $0, rclRawReaderCallbackBridge, contextPtr)
+                    }
+                }
+                return dds_bridge_create_raw_reader(
+                    session, t, ty, &cQos, nil, rclRawReaderCallbackBridge, contextPtr)
+            }
+        }
+        guard let r = reader else {
+            contextBox.release()
+            throw TransportError.subscriberCreationFailed(
+                "route-b raw reader create failed for \(typeName): "
+                    + "\(String(cString: dds_bridge_get_last_error()))")
+        }
+        return RclRawSubscriptionBox(reader: r, contextBox: contextBox)
+    }
+
     package func createSubscription(
         node: any RclNodeHandle,
         typeName: String,
+        typeHash: String?,
         topic: String,
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
@@ -842,24 +941,33 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }
-        var q = makeCrclQoS(qos)
-
-        let contextBox = Unmanaged.passRetained(RclSubscriptionContext(handler: handler))
-        let contextPtr = UnsafeMutableRawPointer(contextBox.toOpaque())
-
-        guard
-            let s = crcl_subscription_create(
-                b.ptr, typeName, topic, &q, rclTakeCallbackBridge, contextPtr)
-        else {
-            contextBox.release()
-            throw TransportError.subscriberCreationFailed(lastError())
+        // Discriminate a registry miss (unbundled type → route (b)) from a real
+        // failure: crcl_subscription_create gates on the same
+        // crcl_marshal_resolve_typesupport. Bundled type → a nil is a real error.
+        if crcl_marshal_resolve_typesupport(typeName) != nil {
+            var q = makeCrclQoS(qos)
+            let contextBox = Unmanaged.passRetained(RclSubscriptionContext(handler: handler))
+            let contextPtr = UnsafeMutableRawPointer(contextBox.toOpaque())
+            guard
+                let s = crcl_subscription_create(
+                    b.ptr, typeName, topic, &q, rclTakeCallbackBridge, contextPtr)
+            else {
+                contextBox.release()
+                throw TransportError.subscriberCreationFailed(lastError())
+            }
+            return RclSubscriptionBox(s, contextBox: contextBox)
         }
-        return RclSubscriptionBox(s, contextBox: contextBox)
+        // Registry miss (unbundled type) → route-(b) raw-CDR reader below rmw.
+        return try createRawReaderSubscription(
+            typeName: typeName, typeHash: typeHash, topic: topic, qos: qos, handler: handler)
     }
 
     package func destroySubscription(_ subscription: any RclSubscriptionHandle) {
-        guard let box = subscription as? RclSubscriptionBox else { return }
-        box.close()
+        if let box = subscription as? RclSubscriptionBox {
+            box.close()
+        } else if let raw = subscription as? RclRawSubscriptionBox {
+            raw.close()
+        }
     }
 
     package func createServiceServer(

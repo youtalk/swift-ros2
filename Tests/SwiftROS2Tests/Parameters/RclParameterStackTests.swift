@@ -148,8 +148,8 @@ private final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendab
     }
 
     func createSubscription(
-        node: any RclNodeHandle, typeName: String, topic: String, qos: TransportQoS,
-        handler: @escaping @Sendable (Data, UInt64) -> Void
+        node: any RclNodeHandle, typeName: String, typeHash: String?, topic: String,
+        qos: TransportQoS, handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any RclSubscriptionHandle {
         SeamSubscription()
     }

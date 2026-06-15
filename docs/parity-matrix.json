@@ -19,13 +19,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -48,13 +51,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -77,13 +83,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -133,16 +142,20 @@
       "typeApplicability" : "byte-seam-only",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "n/a — RCL missing (raw Image byte-seam only)",
+          "verdict" : "na"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — RCL missing (raw Image not in marshal registry)",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -195,13 +208,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -254,13 +269,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -283,13 +300,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -312,13 +331,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -341,13 +362,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -370,13 +393,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -399,13 +424,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -428,13 +455,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -457,13 +486,15 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — route-b raw-CDR = pure-Swift DDS path; perf = DDS baseline (M5)",
+          "verdict" : "na"
         },
         "resource" : {
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -489,10 +520,12 @@
           "verdict" : "pending"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -512,16 +545,20 @@
       "typeApplicability" : "byte-seam-only",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "n/a — RCL missing (raw Image byte-seam only)",
+          "verdict" : "na"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — RCL missing (raw Image not in marshal registry)",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -547,10 +584,12 @@
           "verdict" : "pending"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -573,13 +612,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — route-b raw-CDR = pure-Swift DDS path; perf = DDS baseline (M5)",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -602,13 +644,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -631,13 +676,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -660,13 +708,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -689,13 +740,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -718,13 +772,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -747,13 +804,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -776,13 +836,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -805,13 +868,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -834,13 +900,16 @@
           "verdict" : "pending"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a data path",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     },
@@ -860,16 +929,20 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "n/a — verified in M9 (zenoh-rmw golden 11/11, design §19.5)",
+          "verdict" : "na"
         },
         "latency" : {
-          "verdict" : "pending"
+          "value" : "n/a — rcl+rmw_zenoh variant (M9), separate xcframework; out of DDS scope",
+          "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a Conduit on-device publish path",
+          "verdict" : "na"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "verdict" : "na"
         }
       }
     }

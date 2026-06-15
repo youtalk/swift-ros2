@@ -16,7 +16,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-* in-process context init (rcl_init) both backends; all loopbacks pass",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -48,7 +49,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-loopback node create; LAN ros2 topic info lists the rcl node endpoints",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -80,7 +82,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "multi-node entity binding (#139); crcl-loopback",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -112,7 +115,7 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "value" : "byte-parity CDREncoder==rmw_serialize (SwiftROS2RCLTests.CrossBackendBytesTests.testImuByteParity)",
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 324 B); LAN stock-ros2 type-hash RIHS01_7d9a00ff... + field agreement",
           "verdict" : "pass"
         },
         "latency" : {
@@ -207,7 +210,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 103 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -269,7 +273,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 44 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -300,7 +305,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 36 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -331,7 +337,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 64 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -362,7 +369,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 116 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -393,7 +401,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 125 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -424,7 +433,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 44 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -455,7 +465,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "byte-parity CDREncoder==rmw_serialize (crcl-golden, 44 B)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — small/scalar type; shares typed-publish path; represented by sensor_msgs/Imu corpus",
@@ -486,7 +497,8 @@
       "typeApplicability" : "byte-seam-only",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-nonbundled-loopback OK (route-b raw-CDR byte round-trip)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — route-b raw-CDR = pure-Swift DDS path; perf = DDS baseline (M5)",
@@ -517,7 +529,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-loopback 20-msg typed pub->rcl_take_serialized->CDRDecoder; LAN stock-ros2 echo field agreement",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "round-trip receive side; in-proc rt p99=206us @100Hz; LAN rt 1000/1000 (rcl-bench roundtrip)",
@@ -582,7 +595,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-loopback typed pub->take_serialized->CDRDecoder (PointField[] SoA)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "round-trip receive side; in-proc rt p99=490us @100Hz (rcl-bench roundtrip)",
@@ -614,7 +628,8 @@
       "typeApplicability" : "byte-seam-only",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-nonbundled-sub-loopback OK",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — route-b raw-CDR = pure-Swift DDS path; perf = DDS baseline (M5)",
@@ -646,7 +661,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-svc-loopback AddTwoInts 2+3=5, -7+40=33 (real rcl service server)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -678,7 +694,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-svc-loopback client call round-trip",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -710,7 +727,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-svc-loopback param declare/get/set + event round-tripped",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -742,7 +760,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-svc-loopback param set->get round-trip",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -774,7 +793,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-svc-loopback /parameter_events received",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -806,7 +826,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-action-loopback Fibonacci(5)+Fibonacci(3)+cancel (real rcl_action server)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -838,7 +859,8 @@
       "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "crcl-action-loopback client goal+cancel round-trip",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -870,7 +892,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "sensorData QoS (reliable/volatile/keepLast) via crcl-loopback pub/sub both backends",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",
@@ -902,7 +925,8 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "verdict" : "pending"
+          "value" : "LAN round-trip over CycloneDDS domain 0 (#140 unicast/interface honoured); stock-ros2 type-hash RIHS01_7d9a00ff... match",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — not a data path",

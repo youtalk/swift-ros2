@@ -17,6 +17,10 @@
             XCTAssertTrue(xml!.contains("<Peer address=\"192.168.1.85\""))
             XCTAssertTrue(xml!.contains("<NetworkInterface name=\"en0\""))
             XCTAssertTrue(xml!.contains("SPDP"))  // SPDPInterval present in the unicast block
+            // Must NOT emit <EnableTopicDiscoveryEndpoints>: CRos2Jazzy's CycloneDDS
+            // rejects it on iOS (compiled without topic-discovery), failing
+            // rmw_create_node on the RCL unicast path (issue #149).
+            XCTAssertFalse(xml!.contains("EnableTopicDiscoveryEndpoints"))
         }
 
         func testDiscoveryURIXMLMulticastHasNoPeers() {

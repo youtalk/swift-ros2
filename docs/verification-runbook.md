@@ -122,12 +122,12 @@ publish-call cost; both sub-millisecond p99 — acceptable).
   **≤ +2 MiB**, CPU within a few % of the `.dds` build, no `serious`/`critical`
   thermal escalation under load, and battery drain comparable.
 
-## W4 results summary (3/4 axes — W5 input)
+## W4 results summary (4/4 axes — W5 input)
 
-Run on native macOS arm64 (Apple Silicon), `SWIFT_ROS2_ENABLE_RCL=1`, Release;
-LAN host = Jazzy + CycloneDDS over domain 0. Matrix after the W4 stack:
-**35 pass / 73 n-a / 0 fail / 12 pending** (the 12 pending = the `resource` axis,
-pending the iPhone run).
+Axes 1–3 run on native macOS arm64 (Apple Silicon), `SWIFT_ROS2_ENABLE_RCL=1`,
+Release, LAN host = Jazzy + CycloneDDS over domain 0; Axis 4 on a physical
+iPhone 15 Pro (M3d). Matrix after the W4 stack + the M3d resource run:
+**47 pass / 73 n-a / 0 fail / 0 pending** (pending-free — all four axes recorded).
 
 - **Latency (Axis 1) — PASS.** In-process publish-call p99 = 3.5 µs (Imu) / 28 µs
   (CompressedImage 64 KiB) / 29.6 µs (PointCloud2 120 KB); end-to-end round-trip p99
@@ -146,17 +146,39 @@ pending the iPhone run).
   `crcl-*-loopback` gates (pub/sub, non-bundled pub/sub, AddTwoInts + params,
   Fibonacci action); LAN: stock-ROS 2 `ros2 topic info --verbose` reports type hash
   `RIHS01_7d9a00ff…` (canonical match) and `echo` shows correct field values.
-- **Resource (Axis 4) — pending.** iPhone on-device measurement (Conduit, build-twice
-  + `conduit-run-on-iphone` / `oslog-stream-to-file`); 12 cells remain `pending`.
+- **Resource (Axis 4) — PASS.** iPhone 15 Pro, two signed Release builds (`.dds`
+  baseline vs `SWIFT_ROS2_ENABLE_RCL=1` `.rcl`), camera + LiDAR load, 5 min each
+  (`xctrace` Activity Monitor, per-process): CPU mean RCL 78.7 % vs DDS 78.6 %
+  (≈ identical); physical-footprint RCL 304 MiB vs DDS 334 MiB (RCL lower); thermal
+  RCL `Fair` vs DDS `Nominal` (both below `serious`/`critical` — the one-level delta
+  tracks cumulative session heat, since CPU load is identical); device arm64 Release
+  binary delta **+1.43 MiB** (≤ +2 MiB); battery drain comparable (~3–4 %/5 min).
+  RCL's on-device cost is on par with the pure-Swift DDS path. **Caveat (bug):** the
+  RCL run had to use *multicast* discovery — RCL with **unicast peers** fails
+  `rmw_create_node` on iOS because the exported `CYCLONEDDS_URI` carries
+  `<EnableTopicDiscoveryEndpoints>` (emitted by `CDDSBridge/dds_bridge.c` for the
+  unicast-peers case), which the CycloneDDS bundled in `CRos2Jazzy.xcframework`
+  rejects as an unknown element. The standalone `CCycloneDDS.xcframework` used by
+  the pure-Swift DDS path accepts it, so the same shared discovery XML is valid for
+  one CycloneDDS build and not the other. The bug does not affect the measured
+  resource cost, but it does block RCL on Conduit's real unicast-on-Wi-Fi path;
+  tracked separately.
 
-Verdict for W5: on every axis run so far the RCL backend is real-time-adequate and
-stable for Conduit-class loads; the only open evidence is on-device resource cost.
+Verdict for W5: across all four axes the RCL backend is real-time-adequate, stable,
+byte-correct, and resource-on-par with the pure-Swift path for Conduit-class loads.
+The one open risk is operational rather than performance: RCL's **unicast** discovery
+path is currently broken on iOS (the `EnableTopicDiscoveryEndpoints` config bug
+above), so RCL is not yet usable for Conduit's real on-device scenario (Wi-Fi, where
+multicast is blocked) until that is fixed.
 
 ## Out of scope
 
 - **Axis 4 (resource: binary-size / CPU / battery on a real iPhone)** is
-  Conduit-side (needs the Conduit repo + a physical device + the
-  `conduit-run-on-iphone` / `oslog-stream-to-file` skills), tracked separately.
+  Conduit-side (needs the Conduit repo + a physical device); recorded in the W4
+  summary above via the M3d run, no longer pending.
 - **DDS unicast on the RCL backend** is supported via `.rclUnicast` (peers +
-  optional interface exported as `CYCLONEDDS_URI`); LAN runs can use multicast
-  (RCL), `.rclUnicast` (RCL), or the pure-Swift `.ddsUnicast` path.
+  optional interface exported as `CYCLONEDDS_URI`) on macOS/LAN; on **iOS** it is
+  currently broken — the exported XML's `<EnableTopicDiscoveryEndpoints>` element
+  is rejected by the CycloneDDS bundled in `CRos2Jazzy.xcframework` (see the Axis 4
+  caveat above). LAN runs can use multicast (RCL), `.rclUnicast` (RCL, macOS), or
+  the pure-Swift `.ddsUnicast` path.

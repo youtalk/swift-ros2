@@ -123,7 +123,8 @@
           "verdict" : "pass"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "represented by large-payload soak (cloud120k/image64k healthy, slopes 9-17 KB/min << 1 MB/min limit); small fixed alloc (rcl-soak)",
@@ -188,7 +189,8 @@
           "verdict" : "pass"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "30min @100Hz rcl cloud120k: rss_slope=9061 B/min fd_growth=0 tput_deg=0.0% healthy; +12min malformed-recv fault run healthy (rcl-soak; bounded run, not 8h overnight)",
@@ -220,7 +222,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -252,7 +255,8 @@
           "verdict" : "pass"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "20min @100Hz rcl image64k: rss_slope=17090 B/min fd_growth=0 tput_deg=0.0% healthy (rcl-soak; bounded run)",
@@ -284,7 +288,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -316,7 +321,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -348,7 +354,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -380,7 +387,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -412,7 +420,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -444,7 +453,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -476,7 +486,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
@@ -508,7 +519,8 @@
           "verdict" : "na"
         },
         "resource" : {
-          "verdict" : "pending"
+          "value" : "iPhone15Pro Release, cam+LiDAR 5min: CPU mean 78.7% (.dds 78.6%); mem 304MiB (.dds 334); thermal Fair (<serious); binary +1.43MiB; battery comparable. RCL on-device cost ~= DDS (M3d). Measured via multicast: unicast-peer RCL on iOS blocked by CYCLONEDDS_URI <EnableTopicDiscoveryEndpoints> rejected by CRos2Jazzy CycloneDDS (tracked separately).",
+          "verdict" : "pass"
         },
         "soak" : {
           "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",

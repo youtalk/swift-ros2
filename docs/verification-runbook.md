@@ -122,6 +122,36 @@ publish-call cost; both sub-millisecond p99 — acceptable).
   **≤ +2 MiB**, CPU within a few % of the `.dds` build, no `serious`/`critical`
   thermal escalation under load, and battery drain comparable.
 
+## W4 results summary (3/4 axes — W5 input)
+
+Run on native macOS arm64 (Apple Silicon), `SWIFT_ROS2_ENABLE_RCL=1`, Release;
+LAN host = Jazzy + CycloneDDS over domain 0. Matrix after the W4 stack:
+**35 pass / 73 n-a / 0 fail / 12 pending** (the 12 pending = the `resource` axis,
+pending the iPhone run).
+
+- **Latency (Axis 1) — PASS.** In-process publish-call p99 = 3.5 µs (Imu) / 28 µs
+  (CompressedImage 64 KiB) / 29.6 µs (PointCloud2 120 KB); end-to-end round-trip p99
+  = 206 / 374 / 490 µs @100 Hz — all under the 1 ms / 2 ms SLOs. Pure-Swift DDS stays
+  ~2× faster end-to-end (Imu rt p99 113 µs), as in M5. LAN round-trip delivered
+  1000/1000 (interop proven); absolute LAN latency was dominated by a Python `rclpy`
+  echo relay (host had no `topic_tools`), so it is interop evidence, not the SLO
+  number.
+- **Soak (Axis 2) — PASS.** RCL cloud120k 30 min / image64k 20 min + a 12 min
+  malformed-receive fault run: all `healthy`, RSS slope 9–17 KB/min (≪ 1 MB/min),
+  FD growth 0, throughput degradation 0.0 %. DDS cloud120k baseline comparable
+  (12 KB/min). Bounded runs, not the 8 h overnight target — leak/stability checks
+  with ~60–110× margin.
+- **Correctness (Axis 3) — PASS.** Byte parity for all 11 bundled typed types
+  (`crcl-golden`: `CDREncoder == rmw_serialize`); behavioral parity via the five
+  `crcl-*-loopback` gates (pub/sub, non-bundled pub/sub, AddTwoInts + params,
+  Fibonacci action); LAN: stock-ROS 2 `ros2 topic info --verbose` reports type hash
+  `RIHS01_7d9a00ff…` (canonical match) and `echo` shows correct field values.
+- **Resource (Axis 4) — pending.** iPhone on-device measurement (Conduit, build-twice
+  + `conduit-run-on-iphone` / `oslog-stream-to-file`); 12 cells remain `pending`.
+
+Verdict for W5: on every axis run so far the RCL backend is real-time-adequate and
+stable for Conduit-class loads; the only open evidence is on-device resource cost.
+
 ## Out of scope
 
 - **Axis 4 (resource: binary-size / CPU / battery on a real iPhone)** is

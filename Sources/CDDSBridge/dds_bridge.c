@@ -216,13 +216,14 @@ char* dds_bridge_build_domain_config_xml(int32_t domain_id, const bridge_discove
             return NULL;
         }
 
-        // Disable multicast SPDP if in unicast-only mode
-        if (config->mode == BRIDGE_DISCOVERY_UNICAST) {
-            if (!xml_append(&xml, &offset,
-                "      <EnableTopicDiscoveryEndpoints>true</EnableTopicDiscoveryEndpoints>\n")) {
-                return NULL;
-            }
-        }
+        // NOTE: do not emit <EnableTopicDiscoveryEndpoints> here. It does not
+        // disable multicast SPDP (it toggles DCPSTopic discovery, which ROS 2
+        // graph discovery does not use), and CycloneDDS builds compiled without
+        // topic-discovery support — e.g. the one bundled in CRos2Jazzy on iOS,
+        // reached by the RCL path via CYCLONEDDS_URI — reject it as an unknown
+        // element and fail rmw_create_node (issue #149). Leaving multicast SPDP
+        // enabled next to the explicit <Peers> is harmless: it is simply
+        // ignored on networks without multicast (typical Wi-Fi).
 
         // Faster SPDP discovery for mobile devices (default is 30s)
         if (!xml_append(&xml, &offset, "      <SPDPInterval>1s</SPDPInterval>\n")) {

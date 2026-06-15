@@ -576,7 +576,7 @@ if canBuildDDS {
         ),
         .testTarget(
             name: "SwiftROS2DDSTests",
-            dependencies: ["SwiftROS2DDS", "SwiftROS2Transport"],
+            dependencies: ["SwiftROS2DDS", "SwiftROS2Transport", "CDDSBridge"],
             path: "Tests/SwiftROS2DDSTests"
         ),
         .testTarget(

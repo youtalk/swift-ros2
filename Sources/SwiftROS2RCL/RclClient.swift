@@ -5,6 +5,7 @@ import CDDSBridge
 import CRclBridge
 import Foundation
 import SwiftROS2Transport
+import SwiftROS2Wire
 
 // MARK: - Handles
 
@@ -40,6 +41,44 @@ final class RclPublisherBox: RclPublisherHandle, @unchecked Sendable {
         defer { lock.unlock() }
         guard let p = ptr else { return nil }
         return body(p)
+    }
+}
+
+/// Route-(b) publisher handle for non-bundled (registry-miss) types. Wraps a
+/// `CDDSBridge` raw-CDR writer on a sibling CycloneDDS participant — published
+/// below rmw, so it is outside rcl's entity graph but interoperable with any
+/// ROS 2 subscriber by topic name + DDS type name. The same machinery the
+/// pure-Swift DDS backend ships. Per-box lock serializes destroy vs. write.
+final class RclRawPublisherBox: RclPublisherHandle, @unchecked Sendable {
+    private let writer: OpaquePointer
+    private let lock = NSLock()
+    private var closed = false
+    init(writer: OpaquePointer) { self.writer = writer }
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !closed
+    }
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        if !closed {
+            closed = true
+            dds_bridge_destroy_writer(writer)
+        }
+    }
+    /// Write pre-serialized CDR below rmw. Returns the dds_bridge_write_raw_cdr
+    /// status (0 success, negative failure), or nil if the box is already
+    /// closed. Locked so a concurrent close() cannot free the writer mid-write.
+    func write(_ data: Data) -> Int32? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { return nil }
+        return data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) -> Int32 in
+            guard let base = buf.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+            // 0 ⇒ CycloneDDS source-stamps the sample.
+            return dds_bridge_write_raw_cdr(writer, base, data.count, 0)
+        }
     }
 }
 
@@ -536,6 +575,15 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// Saved CYCLONEDDS_URI to restore on destroyContext. Guarded by `envLock`.
     /// Outer optional = "we saved"; inner = "was previously set".
     private var priorCyclonedDDSURI: String??
+    /// Route-(b) sibling-participant session (`bridge_dds_session_t*`), created
+    /// lazily on the first non-bundled publisher and matched to the rcl
+    /// context's discovery. nil until then.
+    private var rawSession: OpaquePointer?
+    /// Discovery inputs captured at createContext so the route-(b) raw session
+    /// discovers identically to the rcl context.
+    private var ctxDomainId: Int32 = 0
+    private var ctxUnicastPeerAddresses: [String] = []
+    private var ctxNetworkInterface: String?
 
     public init() {}
 
@@ -620,6 +668,11 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
             lock.unlock()
             throw TransportError.alreadyConnected
         }
+        // Capture the discovery inputs so a later route-(b) raw session matches
+        // the rcl context's domain + peers + interface.
+        ctxDomainId = domainId
+        ctxUnicastPeerAddresses = unicastPeerAddresses
+        ctxNetworkInterface = networkInterface
         lock.unlock()
         // rmw_cyclonedds reads CYCLONEDDS_URI once, at the first participant. Only
         // export when discovery is non-default; restore the prior value on
@@ -640,7 +693,10 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         lock.lock()
         let c = ctx
         ctx = nil
+        let rs = rawSession
+        rawSession = nil
         lock.unlock()
+        if let rs { dds_bridge_destroy_session(rs) }
         if let c { crcl_context_destroy(c) }
         restoreDiscoveryEnv()
     }
@@ -662,16 +718,118 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     package func createPublisher(
-        node: any RclNodeHandle, typeName: String, topic: String, qos: TransportQoS
+        node: any RclNodeHandle, typeName: String, typeHash: String?, topic: String,
+        qos: TransportQoS
     ) throws -> any RclPublisherHandle {
         guard let b = node as? RclNodeBox else {
             throw TransportError.publisherCreationFailed("invalid node handle")
         }
-        let q = makeCrclQoS(qos)
-        guard let p = crcl_publisher_create(b.ptr, typeName, topic, q) else {
-            throw TransportError.publisherCreationFailed(lastError())
+        // Discriminate a registry miss (unbundled type → route (b)) from a real
+        // rmw failure. crcl_publisher_create returns NULL for BOTH the
+        // "unsupported type" registry gate AND genuine failures (invalid topic,
+        // rcl_publisher_init error, OOM, bad node); it gates on the same
+        // crcl_marshal_resolve_typesupport this checks. So: bundled type → a nil
+        // is a real error, surface it; only an actual registry miss falls back.
+        if crcl_marshal_resolve_typesupport(typeName) != nil {
+            let q = makeCrclQoS(qos)
+            guard let p = crcl_publisher_create(b.ptr, typeName, topic, q) else {
+                throw TransportError.publisherCreationFailed(lastError())
+            }
+            return RclPublisherBox(p)
         }
-        return RclPublisherBox(p)
+        // Registry miss (unbundled type) → route-(b) raw-CDR writer below rmw.
+        return try createRawWriterPublisher(
+            typeName: typeName, typeHash: typeHash, topic: topic, qos: qos)
+    }
+
+    /// Lazily create (or reuse) the route-(b) sibling CycloneDDS participant,
+    /// matching the rcl context's discovery (mirrors `makeDiscoveryURIXML`'s
+    /// `bridge_discovery_config_t` marshalling, but calls
+    /// `dds_bridge_create_session` instead of building XML).
+    private func ensureRawSession() throws -> OpaquePointer {
+        lock.lock()
+        if let s = rawSession {
+            lock.unlock()
+            return s
+        }
+        let domain = ctxDomainId
+        let peers = ctxUnicastPeerAddresses
+        let iface = ctxNetworkInterface
+        lock.unlock()
+
+        var cConfig = bridge_discovery_config_t()
+        cConfig.mode = peers.isEmpty ? BRIDGE_DISCOVERY_MULTICAST : BRIDGE_DISCOVERY_UNICAST
+        var peerCStrings: [UnsafeMutablePointer<CChar>?] = peers.map { strdup($0) }
+        peerCStrings.append(nil)
+        let peersPtr = UnsafeMutablePointer<UnsafePointer<CChar>?>.allocate(
+            capacity: peerCStrings.count)
+        defer {
+            for s in peerCStrings where s != nil { free(s) }
+            peersPtr.deallocate()
+        }
+        for (i, s) in peerCStrings.enumerated() { peersPtr[i] = s.map { UnsafePointer($0) } }
+        if !peers.isEmpty {
+            cConfig.unicast_peers = peersPtr
+            cConfig.peer_count = Int32(peers.count)
+        }
+        var ifaceC: UnsafeMutablePointer<CChar>?
+        if let iface {
+            ifaceC = strdup(iface)
+            cConfig.network_interface = UnsafePointer(ifaceC)
+        }
+        defer { if let s = ifaceC { free(s) } }
+
+        guard let s = dds_bridge_create_session(domain, &cConfig) else {
+            throw TransportError.publisherCreationFailed(
+                "route-b raw session create failed: "
+                    + "\(String(cString: dds_bridge_get_last_error()))")
+        }
+        lock.lock()
+        // Re-check: another thread may have created the session while we were
+        // unlocked building/creating ours. Keep the winner and destroy our
+        // redundant one — overwriting rawSession here would leak a participant.
+        if let existing = rawSession {
+            lock.unlock()
+            dds_bridge_destroy_session(s)
+            return existing
+        }
+        rawSession = s
+        lock.unlock()
+        return s
+    }
+
+    /// Open a route-(b) raw-CDR writer for an unbundled type: a sibling
+    /// participant on the context domain, keyed by the DDS topic + DDS type
+    /// name (via SwiftROS2Wire) + USER_DATA typehash. rmw_cyclonedds does no
+    /// XTypes checking, so a real ROS 2 subscriber matches on topic-name +
+    /// DDS-type-name string.
+    private func createRawWriterPublisher(
+        typeName: String, typeHash: String?, topic: String, qos: TransportQoS
+    ) throws -> any RclPublisherHandle {
+        let session = try ensureRawSession()
+        let ddsTopic = DDSWireCodec().ddsTopic(from: topic)  // "rt/<topic>"
+        let ddsType = TypeNameConverter.toDDSTypeName(typeName)  // "<pkg>::msg::dds_::<Type>_"
+        let userData: String? = typeHash.map { "typehash=\($0);" }
+        // Honour the caller's QoS — a nil here makes the C bridge default to
+        // best-effort/volatile (BRIDGE_QOS_SENSOR_DATA), silently dropping a
+        // reliable/transient-local request the bundled (route-a) path would keep.
+        var cQos = makeBridgeQoS(qos)
+        let writer: OpaquePointer? = ddsTopic.withCString { t in
+            ddsType.withCString { ty in
+                if let ud = userData {
+                    return ud.withCString {
+                        dds_bridge_create_raw_writer(session, t, ty, &cQos, $0)
+                    }
+                }
+                return dds_bridge_create_raw_writer(session, t, ty, &cQos, nil)
+            }
+        }
+        guard let w = writer else {
+            throw TransportError.publisherCreationFailed(
+                "route-b raw writer create failed for \(typeName): "
+                    + "\(String(cString: dds_bridge_get_last_error()))")
+        }
+        return RclRawPublisherBox(writer: w)
     }
 
     package func createSubscription(
@@ -1028,6 +1186,16 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     package func publishSerialized(_ publisher: any RclPublisherHandle, data: Data) throws {
+        // Route-(b) raw-CDR writer (unbundled type) — publish below rmw. Surface
+        // a write failure the same way the typed path does, instead of reporting
+        // success when nothing went on the wire.
+        if let raw = publisher as? RclRawPublisherBox {
+            guard let rc = raw.write(data) else { throw TransportError.publisherClosed }
+            if rc != 0 {
+                throw TransportError.publishFailed(String(cString: dds_bridge_get_last_error()))
+            }
+            return
+        }
         guard let b = publisher as? RclPublisherBox else {
             throw TransportError.publishFailed("invalid publisher handle")
         }
@@ -1054,6 +1222,28 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
             q.depth = 0
         }
         return q
+    }
+
+    /// Map TransportQoS to the CDDSBridge config used by the route-(b) raw
+    /// writer (mirrors the pure-Swift DDS backend's QoS marshalling), so an
+    /// unbundled-type publisher honours the same reliability/durability/history
+    /// knobs as a bundled one instead of falling back to sensor-data defaults.
+    /// `package` so SwiftROS2RCLTests can assert the mapping without rmw.
+    package func makeBridgeQoS(_ qos: TransportQoS) -> bridge_qos_config_t {
+        var c = bridge_qos_config_t()
+        c.reliability =
+            qos.reliability == .reliable ? BRIDGE_RELIABILITY_RELIABLE : BRIDGE_RELIABILITY_BEST_EFFORT
+        c.durability =
+            qos.durability == .transientLocal ? BRIDGE_DURABILITY_TRANSIENT_LOCAL : BRIDGE_DURABILITY_VOLATILE
+        switch qos.history {
+        case .keepLast(let depth):
+            c.history_kind = BRIDGE_HISTORY_KEEP_LAST
+            c.history_depth = Int32(depth)
+        case .keepAll:
+            c.history_kind = BRIDGE_HISTORY_KEEP_ALL
+            c.history_depth = 0
+        }
+        return c
     }
 
     private func lastError() -> String { String(cString: crcl_last_error()) }

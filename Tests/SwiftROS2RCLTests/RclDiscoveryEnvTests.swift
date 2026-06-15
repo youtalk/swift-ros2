@@ -1,6 +1,8 @@
 #if SWIFT_ROS2_RCL
+    import CDDSBridge
     import Foundation
     import SwiftROS2RCL
+    import SwiftROS2Transport
     import XCTest
 
     /// Axis 3 (correctness) byte-shape guard: the RCL path and the wire DDS path
@@ -59,6 +61,25 @@
             let applied = RclClient().applyDiscoveryEnv(
                 domainId: 0, unicastPeerAddresses: [], networkInterface: nil)
             XCTAssertFalse(applied)
+        }
+
+        /// The route-(b) raw writer must honour the caller's QoS rather than the
+        /// best-effort/volatile sensor-data default. makeBridgeQoS maps every
+        /// knob through to the CDDSBridge config (it is passed as the writer's
+        /// QoS, not nil).
+        func testMakeBridgeQoSHonoursCallerReliabilityDurabilityHistory() {
+            let reliable = RclClient().makeBridgeQoS(
+                TransportQoS(reliability: .reliable, durability: .transientLocal, history: .keepLast(7)))
+            XCTAssertEqual(reliable.reliability, BRIDGE_RELIABILITY_RELIABLE)
+            XCTAssertEqual(reliable.durability, BRIDGE_DURABILITY_TRANSIENT_LOCAL)
+            XCTAssertEqual(reliable.history_kind, BRIDGE_HISTORY_KEEP_LAST)
+            XCTAssertEqual(reliable.history_depth, 7)
+
+            let bestEffort = RclClient().makeBridgeQoS(
+                TransportQoS(reliability: .bestEffort, durability: .volatile, history: .keepAll))
+            XCTAssertEqual(bestEffort.reliability, BRIDGE_RELIABILITY_BEST_EFFORT)
+            XCTAssertEqual(bestEffort.durability, BRIDGE_DURABILITY_VOLATILE)
+            XCTAssertEqual(bestEffort.history_kind, BRIDGE_HISTORY_KEEP_ALL)
         }
     }
 #endif

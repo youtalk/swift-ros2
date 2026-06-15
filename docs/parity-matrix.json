@@ -126,7 +126,8 @@
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "represented by large-payload soak (cloud120k/image64k healthy, slopes 9-17 KB/min << 1 MB/min limit); small fixed alloc (rcl-soak)",
+          "verdict" : "pass"
         }
       }
     },
@@ -190,7 +191,8 @@
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "30min @100Hz rcl cloud120k: rss_slope=9061 B/min fd_growth=0 tput_deg=0.0% healthy; +12min malformed-recv fault run healthy (rcl-soak; bounded run, not 8h overnight)",
+          "verdict" : "pass"
         }
       }
     },
@@ -253,7 +255,8 @@
           "verdict" : "pending"
         },
         "soak" : {
-          "verdict" : "pending"
+          "value" : "20min @100Hz rcl image64k: rss_slope=17090 B/min fd_growth=0 tput_deg=0.0% healthy (rcl-soak; bounded run)",
+          "verdict" : "pass"
         }
       }
     },

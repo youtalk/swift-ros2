@@ -33,12 +33,13 @@ extension RclTransportSession {
         guard !typeName.isEmpty else {
             throw TransportError.invalidConfiguration("Type name cannot be empty")
         }
-        // typeHash is unused on this backend: rcl derives the hash from the
-        // typesupport handle, so the wire-level pin the Zenoh/DDS sessions
-        // need does not apply here.
+        // typeHash is forwarded so the route-(b) raw-CDR reader (non-bundled
+        // types, registry miss) can emit the USER_DATA typehash; the bundled
+        // route-a path ignores it (rcl derives the hash from the typesupport).
         let node = try preflightSubscriber(nodeName: nodeName, nodeNamespace: nodeNamespace)
         let handle = try client.createSubscription(
-            node: node, typeName: typeName, topic: topic, qos: qos, handler: handler)
+            node: node, typeName: typeName, typeHash: typeHash, topic: topic, qos: qos,
+            handler: handler)
         let sub = RclTransportSubscriber(client: client, handle: handle, topic: topic)
         try appendSubscriber(sub)
         return sub

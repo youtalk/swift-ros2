@@ -556,7 +556,7 @@
     },
     {
       "apiSymbol" : "ROS2Subscription",
-      "evidence" : "rcl_subscription.c:102-108 crcl_subscription_create is registry-gated -> 'unsupported type' for any type absent from crcl_marshal_registry.c; pure-Swift ROS2Subscription<M> decodes any CDRDecodable type",
+      "evidence" : "RclClient.createSubscription falls back to a CDDSBridge raw-CDR reader on a registry miss (mirror of the publish route-b): a sibling participant on the context domain, DDS topic/type via SwiftROS2Wire + USER_DATA typehash; received below rmw (outside rcl's wait-set, a documented divergence) but interoperable with any ROS 2 publisher by topic + DDS-type name. Proven in-process by crcl-nonbundled-sub-loopback (.dds wire publish -> .rcl route-b subscribe, same domain) and by RclNonbundledSubscribeIntegrationTests (LAN). Pairs with publish.serialized.non_bundled for full non-bundled pub/sub.",
       "id" : "subscribe.serialized.non_bundled",
       "platforms" : [
         "iOS",
@@ -565,8 +565,8 @@
         "visionOS"
       ],
       "pureSwift" : "supported",
-      "rcl" : "missing",
-      "severity" : "major",
+      "rcl" : "partial",
+      "severity" : "minor",
       "typeApplicability" : "byte-seam-only",
       "verification" : {
         "correctness" : {

@@ -809,7 +809,8 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     package func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
+        zenohRouterLocator: String?
     ) throws {
         lock.lock()
         guard ctx == nil else {
@@ -822,14 +823,17 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         ctxUnicastPeerAddresses = unicastPeerAddresses
         ctxNetworkInterface = networkInterface
         lock.unlock()
-        // rmw_cyclonedds reads CYCLONEDDS_URI once, at the first participant. Only
-        // export when discovery is non-default; restore the prior value on
-        // teardown OR if context creation fails (so a failed open doesn't leak it).
+        // DDS variant: export CYCLONEDDS_URI for non-default discovery.
+        // Zenoh variant: export ZENOH_SESSION_CONFIG_URI for the router locator.
+        // The two are mutually exclusive by build variant; rmw reads its env once
+        // at first participant. Restore on teardown OR a failed create.
         let appliedDiscoveryEnv = applyDiscoveryEnv(
             domainId: domainId, unicastPeerAddresses: unicastPeerAddresses,
             networkInterface: networkInterface)
+        let appliedZenohEnv = zenohRouterLocator.map { applyZenohSessionEnv(locator: $0) } ?? false
         guard let c = crcl_context_create(Int(domainId)) else {
             if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+            if appliedZenohEnv { restoreZenohSessionEnv() }
             throw TransportError.connectionFailed(lastError())
         }
         lock.lock()
@@ -847,6 +851,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         if let rs { dds_bridge_destroy_session(rs) }
         if let c { crcl_context_destroy(c) }
         restoreDiscoveryEnv()
+        restoreZenohSessionEnv()
     }
 
     package func createNode(name: String, namespace: String) throws -> any RclNodeHandle {

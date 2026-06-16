@@ -347,6 +347,9 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     private(set) var lastDomainId: Int32 = -1
     private(set) var lastUnicastPeerAddresses: [String] = []
     private(set) var lastNetworkInterface: String?
+    /// Records the zenoh router locator passed to createContext (wrapped in Optional
+    /// to distinguish "called with nil" from "never called").
+    private(set) var recordedZenohLocator: String??
     private(set) var nodesCreated: [(name: String, namespace: String)] = []
     /// Handles returned by createNode, in creation order — lets tests assert
     /// entity-to-node attachment by identity.
@@ -409,13 +412,15 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     var onSendRequest: ((Int64, Data) -> Void)?
 
     func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
+        zenohRouterLocator: String?
     ) throws {
         sync {
             contextCreated = true
             lastDomainId = domainId
             lastUnicastPeerAddresses = unicastPeerAddresses
             lastNetworkInterface = networkInterface
+            recordedZenohLocator = Optional(zenohRouterLocator)
         }
     }
     func destroyContext() {

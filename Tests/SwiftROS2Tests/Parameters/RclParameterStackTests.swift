@@ -126,7 +126,8 @@ private final class RecordingRclSeamClient: RclClientProtocol, @unchecked Sendab
     }
 
     func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
+        zenohRouterLocator: String?
     ) throws {}
     func destroyContext() {}
 

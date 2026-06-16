@@ -20,6 +20,10 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     var actionServers: [RclTransportActionServer] = []
     var actionClients: [RclTransportActionClient] = []
 
+    // Always `.rcl`: this session backs the real rcl stack regardless of the
+    // rmw variant. In the zenoh-rmw variant it serves a `.zenoh` config, but the
+    // backing stack is still rcl. (Informational only — no production dispatch
+    // reads this; revisit if a caller needs to distinguish the rmw.)
     public var transportType: TransportType { .rcl }
 
     public var isConnected: Bool {

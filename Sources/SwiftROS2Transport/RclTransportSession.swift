@@ -39,21 +39,24 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     }
 
     public func open(config: TransportConfig) async throws {
-        guard config.type == .rcl else {
-            throw TransportError.invalidConfiguration("Expected RCL configuration, got \(config.type)")
+        // The zenoh-rmw variant routes `.zenoh` here (zenoh-pico is carved out);
+        // `.rcl` is the DDS variant. Both open a real rcl context.
+        guard config.type == .rcl || config.type == .zenoh else {
+            throw TransportError.invalidConfiguration(
+                "Expected RCL or Zenoh configuration, got \(config.type)")
         }
         try config.validate()
         guard client.isAvailable else {
-            throw TransportError.unsupportedFeature("RCL transport not available (CRos2Jazzy not built)")
+            throw TransportError.unsupportedFeature(
+                "RCL transport not available (CRos2Jazzy not built)")
         }
-        // Bare host addresses (`peer.address`), mirroring the wire DDS path
-        // (DDSTransportSession): the C bridge drops each verbatim into
-        // `<Peer address="%s"/>`, where CycloneDDS needs a bare host (not a
-        // `udp/host:port` locator).
+        // DDS discovery (bare host addresses) on the `.rcl` path; the router
+        // locator on the `.zenoh` path. Only one is set per build variant.
         try client.createContext(
             domainId: Int32(config.domainId),
             unicastPeerAddresses: config.ddsUnicastPeers.map { $0.address },
-            networkInterface: config.ddsNetworkInterface)
+            networkInterface: config.ddsNetworkInterface,
+            zenohRouterLocator: config.type == .zenoh ? config.zenohLocator : nil)
         lock.lock()
         isOpen = true
         _sessionId = "rcl-\(config.domainId)"

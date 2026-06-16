@@ -642,6 +642,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     private var priorZenohSessionConfigURI: String??
     private var priorZenohRouterCheckAttempts: String??
     /// Temp file backing ZENOH_SESSION_CONFIG_URI; removed on restore.
+    /// Guarded by `zenohEnvLock`.
     private var zenohConfigFileURL: URL?
     /// Route-(b) sibling-participant session (`bridge_dds_session_t*`), created
     /// lazily on the first non-bundled publisher and matched to the rcl
@@ -755,6 +756,9 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// restoreZenohSessionEnv() on teardown or a failed createContext. Returns
     /// false if the temp file could not be written.
     package func applyZenohSessionEnv(locator: String) -> Bool {
+        // Precondition: must not be called again before restoreZenohSessionEnv().
+        // A second apply would orphan the first temp file and overwrite the saved
+        // priors (same single-apply-per-context contract as applyDiscoveryEnv).
         let json5 = makeZenohSessionConfigJSON5(locator: locator)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("swift-ros2-zenoh-\(UUID().uuidString).json5")

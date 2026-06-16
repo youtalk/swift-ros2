@@ -14,7 +14,7 @@
             XCTAssertTrue(cfg.contains("\"tcp/192.168.1.85:7447\""), "connect endpoint missing")
             XCTAssertTrue(cfg.contains("mode: \"client\""), "client mode missing")
             XCTAssertTrue(cfg.contains("connect"), "connect block missing")
-            XCTAssertTrue(cfg.contains("multicast"))
+            XCTAssertTrue(cfg.contains("enabled: false"), "multicast scouting must be disabled")
         }
 
         func testApplyZenohSessionEnvExportsAndRestores() {
@@ -42,12 +42,21 @@
             XCTAssertNotNil(uri)
             let contents = (try? String(contentsOfFile: uri!, encoding: .utf8)) ?? ""
             XCTAssertTrue(contents.contains("tcp/192.168.1.85:7447"))
-            XCTAssertNotNil(getenv("ZENOH_ROUTER_CHECK_ATTEMPTS"))
+            XCTAssertEqual(
+                getenv("ZENOH_ROUTER_CHECK_ATTEMPTS").map { String(cString: $0) }, "1",
+                "router check attempts must be pinned to 1 (non-blocking)")
 
             client.restoreZenohSessionEnv()
             XCTAssertNil(getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) })
             XCTAssertNil(getenv("ZENOH_ROUTER_CHECK_ATTEMPTS").map { String(cString: $0) })
             XCTAssertFalse(FileManager.default.fileExists(atPath: uri!), "temp config not cleaned up")
+        }
+
+        func testRestoreZenohSessionEnvIsNoOpWhenNothingApplied() {
+            // Calling restore on a fresh client must not crash or mutate the env.
+            let outerURI = getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) }
+            RclClient().restoreZenohSessionEnv()
+            XCTAssertEqual(getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) }, outerURI)
         }
     }
 #endif

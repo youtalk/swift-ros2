@@ -174,5 +174,35 @@
             try await session.open(config: .zenoh(locator: "tcp/10.0.0.2:7447"))
             XCTAssertEqual(client.recordedZenohLocator, .some("tcp/10.0.0.2:7447"))
         }
+
+        func testEmbeddableZenohLocatorRule() {
+            // Legitimate endpoints (incl. IPv6 + a `#`-metadata tail) embed cleanly.
+            XCTAssertTrue(RclClient.isEmbeddableZenohLocator("tcp/192.168.1.85:7447"))
+            XCTAssertTrue(RclClient.isEmbeddableZenohLocator("tcp/[::1]:7447#iface=en0"))
+            // json5-string-breaking characters must be rejected, not escaped.
+            XCTAssertFalse(RclClient.isEmbeddableZenohLocator("tcp/h:7447\"]}"), "quote rejected")
+            XCTAssertFalse(RclClient.isEmbeddableZenohLocator("tcp/h:7447\\"), "backslash rejected")
+            XCTAssertFalse(RclClient.isEmbeddableZenohLocator("tcp/h:7447\n"), "newline rejected")
+        }
+
+        func testCreateContextRejectsUninjectableLocatorWithoutSettingEnv() {
+            // A locator that would corrupt the json5 must fail loudly at
+            // createContext — before any rcl call — rather than silently fall back
+            // to default (router-less, multicast) settings. The validation throws
+            // ahead of crcl_context_create, so this needs no live rmw.
+            let before = getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) }
+            XCTAssertThrowsError(
+                try RclClient().createContext(
+                    domainId: 0, unicastPeerAddresses: [], networkInterface: nil,
+                    zenohRouterLocator: "tcp/host:7447\"]}injected")
+            ) { error in
+                guard case TransportError.invalidConfiguration = error else {
+                    return XCTFail("expected invalidConfiguration, got \(error)")
+                }
+            }
+            XCTAssertEqual(
+                getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) }, before,
+                "a rejected locator must not touch the Zenoh session env")
+        }
     }
 #endif

@@ -32,7 +32,9 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.lastNetworkInterface, "en0")
     }
 
-    func testOpenRejectsNonRclConfig() async {
+    // `.rcl` and `.zenoh` (the zenoh-rmw variant) are accepted; a DDS-wire
+    // config is not — RclTransportSession does not back the wire DDS path.
+    func testOpenRejectsNonRclOrZenohConfig() async {
         let s = RclTransportSession(client: MockRclClient())
         do {
             try await s.open(config: .ddsMulticast(domainId: 0))

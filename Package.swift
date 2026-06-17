@@ -505,11 +505,17 @@ if canBuildDDS {
     if enableRcl {
         swiftROS2Deps.append("SwiftROS2RCL")
         swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+        if rclRmwVariant == "zenoh" {
+            swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
+        }
     }
 
     var swiftROS2TestsSwiftSettings: [SwiftSetting] = []
     if enableRcl {
         swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+        if rclRmwVariant == "zenoh" {
+            swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
+        }
     }
 
     var integrationDeps: [Target.Dependency] = [
@@ -719,6 +725,10 @@ if enableRcl {
             path: "Sources/SwiftROS2RCL"
         ))
     products.append(.library(name: "SwiftROS2RCL", targets: ["SwiftROS2RCL"]))
+    var rclTestsSwiftSettings: [SwiftSetting] = [.define("SWIFT_ROS2_RCL")]
+    if rclRmwVariant == "zenoh" {
+        rclTestsSwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
+    }
     targets.append(
         .testTarget(
             name: "SwiftROS2RCLTests",
@@ -726,7 +736,7 @@ if enableRcl {
                 "SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages", "CDDSBridge",
             ],
             path: "Tests/SwiftROS2RCLTests",
-            swiftSettings: [.define("SWIFT_ROS2_RCL")],
+            swiftSettings: rclTestsSwiftSettings,
             linkerSettings: [.linkedLibrary("c++")]
         ))
 }

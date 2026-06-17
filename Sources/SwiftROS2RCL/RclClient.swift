@@ -633,6 +633,17 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// Saved CYCLONEDDS_URI to restore on destroyContext. Guarded by `envLock`.
     /// Outer optional = "we saved"; inner = "was previously set".
     private var priorCyclonedDDSURI: String??
+    /// Serializes ZENOH_SESSION_CONFIG_URI / ZENOH_ROUTER_CHECK_ATTEMPTS reads &
+    /// writes across all RclClient instances (process-global env slots; same
+    /// rationale as `envLock`).
+    private static let zenohEnvLock = NSLock()
+    /// Saved Zenoh env to restore on destroyContext. Outer optional = "we saved";
+    /// inner = "was previously set". Guarded by `zenohEnvLock`.
+    private var priorZenohSessionConfigURI: String??
+    private var priorZenohRouterCheckAttempts: String??
+    /// Temp file backing ZENOH_SESSION_CONFIG_URI; removed on restore.
+    /// Guarded by `zenohEnvLock`.
+    private var zenohConfigFileURL: URL?
     /// Route-(b) sibling-participant session (`bridge_dds_session_t*`), created
     /// lazily on the first non-bundled publisher and matched to the rcl
     /// context's discovery. nil until then.
@@ -681,6 +692,37 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         return String(cString: xmlPtr)
     }
 
+    /// Build a minimal Zenoh **client** session config (json5) that connects to
+    /// the given router locator (`tcp/<host>:<port>`), with multicast scouting
+    /// disabled (we connect to a known router). rmw_zenoh_cpp reads this file via
+    /// ZENOH_SESSION_CONFIG_URI at session creation. Pure: no env, no rmw.
+    /// `package` so SwiftROS2RCLTests can assert the shape without a router.
+    package func makeZenohSessionConfigJSON5(locator: String) -> String {
+        """
+        {
+          mode: "client",
+          connect: {
+            endpoints: ["\(locator)"],
+          },
+          scouting: {
+            multicast: {
+              enabled: false,
+            },
+          },
+        }
+        """
+    }
+
+    /// True if `locator` is safe to embed verbatim in the json5 session-config
+    /// string literal. A `"` or `\` (or a control char / newline) would close or
+    /// corrupt the literal; a legitimate zenoh endpoint (`proto/host:port[#meta]`)
+    /// never contains these. Reject such a locator with a clear error rather than
+    /// escape it into a syntactically-valid-but-wrong endpoint the router would
+    /// reject later, far from the cause. `package` so tests can assert the rule.
+    package static func isEmbeddableZenohLocator(_ locator: String) -> Bool {
+        !locator.unicodeScalars.contains { $0 == "\"" || $0 == "\\" || $0.value < 0x20 }
+    }
+
     /// Export the discovery XML as CYCLONEDDS_URI (saving the prior value) when
     /// discovery is non-default. Returns true if it set the env. rmw_cyclonedds
     /// reads CYCLONEDDS_URI once, at the first participant; pair with
@@ -706,6 +748,17 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         return true
     }
 
+    /// Restore one saved env slot to its pre-apply value (unset it if it was
+    /// previously unset), then clear the slot so a later call is a no-op. The
+    /// `Optional(...)` wrap in the apply path distinguishes "saved, was unset"
+    /// (`.some(.none)` → unset) from "never saved" (`.none` → no-op). Caller
+    /// holds the relevant env lock.
+    private func restoreEnvSlotLocked(_ saved: inout String??, _ name: String) {
+        guard let prior = saved else { return }
+        saved = nil
+        if let p = prior { setenv(name, p, 1) } else { unsetenv(name) }
+    }
+
     /// Restore CYCLONEDDS_URI to its pre-applyDiscoveryEnv value (unset it if it
     /// was previously unset). Idempotent: a no-op when nothing was saved.
     package func restoreDiscoveryEnv() {
@@ -713,13 +766,56 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         // applyDiscoveryEnv): the saved slot and the live env move together.
         Self.envLock.lock()
         defer { Self.envLock.unlock() }
-        guard let prior = priorCyclonedDDSURI else { return }
-        priorCyclonedDDSURI = nil
-        if let p = prior { setenv("CYCLONEDDS_URI", p, 1) } else { unsetenv("CYCLONEDDS_URI") }
+        restoreEnvSlotLocked(&priorCyclonedDDSURI, "CYCLONEDDS_URI")
+    }
+
+    /// Write the Zenoh session config to a unique temp file and export
+    /// ZENOH_SESSION_CONFIG_URI (+ ZENOH_ROUTER_CHECK_ATTEMPTS), saving the prior
+    /// values. rmw_zenoh_cpp reads these once at session creation; pair with
+    /// restoreZenohSessionEnv() on teardown or a failed createContext. Returns
+    /// false if the temp file could not be written.
+    package func applyZenohSessionEnv(locator: String) -> Bool {
+        // Precondition: must not be called again before restoreZenohSessionEnv().
+        // A second apply would orphan the first temp file and overwrite the saved
+        // priors (same single-apply-per-context contract as applyDiscoveryEnv).
+        let json5 = makeZenohSessionConfigJSON5(locator: locator)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swift-ros2-zenoh-\(UUID().uuidString).json5")
+        guard (try? json5.write(to: url, atomically: true, encoding: .utf8)) != nil else {
+            return false
+        }
+        Self.zenohEnvLock.lock()
+        defer { Self.zenohEnvLock.unlock() }
+        zenohConfigFileURL = url
+        // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
+        // ("saved, was unset") rather than collapsing to .none ("never saved").
+        priorZenohSessionConfigURI = Optional(
+            getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) })
+        priorZenohRouterCheckAttempts = Optional(
+            getenv("ZENOH_ROUTER_CHECK_ATTEMPTS").map { String(cString: $0) })
+        setenv("ZENOH_SESSION_CONFIG_URI", url.path, 1)
+        // Check for the router once, then continue: a mobile publisher must not
+        // block context creation when the remote router is briefly unreachable.
+        setenv("ZENOH_ROUTER_CHECK_ATTEMPTS", "1", 1)
+        return true
+    }
+
+    /// Restore the Zenoh env to its pre-apply values (unset what was unset) and
+    /// remove the temp config file. Idempotent: a no-op when nothing was saved.
+    package func restoreZenohSessionEnv() {
+        Self.zenohEnvLock.lock()
+        defer { Self.zenohEnvLock.unlock() }
+        restoreEnvSlotLocked(&priorZenohSessionConfigURI, "ZENOH_SESSION_CONFIG_URI")
+        restoreEnvSlotLocked(&priorZenohRouterCheckAttempts, "ZENOH_ROUTER_CHECK_ATTEMPTS")
+        if let url = zenohConfigFileURL {
+            try? FileManager.default.removeItem(at: url)
+            zenohConfigFileURL = nil
+        }
     }
 
     package func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
+        zenohRouterLocator: String?
     ) throws {
         lock.lock()
         guard ctx == nil else {
@@ -732,14 +828,36 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         ctxUnicastPeerAddresses = unicastPeerAddresses
         ctxNetworkInterface = networkInterface
         lock.unlock()
-        // rmw_cyclonedds reads CYCLONEDDS_URI once, at the first participant. Only
-        // export when discovery is non-default; restore the prior value on
-        // teardown OR if context creation fails (so a failed open doesn't leak it).
+        // DDS variant: export CYCLONEDDS_URI for non-default discovery.
+        // Zenoh variant: export ZENOH_SESSION_CONFIG_URI for the router locator.
+        // The two are mutually exclusive by build variant; rmw reads its env once
+        // at first participant. Restore on teardown OR a failed create.
         let appliedDiscoveryEnv = applyDiscoveryEnv(
             domainId: domainId, unicastPeerAddresses: unicastPeerAddresses,
             networkInterface: networkInterface)
+        // A configured locator MUST be honored — unlike DDS, where the absence of
+        // an exported URI means "use default discovery", an unexported Zenoh
+        // session config silently drops the publisher onto default (router-less,
+        // multicast) settings. So a present-but-unappliable locator fails loudly
+        // here instead of producing a connection that never reaches the router.
+        var appliedZenohEnv = false
+        if let locator = zenohRouterLocator {
+            guard Self.isEmbeddableZenohLocator(locator) else {
+                if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+                throw TransportError.invalidConfiguration(
+                    "Zenoh router locator cannot be embedded in the session config "
+                        + "(contains a quote, backslash, or control character): \(locator)")
+            }
+            guard applyZenohSessionEnv(locator: locator) else {
+                if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+                throw TransportError.connectionFailed(
+                    "failed to write the Zenoh session config for locator \(locator)")
+            }
+            appliedZenohEnv = true
+        }
         guard let c = crcl_context_create(Int(domainId)) else {
             if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+            if appliedZenohEnv { restoreZenohSessionEnv() }
             throw TransportError.connectionFailed(lastError())
         }
         lock.lock()
@@ -757,6 +875,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         if let rs { dds_bridge_destroy_session(rs) }
         if let c { crcl_context_destroy(c) }
         restoreDiscoveryEnv()
+        restoreZenohSessionEnv()
     }
 
     package func createNode(name: String, namespace: String) throws -> any RclNodeHandle {

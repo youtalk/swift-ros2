@@ -959,7 +959,7 @@
     },
     {
       "apiSymbol" : "TransportConfig.type=.zenoh",
-      "evidence" : "RCL-over-Zenoh only via build-time SWIFT_ROS2_RCL_RMW=zenoh variant (CRos2JazzyZenoh, #128); TransportConfig.rcl takes no zenoh selector and the .zenoh API arm never routes through RCL (dropZenohWire carves out zenoh-pico)",
+      "evidence" : "MZ1: .zenoh(locator:) now routes to RclTransportSession in the zenoh-rmw variant via makeDefaultSession #elseif SWIFT_ROS2_RCL_RMW_ZENOH (zenoh-pico carved out). The router locator is injected into rmw_zenoh_cpp through RclClient.makeZenohSessionConfigJSON5 + applyZenohSessionEnv (ZENOH_SESSION_CONFIG_URI + ZENOH_ROUTER_CHECK_ATTEMPTS, a save/restore mirror of the DDS CYCLONEDDS_URI path), threaded through the createContext seam and RclTransportSession.open. RclZenohSessionEnvTests covers config shape, env apply/restore, and open() locator forwarding; the api-stability gate is green (createContext is a package requirement, public surface unchanged). End-to-end round-trip against a live rmw_zenohd router and the verification axes land in MZ3 (LAN). Build-time variant origin: M9 #128.",
       "id" : "transport.zenoh",
       "platforms" : [
         "iOS",
@@ -968,7 +968,7 @@
         "visionOS"
       ],
       "pureSwift" : "supported",
-      "rcl" : "partial",
+      "rcl" : "supported",
       "severity" : "n-a-by-design",
       "typeApplicability" : "n-a",
       "verification" : {

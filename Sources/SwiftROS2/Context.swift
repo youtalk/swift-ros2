@@ -179,7 +179,13 @@ extension ROS2Context {
         switch config.type {
         case .zenoh:
             #if canImport(SwiftROS2Zenoh)
+                // Wire path (zenoh-pico) — every build except the zenoh-rmw variant.
                 return ZenohTransportSession(client: ZenohClient())
+            #elseif SWIFT_ROS2_RCL_RMW_ZENOH
+                // zenoh-pico is carved out (symbol collision with the variant's
+                // zenoh-c); `.zenoh` resolves to rcl + rmw_zenoh_cpp instead. The
+                // router locator is plumbed through RclTransportSession.open.
+                return RclTransportSession(client: RclClient())
             #else
                 throw TransportError.unsupportedFeature(
                     "zenoh wire transport is carved out of the zenoh-rmw RCL build "

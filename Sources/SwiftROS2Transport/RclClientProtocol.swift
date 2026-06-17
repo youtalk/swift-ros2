@@ -116,7 +116,8 @@ package protocol RclClientProtocol: Sendable {
     var isAvailable: Bool { get }
 
     func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?) throws
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
+        zenohRouterLocator: String?) throws
     func destroyContext()
 
     func createNode(name: String, namespace: String) throws -> any RclNodeHandle
@@ -270,8 +271,19 @@ package protocol RclClientProtocol: Sendable {
 }
 
 extension RclClientProtocol {
+    /// Back-compat: DDS path (no Zenoh router locator).
+    func createContext(
+        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
+    ) throws {
+        try createContext(
+            domainId: domainId, unicastPeerAddresses: unicastPeerAddresses,
+            networkInterface: networkInterface, zenohRouterLocator: nil)
+    }
+
     /// Back-compat: multicast discovery (no peers / no pinned interface).
     func createContext(domainId: Int32) throws {
-        try createContext(domainId: domainId, unicastPeerAddresses: [], networkInterface: nil)
+        try createContext(
+            domainId: domainId, unicastPeerAddresses: [], networkInterface: nil,
+            zenohRouterLocator: nil)
     }
 }

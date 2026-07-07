@@ -96,14 +96,14 @@
         func testImageByteParity() throws {
             // 640x480 rgb8 raw frame (~900 KB) — the R1 typed-marshal addition.
             let m = VerificationCorpus.image(width: 640, height: 480)
-            try assertByteParity(wireEncode(m), rclSerializeImage(m), "Image 640x480 rgb8")
+            try assertByteParity(m, rclSerializeImage(m), "Image 640x480 rgb8")
         }
 
         func testCameraInfoByteParity() throws {
             // Covers the float64[9]/[12] fixed arrays, the float64[] distortion
             // sequence, and the nested (non-Header) RegionOfInterest.
             let m = VerificationCorpus.cameraInfo()
-            try assertByteParity(wireEncode(m), rclSerializeCameraInfo(m), "CameraInfo")
+            try assertByteParity(m, rclSerializeCameraInfo(m), "CameraInfo")
         }
     }
 #endif

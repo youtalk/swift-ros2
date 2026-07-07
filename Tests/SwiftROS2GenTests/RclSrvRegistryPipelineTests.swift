@@ -43,7 +43,11 @@ struct RclSrvRegistryPipelineTests {
         "action_msgs/srv/CancelGoal",
     ]
 
-    private static let registryOnlyTypes: [String] = ["rcl_interfaces/msg/ParameterEvent"]
+    private static let registryOnlyTypes: [String] = [
+        "rcl_interfaces/msg/ParameterEvent",
+        "sensor_msgs/msg/MultiDOFJointState",
+        "std_msgs/msg/Bool",
+    ]
 
     /// The regen script's `--input` set (message allow-list narrowed to `Imu`
     /// to keep the marshalled emit set small — the service / registry-only
@@ -116,6 +120,21 @@ struct RclSrvRegistryPipelineTests {
             #expect(!file.contents.contains("crcl_publish_parameter_event"))
             #expect(!file.contents.contains("crcl_serialize_parameter_event"))
         }
+    }
+
+    @Test("registry-only include paths follow rosidl file naming (acronym runs)")
+    func registryOnlyIncludesUseRosidlNaming() throws {
+        let files = try generate()
+        let registry = try #require(
+            files.first { $0.relativePath == "c/Generated/crcl_marshal_registry.c" })
+        // MultiDOFJointState -> multi_dof_joint_state.h — the naive camel-case
+        // split (multi_dofjoint_state.h) does not exist in the xcframework.
+        #expect(registry.contents.contains("#include <sensor_msgs/msg/multi_dof_joint_state.h>"))
+        #expect(
+            registry.contents.contains(
+                "ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, MultiDOFJointState)"))
+        #expect(registry.contents.contains("#include <std_msgs/msg/bool.h>"))
+        #expect(registry.contents.contains("ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool)"))
     }
 
     @Test("re-running yields byte-identical contents (deterministic)")

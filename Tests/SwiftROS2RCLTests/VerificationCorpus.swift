@@ -23,6 +23,30 @@
                 data: (0..<byteCount).map { UInt8($0 & 0xFF) })
         }
 
+        static func image(width: UInt32, height: UInt32) -> Image {
+            let step = width * 3  // rgb8
+            let byteCount = Int(step) * Int(height)
+            return Image(
+                header: Header(stamp: Time(sec: 7, nanosec: 13), frameId: "bench"),
+                height: height, width: width,
+                encoding: "rgb8", isBigendian: 0, step: step,
+                data: (0..<byteCount).map { UInt8($0 & 0xFF) })
+        }
+
+        static func cameraInfo() -> CameraInfo {
+            CameraInfo(
+                header: Header(stamp: Time(sec: 7, nanosec: 13), frameId: "bench"),
+                height: 480, width: 640,
+                distortionModel: "plumb_bob",
+                d: [0.1, -0.2, 0.003, -0.004, 0.05],
+                k: (0..<9).map { Double($0) + 0.5 },
+                r: (0..<9).map { Double($0) - 4.0 },
+                p: (0..<12).map { Double($0) * 1.25 },
+                binningX: 2, binningY: 4,
+                roi: RegionOfInterest(
+                    xOffset: 8, yOffset: 16, height: 240, width: 320, doRectify: true))
+        }
+
         /// `width` points × 16-byte step (x,y,z float32 + 4-byte pad).
         /// 10_000 → 160 KB; 60_000 → ~0.96 MB (LiDAR scan scale).
         static func pointCloud2(width: UInt32) -> PointCloud2 {

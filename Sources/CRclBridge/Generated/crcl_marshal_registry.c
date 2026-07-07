@@ -2,15 +2,137 @@
 
 #include "crcl_marshal.h"
 
+#include <action_msgs/msg/goal_status_array.h>
+#include <builtin_interfaces/msg/time.h>
+#include <geometry_msgs/msg/accel.h>
+#include <geometry_msgs/msg/point.h>
+#include <geometry_msgs/msg/point32.h>
+#include <geometry_msgs/msg/pose.h>
+#include <geometry_msgs/msg/pose_stamped.h>
+#include <geometry_msgs/msg/quaternion.h>
+#include <geometry_msgs/msg/transform.h>
+#include <geometry_msgs/msg/transform_stamped.h>
+#include <geometry_msgs/msg/twist.h>
+#include <geometry_msgs/msg/twist_stamped.h>
+#include <geometry_msgs/msg/vector3.h>
+#include <geometry_msgs/msg/vector3_stamped.h>
+#include <geometry_msgs/msg/wrench.h>
+#include <rcl_interfaces/msg/floating_point_range.h>
+#include <rcl_interfaces/msg/integer_range.h>
+#include <rcl_interfaces/msg/list_parameters_result.h>
+#include <rcl_interfaces/msg/parameter.h>
+#include <rcl_interfaces/msg/parameter_descriptor.h>
 #include <rcl_interfaces/msg/parameter_event.h>
+#include <rcl_interfaces/msg/parameter_event_descriptors.h>
+#include <rcl_interfaces/msg/parameter_type.h>
+#include <rcl_interfaces/msg/parameter_value.h>
+#include <rcl_interfaces/msg/set_parameters_result.h>
+#include <sensor_msgs/msg/channel_float32.h>
+#include <sensor_msgs/msg/joint_state.h>
+#include <sensor_msgs/msg/joy_feedback.h>
+#include <sensor_msgs/msg/joy_feedback_array.h>
+#include <sensor_msgs/msg/laser_echo.h>
+#include <sensor_msgs/msg/laser_scan.h>
+#include <sensor_msgs/msg/multi_dof_joint_state.h>
+#include <sensor_msgs/msg/multi_echo_laser_scan.h>
+#include <sensor_msgs/msg/nav_sat_status.h>
+#include <sensor_msgs/msg/point_cloud.h>
+#include <sensor_msgs/msg/point_field.h>
+#include <sensor_msgs/msg/region_of_interest.h>
+#include <sensor_msgs/msg/relative_humidity.h>
+#include <sensor_msgs/msg/time_reference.h>
+#include <std_msgs/msg/bool.h>
+#include <std_msgs/msg/empty.h>
+#include <std_msgs/msg/float64.h>
+#include <std_msgs/msg/header.h>
+#include <std_msgs/msg/int32.h>
+#include <std_msgs/msg/string.h>
 #include <string.h>
 
 const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char *name) {
+    if (strcmp(name, "action_msgs/msg/GoalStatusArray") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(action_msgs, msg, GoalStatusArray);
+    }
+    if (strcmp(name, "builtin_interfaces/msg/Time") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(builtin_interfaces, msg, Time);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Accel") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Accel);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Point") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Point);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Point32") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Point32);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Pose") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Pose);
+    }
+    if (strcmp(name, "geometry_msgs/msg/PoseStamped") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseStamped);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Quaternion") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Quaternion);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Transform") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Transform);
+    }
+    if (strcmp(name, "geometry_msgs/msg/TransformStamped") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TransformStamped);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Twist") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist);
+    }
+    if (strcmp(name, "geometry_msgs/msg/TwistStamped") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistStamped);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Vector3") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Vector3);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Vector3Stamped") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Vector3Stamped);
+    }
+    if (strcmp(name, "geometry_msgs/msg/Wrench") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Wrench);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/FloatingPointRange") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, FloatingPointRange);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/IntegerRange") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, IntegerRange);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/ListParametersResult") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, ListParametersResult);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/Parameter") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, Parameter);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/ParameterDescriptor") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, ParameterDescriptor);
+    }
     if (strcmp(name, "rcl_interfaces/msg/ParameterEvent") == 0) {
         return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, ParameterEvent);
     }
+    if (strcmp(name, "rcl_interfaces/msg/ParameterEventDescriptors") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, ParameterEventDescriptors);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/ParameterType") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, ParameterType);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/ParameterValue") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, ParameterValue);
+    }
+    if (strcmp(name, "rcl_interfaces/msg/SetParametersResult") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, SetParametersResult);
+    }
     if (strcmp(name, "sensor_msgs/msg/BatteryState") == 0) {
         return crcl_typesupport_battery_state();
+    }
+    if (strcmp(name, "sensor_msgs/msg/CameraInfo") == 0) {
+        return crcl_typesupport_camera_info();
+    }
+    if (strcmp(name, "sensor_msgs/msg/ChannelFloat32") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, ChannelFloat32);
     }
     if (strcmp(name, "sensor_msgs/msg/CompressedImage") == 0) {
         return crcl_typesupport_compressed_image();
@@ -21,26 +143,86 @@ const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char
     if (strcmp(name, "sensor_msgs/msg/Illuminance") == 0) {
         return crcl_typesupport_illuminance();
     }
+    if (strcmp(name, "sensor_msgs/msg/Image") == 0) {
+        return crcl_typesupport_image();
+    }
     if (strcmp(name, "sensor_msgs/msg/Imu") == 0) {
         return crcl_typesupport_imu();
+    }
+    if (strcmp(name, "sensor_msgs/msg/JointState") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState);
     }
     if (strcmp(name, "sensor_msgs/msg/Joy") == 0) {
         return crcl_typesupport_joy();
     }
+    if (strcmp(name, "sensor_msgs/msg/JoyFeedback") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JoyFeedback);
+    }
+    if (strcmp(name, "sensor_msgs/msg/JoyFeedbackArray") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JoyFeedbackArray);
+    }
+    if (strcmp(name, "sensor_msgs/msg/LaserEcho") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserEcho);
+    }
+    if (strcmp(name, "sensor_msgs/msg/LaserScan") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan);
+    }
     if (strcmp(name, "sensor_msgs/msg/MagneticField") == 0) {
         return crcl_typesupport_magnetic_field();
+    }
+    if (strcmp(name, "sensor_msgs/msg/MultiDOFJointState") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, MultiDOFJointState);
+    }
+    if (strcmp(name, "sensor_msgs/msg/MultiEchoLaserScan") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, MultiEchoLaserScan);
     }
     if (strcmp(name, "sensor_msgs/msg/NavSatFix") == 0) {
         return crcl_typesupport_nav_sat_fix();
     }
+    if (strcmp(name, "sensor_msgs/msg/NavSatStatus") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatStatus);
+    }
+    if (strcmp(name, "sensor_msgs/msg/PointCloud") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, PointCloud);
+    }
     if (strcmp(name, "sensor_msgs/msg/PointCloud2") == 0) {
         return crcl_typesupport_point_cloud2();
+    }
+    if (strcmp(name, "sensor_msgs/msg/PointField") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, PointField);
     }
     if (strcmp(name, "sensor_msgs/msg/Range") == 0) {
         return crcl_typesupport_range();
     }
+    if (strcmp(name, "sensor_msgs/msg/RegionOfInterest") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, RegionOfInterest);
+    }
+    if (strcmp(name, "sensor_msgs/msg/RelativeHumidity") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, RelativeHumidity);
+    }
     if (strcmp(name, "sensor_msgs/msg/Temperature") == 0) {
         return crcl_typesupport_temperature();
+    }
+    if (strcmp(name, "sensor_msgs/msg/TimeReference") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, TimeReference);
+    }
+    if (strcmp(name, "std_msgs/msg/Bool") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool);
+    }
+    if (strcmp(name, "std_msgs/msg/Empty") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Empty);
+    }
+    if (strcmp(name, "std_msgs/msg/Float64") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64);
+    }
+    if (strcmp(name, "std_msgs/msg/Header") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Header);
+    }
+    if (strcmp(name, "std_msgs/msg/Int32") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32);
+    }
+    if (strcmp(name, "std_msgs/msg/String") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String);
     }
     return NULL;
 }

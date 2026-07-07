@@ -739,6 +739,7 @@ if enableRcl {
             name: "SwiftROS2RCLTests",
             dependencies: [
                 "SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages", "CDDSBridge",
+                "CRclBridge",
             ],
             path: "Tests/SwiftROS2RCLTests",
             swiftSettings: rclTestsSwiftSettings,

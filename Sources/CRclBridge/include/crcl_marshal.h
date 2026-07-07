@@ -6,9 +6,11 @@
 #include <rosidl_runtime_c/message_type_support_struct.h>
 
 #include "Generated/crcl_marshal_battery_state.h"
+#include "Generated/crcl_marshal_camera_info.h"
 #include "Generated/crcl_marshal_compressed_image.h"
 #include "Generated/crcl_marshal_fluid_pressure.h"
 #include "Generated/crcl_marshal_illuminance.h"
+#include "Generated/crcl_marshal_image.h"
 #include "Generated/crcl_marshal_imu.h"
 #include "Generated/crcl_marshal_joy.h"
 #include "Generated/crcl_marshal_magnetic_field.h"

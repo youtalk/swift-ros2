@@ -58,7 +58,12 @@ DEPLOY_VISIONOS=1.0
 # server/client API the M8 action shim drives; its typesupport deps
 # (action_msgs, unique_identifier_msgs) are already in the closure, and
 # example_interfaces brings the Fibonacci action wrapper types.
-PKGS_UP_TO=(rcl "$RMW_PKG" rcl_action builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces)
+# tf2_msgs + audio_common_msgs + point_cloud_interfaces carry the three
+# Conduit-critical message types (latched /tf_static TFMessage, microphone
+# AudioData, Draco-compressed CompressedPointCloud2). tf2_msgs (ros2/geometry2)
+# is part of the jazzy ros2.repos import; the other two repos are not, so
+# import_extra_msg_sources clones + pins them explicitly.
+PKGS_UP_TO=(rcl "$RMW_PKG" rcl_action builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces tf2_msgs audio_common_msgs point_cloud_interfaces)
 # C++ test-only / lint vendor packages get dragged into the --packages-up-to
 # closure via <test_depend>, but never link into the runtime libraries. They
 # build shared libs / executables (e.g. osrf_testing_tools_cpp's malloc
@@ -186,9 +191,50 @@ import_sources() {
   if [[ ! -d "$SRC/ros2/rcl" ]]; then
     mkdir -p "$SRC"
     git clone --depth 1 --branch release-jazzy-20250430 https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
+    # The vcs import covers every repo in the jazzy ros2.repos set — including
+    # ros2/geometry2, which carries tf2_msgs — so a fresh workspace needs no
+    # extra step for the tf2_msgs package.
     ( cd "$SRC" && vcs import < "$BUILD/ros2-meta/ros2.repos" )
   fi
   import_zenoh_sources
+  import_extra_msg_sources
+}
+
+# Conduit-critical message repos that are NOT in the jazzy ros2.repos set —
+# clone + pin explicitly (same pattern as RMW_ZENOH_PIN below). Only the
+# msg-only package in each repo is built: every sibling package (the
+# gstreamer-based audio pipelines in audio_common, the draco/zlib/zstd
+# transport plugin packages in point_cloud_transport_plugins) pulls
+# dependencies that do not cross-compile to the static Apple toolchain, so
+# they get COLCON_IGNOREd.
+# audio_common `ros2` branch (the ROS 2 development branch, released into
+# jazzy) — audio_common_msgs 3.x.
+AUDIO_COMMON_PIN=db2770b0ad703c474039914937974c764dc94351
+# point_cloud_transport_plugins `jazzy` branch — point_cloud_interfaces
+# (CompressedPointCloud2, the type Conduit publishes for Draco LiDAR).
+PCT_PLUGINS_PIN=1e4490c796e2de271fe5159431638fe1b5e2ffc4
+
+import_msg_only_repo() {  # $1=url $2=branch $3=pin $4=dest $5=package-to-keep
+  local url="$1" branch="$2" pin="$3" dest="$4" keep="$5"
+  if [[ ! -d "$dest" ]]; then
+    git clone --branch "$branch" --single-branch "$url" "$dest"
+    git -C "$dest" checkout "$pin"
+  fi
+  # COLCON_IGNORE every sibling package dir. Runs on every invocation (not
+  # just after a fresh clone) so pre-existing checkouts pick the markers up.
+  local pkg
+  for pkg in "$dest"/*/; do
+    [[ -f "$pkg/package.xml" ]] || continue
+    [[ "$(basename "$pkg")" == "$keep" ]] && continue
+    touch "${pkg}COLCON_IGNORE"
+  done
+}
+
+import_extra_msg_sources() {
+  import_msg_only_repo https://github.com/ros-drivers/audio_common.git \
+    ros2 "$AUDIO_COMMON_PIN" "$SRC/ros-drivers/audio_common" audio_common_msgs
+  import_msg_only_repo https://github.com/ros-perception/point_cloud_transport_plugins.git \
+    jazzy "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
 }
 
 # rmw_zenoh jazzy pin (0.2.9 line) — the commit the no-SHM patch set under
@@ -255,6 +301,11 @@ zenohc_triple() { case "$1" in
   macosx)      echo aarch64-apple-darwin ;;
   iphoneos)    echo aarch64-apple-ios ;;
   iphonesimulator) echo aarch64-apple-ios-sim ;;
+  # Stable rust-std ships the visionOS targets (rustup target list includes
+  # them), so the mapping is ready; the xros/xrsimulator slices themselves are
+  # built by a follow-up PR.
+  xros)        echo aarch64-apple-visionos ;;
+  xrsimulator) echo aarch64-apple-visionos-sim ;;
   *) echo "zenoh variant: no stable Rust std for slice '$1'" >&2; return 1 ;; esac; }
 
 # Cross-build zenoh-c (Rust staticlib) and assemble the CMake prefix that

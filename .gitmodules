@@ -33,3 +33,12 @@
 	path = vendor/rcl_interfaces-rolling
 	url = https://github.com/ros2/rcl_interfaces.git
 	branch = rolling
+[submodule "vendor/geometry2-jazzy"]
+	path = vendor/geometry2-jazzy
+	url = https://github.com/ros2/geometry2.git
+[submodule "vendor/audio_common"]
+	path = vendor/audio_common
+	url = https://github.com/ros-drivers/audio_common.git
+[submodule "vendor/point_cloud_transport_plugins-jazzy"]
+	path = vendor/point_cloud_transport_plugins-jazzy
+	url = https://github.com/ros-perception/point_cloud_transport_plugins.git

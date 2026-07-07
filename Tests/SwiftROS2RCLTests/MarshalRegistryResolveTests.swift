@@ -30,6 +30,7 @@
         /// only; publish/subscribe go through the rmw serialized seam.
         static let registryOnlyTypes: [String] = [
             "action_msgs/msg/GoalStatusArray",
+            "audio_common_msgs/msg/AudioData",
             "builtin_interfaces/msg/Time",
             "geometry_msgs/msg/Accel",
             "geometry_msgs/msg/Point",
@@ -44,6 +45,7 @@
             "geometry_msgs/msg/Vector3",
             "geometry_msgs/msg/Vector3Stamped",
             "geometry_msgs/msg/Wrench",
+            "point_cloud_interfaces/msg/CompressedPointCloud2",
             "rcl_interfaces/msg/FloatingPointRange",
             "rcl_interfaces/msg/IntegerRange",
             "rcl_interfaces/msg/ListParametersResult",
@@ -74,6 +76,7 @@
             "std_msgs/msg/Header",
             "std_msgs/msg/Int32",
             "std_msgs/msg/String",
+            "tf2_msgs/msg/TFMessage",
         ]
 
         func testEveryMarshalledTypeResolves() {
@@ -94,13 +97,12 @@
 
         /// Types whose packages are NOT bundled in the xcframework must miss
         /// the registry — that miss is what routes them to the route-b
-        /// raw-CDR fallback instead of a hard failure.
+        /// raw-CDR fallback (cyclonedds variant) or the fail-loud gate
+        /// (zenoh variant) instead of resolving to garbage.
         func testUnbundledTypesDoNotResolve() {
             for name in [
-                "tf2_msgs/msg/TFMessage",
-                "audio_common_msgs/msg/AudioData",
-                "point_cloud_interfaces/msg/CompressedPointCloud2",
                 "sensor_msgs/msg/DoesNotExist",
+                "my_custom_msgs/msg/NotBundled",
             ] {
                 XCTAssertNil(
                     crcl_marshal_resolve_typesupport(name),

@@ -3,6 +3,7 @@
 #include "crcl_marshal.h"
 
 #include <action_msgs/msg/goal_status_array.h>
+#include <audio_common_msgs/msg/audio_data.h>
 #include <builtin_interfaces/msg/time.h>
 #include <geometry_msgs/msg/accel.h>
 #include <geometry_msgs/msg/point.h>
@@ -17,6 +18,7 @@
 #include <geometry_msgs/msg/vector3.h>
 #include <geometry_msgs/msg/vector3_stamped.h>
 #include <geometry_msgs/msg/wrench.h>
+#include <point_cloud_interfaces/msg/compressed_point_cloud2.h>
 #include <rcl_interfaces/msg/floating_point_range.h>
 #include <rcl_interfaces/msg/integer_range.h>
 #include <rcl_interfaces/msg/list_parameters_result.h>
@@ -47,11 +49,15 @@
 #include <std_msgs/msg/header.h>
 #include <std_msgs/msg/int32.h>
 #include <std_msgs/msg/string.h>
+#include <tf2_msgs/msg/tf_message.h>
 #include <string.h>
 
 const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char *name) {
     if (strcmp(name, "action_msgs/msg/GoalStatusArray") == 0) {
         return ROSIDL_GET_MSG_TYPE_SUPPORT(action_msgs, msg, GoalStatusArray);
+    }
+    if (strcmp(name, "audio_common_msgs/msg/AudioData") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(audio_common_msgs, msg, AudioData);
     }
     if (strcmp(name, "builtin_interfaces/msg/Time") == 0) {
         return ROSIDL_GET_MSG_TYPE_SUPPORT(builtin_interfaces, msg, Time);
@@ -94,6 +100,9 @@ const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char
     }
     if (strcmp(name, "geometry_msgs/msg/Wrench") == 0) {
         return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Wrench);
+    }
+    if (strcmp(name, "point_cloud_interfaces/msg/CompressedPointCloud2") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(point_cloud_interfaces, msg, CompressedPointCloud2);
     }
     if (strcmp(name, "rcl_interfaces/msg/FloatingPointRange") == 0) {
         return ROSIDL_GET_MSG_TYPE_SUPPORT(rcl_interfaces, msg, FloatingPointRange);
@@ -223,6 +232,9 @@ const rosidl_message_type_support_t *crcl_marshal_resolve_typesupport(const char
     }
     if (strcmp(name, "std_msgs/msg/String") == 0) {
         return ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String);
+    }
+    if (strcmp(name, "tf2_msgs/msg/TFMessage") == 0) {
+        return ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage);
     }
     return NULL;
 }

@@ -26,13 +26,14 @@ ACTION_TYPES="example_interfaces/action/Fibonacci"
 # Messages that get a typesupport entry without marshal functions — published
 # and subscribed over the rmw serialized seam (still fully route-a through
 # rcl/rmw). Covers every SwiftROS2Messages type whose package typesupport is
-# already bundled in CRos2Jazzy.xcframework. NOT here (typesupport not bundled
-# yet; a separate PR adds their packages to the xcframework): tf2_msgs,
-# audio_common_msgs, point_cloud_interfaces. Also skipped: action_msgs
+# bundled in CRos2Jazzy.xcframework, including the three Conduit-critical
+# packages (tf2_msgs, audio_common_msgs, point_cloud_interfaces) added to
+# PKGS_UP_TO in Scripts/build-ros2-xcframework.sh. Skipped: action_msgs
 # GoalInfo/GoalStatus and unique_identifier_msgs/UUID (nested-only — no
 # standalone ROS2Message conformance in SwiftROS2Messages).
 REGISTRY_ONLY_TYPES="rcl_interfaces/msg/ParameterEvent"
 REGISTRY_ONLY_TYPES+=",action_msgs/msg/GoalStatusArray"
+REGISTRY_ONLY_TYPES+=",audio_common_msgs/msg/AudioData"
 REGISTRY_ONLY_TYPES+=",builtin_interfaces/msg/Time"
 REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Accel"
 REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Point"
@@ -47,6 +48,7 @@ REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/TwistStamped"
 REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Vector3"
 REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Vector3Stamped"
 REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Wrench"
+REGISTRY_ONLY_TYPES+=",point_cloud_interfaces/msg/CompressedPointCloud2"
 REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/FloatingPointRange"
 REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/IntegerRange"
 REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/ListParametersResult"
@@ -76,6 +78,7 @@ REGISTRY_ONLY_TYPES+=",std_msgs/msg/Float64"
 REGISTRY_ONLY_TYPES+=",std_msgs/msg/Header"
 REGISTRY_ONLY_TYPES+=",std_msgs/msg/Int32"
 REGISTRY_ONLY_TYPES+=",std_msgs/msg/String"
+REGISTRY_ONLY_TYPES+=",tf2_msgs/msg/TFMessage"
 # unique_identifier_msgs is required for nested-reference resolution only
 # (action_msgs/msg/GoalInfo -> unique_identifier_msgs/UUID).
 swift run swift-ros2-gen --emit-rcl-marshalling \
@@ -88,6 +91,9 @@ swift run swift-ros2-gen --emit-rcl-marshalling \
   --input "example_interfaces=vendor/example_interfaces-jazzy@jazzy" \
   --input "action_msgs=vendor/rcl_interfaces-jazzy/action_msgs@jazzy" \
   --input "unique_identifier_msgs=vendor/unique_identifier_msgs@jazzy" \
+  --input "tf2_msgs=vendor/geometry2-jazzy/tf2_msgs@jazzy" \
+  --input "audio_common_msgs=vendor/audio_common/audio_common_msgs@jazzy" \
+  --input "point_cloud_interfaces=vendor/point_cloud_transport_plugins-jazzy/point_cloud_interfaces@jazzy" \
   --types "$TYPES" \
   --rcl-srv-types "$SRV_TYPES" \
   --rcl-action-types "$ACTION_TYPES" \

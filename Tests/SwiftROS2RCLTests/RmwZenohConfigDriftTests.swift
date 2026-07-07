@@ -1,4 +1,4 @@
-#if SWIFT_ROS2_RCL
+#if SWIFT_ROS2_RCL_RMW_ZENOH
     import Foundation
     import SwiftROS2RCL
     import XCTest

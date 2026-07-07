@@ -50,9 +50,72 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-ros2-xcframework:
+    name: Build (${{ matrix.framework }}.xcframework)
+    # macos-26 + Xcode 26.4.1 to match ci-rcl.yml (the toolchain the ROS 2
+    # cross-build is validated on). All six Apple slices per rmw variant.
+    runs-on: macos-26
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: CRos2Jazzy
+            rmw_variant: cyclonedds
+            slices: maccatalyst iphoneos iphonesimulator macosx xros xrsimulator
+            build_dir: build/ros2
+          - framework: CRos2JazzyZenoh
+            rmw_variant: zenoh
+            slices: maccatalyst iphoneos iphonesimulator macosx xros xrsimulator
+            build_dir: build/ros2zenoh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: brew install cmake
+      # ament_cmake's package_xml_2_cmake.py runs under the runner's base
+      # python (CMake's FindPython resolves to it, not the script's venv), so
+      # the ROS 2 build deps must be importable there too.
+      - name: Install ROS 2 build deps into runner python
+        run: pip install -r Scripts/ros2/requirements.txt
+      # The zenoh variant cross-builds zenoh-c (Rust staticlib) per slice.
+      - name: Install Rust cross targets (zenoh variant)
+        if: matrix.rmw_variant == 'zenoh'
+        run: |
+          rustup target add \
+            aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim \
+            aarch64-apple-ios-macabi aarch64-apple-visionos aarch64-apple-visionos-sim
+      - name: Build ${{ matrix.framework }}.xcframework (all slices)
+        env:
+          RMW_VARIANT: ${{ matrix.rmw_variant }}
+        run: Scripts/build-ros2-xcframework.sh ${{ matrix.slices }}
+      - name: Zip + checksum
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ditto -c -k --keepParent \
+            "${{ matrix.build_dir }}/${{ matrix.framework }}.xcframework" \
+            "artifacts/${{ matrix.framework }}.xcframework.zip"
+          swift package compute-checksum \
+            "artifacts/${{ matrix.framework }}.xcframework.zip" \
+            > "artifacts/${{ matrix.framework }}.xcframework.zip.checksum"
+          cat "artifacts/${{ matrix.framework }}.xcframework.zip.checksum"
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.framework }}-xcframework
+          path: |
+            artifacts/*.zip
+            artifacts/*.checksum
+          if-no-files-found: error
+          retention-days: 7
+
   publish-xcframeworks:
     name: Publish (xcframeworks)
-    needs: build-xcframework
+    needs: [build-xcframework, build-ros2-xcframework]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -77,7 +140,11 @@ jobs:
             upload/CZenohPico.xcframework.zip \
             upload/CZenohPico.xcframework.zip.checksum \
             upload/CCycloneDDS.xcframework.zip \
-            upload/CCycloneDDS.xcframework.zip.checksum
+            upload/CCycloneDDS.xcframework.zip.checksum \
+            upload/CRos2Jazzy.xcframework.zip \
+            upload/CRos2Jazzy.xcframework.zip.checksum \
+            upload/CRos2JazzyZenoh.xcframework.zip \
+            upload/CRos2JazzyZenoh.xcframework.zip.checksum
 
       - name: Assert all expected assets present on the release
         # Fail loudly if the release is missing any expected asset.
@@ -98,6 +165,10 @@ jobs:
             CZenohPico.xcframework.zip.checksum
             CCycloneDDS.xcframework.zip
             CCycloneDDS.xcframework.zip.checksum
+            CRos2Jazzy.xcframework.zip
+            CRos2Jazzy.xcframework.zip.checksum
+            CRos2JazzyZenoh.xcframework.zip
+            CRos2JazzyZenoh.xcframework.zip.checksum
           )
           actual=$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | sort)
           echo "Actual assets on release $TAG:"

@@ -721,13 +721,22 @@ if enableRcl {
             linkerSettings: [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "rcl-soak", targets: ["rcl-soak"]))
+    // The rmw-variant define must reach SwiftROS2RCL itself, not just the
+    // umbrella: RclClient's zenoh-only behavior (the route-(b) fail-loud gate
+    // and the AMENT_PREFIX_PATH synthesis) lives in this target and would be
+    // dead code behind an undefined `#if SWIFT_ROS2_RCL_RMW_ZENOH` otherwise.
+    var rclSwiftSettings: [SwiftSetting] = []
+    if rclRmwVariant == "zenoh" {
+        rclSwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
+    }
     targets.append(
         .target(
             name: "SwiftROS2RCL",
             dependencies: [
                 "CRclBridge", "CDDSBridge", "SwiftROS2Transport", "SwiftROS2Messages", "SwiftROS2Wire",
             ],
-            path: "Sources/SwiftROS2RCL"
+            path: "Sources/SwiftROS2RCL",
+            swiftSettings: rclSwiftSettings
         ))
     products.append(.library(name: "SwiftROS2RCL", targets: ["SwiftROS2RCL"]))
     var rclTestsSwiftSettings: [SwiftSetting] = [.define("SWIFT_ROS2_RCL")]

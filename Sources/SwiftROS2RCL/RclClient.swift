@@ -644,6 +644,14 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// Temp file backing ZENOH_SESSION_CONFIG_URI; removed on restore.
     /// Guarded by `zenohEnvLock`.
     private var zenohConfigFileURL: URL?
+    #if SWIFT_ROS2_RCL_RMW_ZENOH
+        /// Saved AMENT_PREFIX_PATH to restore on destroyContext. Outer optional =
+        /// "we saved"; inner = "was previously set". Guarded by `zenohEnvLock`.
+        private var priorAmentPrefixPath: String??
+        /// Synthesized minimal ament prefix directory backing AMENT_PREFIX_PATH;
+        /// removed on restore. Guarded by `zenohEnvLock`.
+        private var amentPrefixDirURL: URL?
+    #endif
     /// Route-(b) sibling-participant session (`bridge_dds_session_t*`), created
     /// lazily on the first non-bundled publisher and matched to the rcl
     /// context's discovery. nil until then.
@@ -740,10 +748,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         // and the live env desynchronize.
         Self.envLock.lock()
         defer { Self.envLock.unlock() }
-        // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
-        // ("saved, was unset") rather than collapsing to .none ("never saved") —
-        // restoreDiscoveryEnv relies on that distinction to unset vs. no-op.
-        priorCyclonedDDSURI = Optional(getenv("CYCLONEDDS_URI").map { String(cString: $0) })
+        saveEnvSlotLocked(&priorCyclonedDDSURI, "CYCLONEDDS_URI")
         setenv("CYCLONEDDS_URI", xml, 1)
         return true
     }
@@ -757,6 +762,16 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         guard let prior = saved else { return }
         saved = nil
         if let p = prior { setenv(name, p, 1) } else { unsetenv(name) }
+    }
+
+    /// Save the current value of an env variable into its slot before the
+    /// caller overwrites it — the counterpart of ``restoreEnvSlotLocked``.
+    /// Wraps in `Optional(...)` so a previously-UNSET env becomes
+    /// `.some(.none)` ("saved, was unset") rather than collapsing to `.none`
+    /// ("never saved"); the restore side relies on that distinction to unset
+    /// vs. no-op. Caller holds the relevant env lock.
+    private func saveEnvSlotLocked(_ slot: inout String??, _ name: String) {
+        slot = Optional(getenv(name).map { String(cString: $0) })
     }
 
     /// Restore CYCLONEDDS_URI to its pre-applyDiscoveryEnv value (unset it if it
@@ -787,12 +802,8 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         Self.zenohEnvLock.lock()
         defer { Self.zenohEnvLock.unlock() }
         zenohConfigFileURL = url
-        // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
-        // ("saved, was unset") rather than collapsing to .none ("never saved").
-        priorZenohSessionConfigURI = Optional(
-            getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) })
-        priorZenohRouterCheckAttempts = Optional(
-            getenv("ZENOH_ROUTER_CHECK_ATTEMPTS").map { String(cString: $0) })
+        saveEnvSlotLocked(&priorZenohSessionConfigURI, "ZENOH_SESSION_CONFIG_URI")
+        saveEnvSlotLocked(&priorZenohRouterCheckAttempts, "ZENOH_ROUTER_CHECK_ATTEMPTS")
         setenv("ZENOH_SESSION_CONFIG_URI", url.path, 1)
         // Check for the router once, then continue: a mobile publisher must not
         // block context creation when the remote router is briefly unreachable.
@@ -801,7 +812,9 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     }
 
     /// Restore the Zenoh env to its pre-apply values (unset what was unset) and
-    /// remove the temp config file. Idempotent: a no-op when nothing was saved.
+    /// remove the temp config file. In the zenoh-rmw variant this also restores
+    /// AMENT_PREFIX_PATH and deletes the synthesized ament prefix. Idempotent:
+    /// a no-op when nothing was saved.
     package func restoreZenohSessionEnv() {
         Self.zenohEnvLock.lock()
         defer { Self.zenohEnvLock.unlock() }
@@ -811,7 +824,79 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
             try? FileManager.default.removeItem(at: url)
             zenohConfigFileURL = nil
         }
+        #if SWIFT_ROS2_RCL_RMW_ZENOH
+            restoreEnvSlotLocked(&priorAmentPrefixPath, "AMENT_PREFIX_PATH")
+            if let dir = amentPrefixDirURL {
+                try? FileManager.default.removeItem(at: dir)
+                amentPrefixDirURL = nil
+            }
+        #endif
     }
+
+    #if SWIFT_ROS2_RCL_RMW_ZENOH
+        /// True when the colon-separated ament prefix path registers
+        /// rmw_zenoh_cpp in its resource index — i.e. ament_index (and therefore
+        /// rmw_init) can resolve DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5 through
+        /// one of its prefixes. `package` so tests can assert the rule.
+        package static func amentPrefixPathContainsRmwZenoh(_ path: String) -> Bool {
+            path.split(separator: ":").contains { prefix in
+                FileManager.default.fileExists(
+                    atPath: "\(prefix)/share/ament_index/resource_index/packages/rmw_zenoh_cpp")
+            }
+        }
+
+        /// rmw_zenoh_cpp hard-requires AMENT_PREFIX_PATH at rmw_init
+        /// (rmw_init.cpp:114 at the pinned fe3553c7) to resolve its default
+        /// session config via ament_index — and a consumer app cannot be
+        /// expected to export it. When the process env is unset/empty or lacks
+        /// the rmw_zenoh_cpp resource, synthesize a minimal ament prefix in a
+        /// temp directory (resource-index marker + the two default config
+        /// json5 files) and export it, prepending any existing value so
+        /// user-registered resources stay resolvable. A user-provided prefix
+        /// that already carries the resource is left untouched. Same
+        /// single-apply-per-context contract as `applyZenohSessionEnv`; pair
+        /// with `restoreZenohSessionEnv()` on teardown or a failed
+        /// createContext. `package` so SwiftROS2RCLTests can exercise the
+        /// synthesis without starting rmw.
+        package func applyAmentPrefixEnv() throws {
+            Self.zenohEnvLock.lock()
+            defer { Self.zenohEnvLock.unlock() }
+            let existing = getenv("AMENT_PREFIX_PATH").map { String(cString: $0) }
+            if let existing, !existing.isEmpty, Self.amentPrefixPathContainsRmwZenoh(existing) {
+                return  // valid user-provided prefix — leave it untouched
+            }
+            let fm = FileManager.default
+            let root = fm.temporaryDirectory
+                .appendingPathComponent("swift-ros2-ament-\(UUID().uuidString)", isDirectory: true)
+            let markerDir = root.appendingPathComponent(
+                "share/ament_index/resource_index/packages", isDirectory: true)
+            let configDir = root.appendingPathComponent(
+                "share/rmw_zenoh_cpp/config", isDirectory: true)
+            do {
+                try fm.createDirectory(at: markerDir, withIntermediateDirectories: true)
+                try fm.createDirectory(at: configDir, withIntermediateDirectories: true)
+                // Empty marker file — its presence is what ament_index resolves.
+                try Data().write(to: markerDir.appendingPathComponent("rmw_zenoh_cpp"))
+                try RmwZenohDefaultConfig.sessionConfigJSON5.write(
+                    to: configDir.appendingPathComponent("DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5"),
+                    atomically: true, encoding: .utf8)
+                try RmwZenohDefaultConfig.routerConfigJSON5.write(
+                    to: configDir.appendingPathComponent("DEFAULT_RMW_ZENOH_ROUTER_CONFIG.json5"),
+                    atomically: true, encoding: .utf8)
+            } catch {
+                try? fm.removeItem(at: root)
+                throw TransportError.connectionFailed(
+                    "failed to synthesize the rmw_zenoh_cpp ament prefix at \(root.path): \(error)")
+            }
+            amentPrefixDirURL = root
+            saveEnvSlotLocked(&priorAmentPrefixPath, "AMENT_PREFIX_PATH")
+            if let existing, !existing.isEmpty {
+                setenv("AMENT_PREFIX_PATH", "\(root.path):\(existing)", 1)
+            } else {
+                setenv("AMENT_PREFIX_PATH", root.path, 1)
+            }
+        }
+    #endif
 
     package func createContext(
         domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
@@ -840,7 +925,6 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         // session config silently drops the publisher onto default (router-less,
         // multicast) settings. So a present-but-unappliable locator fails loudly
         // here instead of producing a connection that never reaches the router.
-        var appliedZenohEnv = false
         if let locator = zenohRouterLocator {
             guard Self.isEmbeddableZenohLocator(locator) else {
                 if appliedDiscoveryEnv { restoreDiscoveryEnv() }
@@ -853,11 +937,25 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
                 throw TransportError.connectionFailed(
                     "failed to write the Zenoh session config for locator \(locator)")
             }
-            appliedZenohEnv = true
         }
+        #if SWIFT_ROS2_RCL_RMW_ZENOH
+            // Unconditional for the zenoh variant (locator or not): rmw_init
+            // fails outright without a resolvable rmw_zenoh_cpp ament resource,
+            // so context creation must be self-sufficient.
+            do {
+                try applyAmentPrefixEnv()
+            } catch {
+                if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+                restoreZenohSessionEnv()
+                throw error
+            }
+        #endif
         guard let c = crcl_context_create(Int(domainId)) else {
             if appliedDiscoveryEnv { restoreDiscoveryEnv() }
-            if appliedZenohEnv { restoreZenohSessionEnv() }
+            // Idempotent — restores only the slots this context applied (the
+            // session-config env when a locator was given; the AMENT prefix in
+            // the zenoh variant) and no-ops on the rest.
+            restoreZenohSessionEnv()
             throw TransportError.connectionFailed(lastError())
         }
         lock.lock()
@@ -894,10 +992,32 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         crcl_node_destroy(b.ptr)
     }
 
+    #if SWIFT_ROS2_RCL_RMW_ZENOH
+        /// Fail-loud gate for the zenoh-rmw variant: on a marshal-registry miss
+        /// the cyclonedds variant falls back to route (b) — a raw-CDR writer /
+        /// reader on a sibling **CycloneDDS** participant. Under rmw_zenoh the
+        /// rcl graph speaks Zenoh through a router, so that sibling participant's
+        /// DDS multicast domain has no counterpart: route-(b) traffic would go
+        /// out (or be listened for) where nobody communicates — silent data
+        /// loss, not degraded service. Throw instead. Runs before the node
+        /// handle is inspected, so SwiftROS2RCLTests can assert the gate
+        /// without a live rmw context (`package` for exactly that).
+        package static func requireBundledTypesupport(_ typeName: String) throws {
+            guard crcl_marshal_resolve_typesupport(typeName) == nil else { return }
+            throw TransportError.unsupportedFeature(
+                "type \(typeName) has no bundled typesupport; the raw-CDR fallback is "
+                    + "CycloneDDS-only and unreachable via rmw_zenoh — bundle the type or "
+                    + "use the .dds transport")
+        }
+    #endif
+
     package func createPublisher(
         node: any RclNodeHandle, typeName: String, typeHash: String?, topic: String,
         qos: TransportQoS
     ) throws -> any RclPublisherHandle {
+        #if SWIFT_ROS2_RCL_RMW_ZENOH
+            try Self.requireBundledTypesupport(typeName)
+        #endif
         guard let b = node as? RclNodeBox else {
             throw TransportError.publisherCreationFailed("invalid node handle")
         }
@@ -1057,6 +1177,9 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any RclSubscriptionHandle {
+        #if SWIFT_ROS2_RCL_RMW_ZENOH
+            try Self.requireBundledTypesupport(typeName)
+        #endif
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }

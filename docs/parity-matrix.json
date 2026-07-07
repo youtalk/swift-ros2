@@ -134,7 +134,7 @@
     },
     {
       "apiSymbol" : "ROS2Publisher.publish(_:)",
-      "evidence" : "raw sensor_msgs/Image is NOT in crcl_marshal_registry.c (only CompressedImage is); publisher creation is registry-gated (rcl_bridge.c:125) so raw Image is unpublishable on RCL. Conduit uses CompressedImage",
+      "evidence" : "crcl_marshal_registry typed marshal for sensor_msgs/Image (#154); byte-parity vs pure-Swift CDR in CrossBackendBytesTests; registry-resolve guard in MarshalRegistryResolveTests",
       "id" : "publish.typed.sensor_msgs/Image",
       "platforms" : [
         "iOS",
@@ -143,13 +143,13 @@
         "visionOS"
       ],
       "pureSwift" : "supported",
-      "rcl" : "missing",
-      "severity" : "minor",
-      "typeApplicability" : "byte-seam-only",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "value" : "n/a — RCL missing (raw Image byte-seam only)",
-          "verdict" : "na"
+          "value" : "byte parity vs pure-Swift CDR (CrossBackendBytesTests, #154)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — RCL missing (raw Image not in marshal registry)",
@@ -497,7 +497,7 @@
     },
     {
       "apiSymbol" : "ROS2Publisher.publish(_:) byte seam",
-      "evidence" : "rcl_bridge.c:122-130 crcl_publisher_create rejects any type absent from crcl_marshal_registry.c, so route (a) (typed/serialized via rmw) cannot open a publisher; on that miss RclClient.createRawWriterPublisher falls back to route (b) — the CDDSBridge raw-CDR writer below rmw (sibling participant on the context domain, DDS topic/type via SwiftROS2Wire, USER_DATA typehash). Served outside rcl's entity graph (a documented divergence) but interoperable with any ROS 2 subscriber by topic + DDS-type name. Proven in-process by crcl-nonbundled-loopback (route-b .rcl publish -> .dds wire subscribe, same domain) and by RclNonbundledPublishIntegrationTests (LAN). Unblocks Conduit AudioData + CompressedPointCloud2",
+      "evidence" : "rcl_bridge.c:122-130 crcl_publisher_create rejects any type absent from crcl_marshal_registry.c, so route (a) (typed/serialized via rmw) cannot open a publisher; on that miss RclClient.createRawWriterPublisher falls back to route (b) — the CDDSBridge raw-CDR writer below rmw (sibling participant on the context domain, DDS topic/type via SwiftROS2Wire, USER_DATA typehash). Served outside rcl's entity graph (a documented divergence) but interoperable with any ROS 2 subscriber by topic + DDS-type name. Proven in-process by crcl-nonbundled-loopback (route-b .rcl publish -> .dds wire subscribe, same domain) and by RclNonbundledPublishIntegrationTests (LAN). Unblocks Conduit AudioData + CompressedPointCloud2 zenoh-rmw variant caveat: route-b is CycloneDDS-only and unreachable via rmw_zenoh, so the zenoh variant throws unsupportedFeature on a registry miss instead of silently publishing onto an invisible DDS domain (#155 fail-loud gate); bundling (#154/#158) is the mitigation for every shipped type.",
       "id" : "publish.serialized.non_bundled",
       "platforms" : [
         "iOS",
@@ -563,7 +563,7 @@
     },
     {
       "apiSymbol" : "ROS2Subscription",
-      "evidence" : "raw Image not bundled; rcl_subscription.c:102-108 crcl_subscription_create is registry-gated -> 'unsupported type' for raw Image",
+      "evidence" : "sensor_msgs/Image bundled in crcl_marshal_registry (#154) — serialized take is registry-gated and now resolves; registry-resolve guard in MarshalRegistryResolveTests",
       "id" : "subscribe.serialized.sensor_msgs/Image",
       "platforms" : [
         "iOS",
@@ -572,13 +572,13 @@
         "visionOS"
       ],
       "pureSwift" : "supported",
-      "rcl" : "missing",
-      "severity" : "minor",
-      "typeApplicability" : "byte-seam-only",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "bundled",
       "verification" : {
         "correctness" : {
-          "value" : "n/a — RCL missing (raw Image byte-seam only)",
-          "verdict" : "na"
+          "value" : "byte parity vs pure-Swift CDR (CrossBackendBytesTests, #154)",
+          "verdict" : "pass"
         },
         "latency" : {
           "value" : "n/a — RCL missing (raw Image not in marshal registry)",
@@ -629,7 +629,7 @@
     },
     {
       "apiSymbol" : "ROS2Subscription",
-      "evidence" : "RclClient.createSubscription falls back to a CDDSBridge raw-CDR reader on a registry miss (mirror of the publish route-b): a sibling participant on the context domain, DDS topic/type via SwiftROS2Wire + USER_DATA typehash; received below rmw (outside rcl's wait-set, a documented divergence) but interoperable with any ROS 2 publisher by topic + DDS-type name. Proven in-process by crcl-nonbundled-sub-loopback (.dds wire publish -> .rcl route-b subscribe, same domain) and by RclNonbundledSubscribeIntegrationTests (LAN). Pairs with publish.serialized.non_bundled for full non-bundled pub/sub.",
+      "evidence" : "RclClient.createSubscription falls back to a CDDSBridge raw-CDR reader on a registry miss (mirror of the publish route-b): a sibling participant on the context domain, DDS topic/type via SwiftROS2Wire + USER_DATA typehash; received below rmw (outside rcl's wait-set, a documented divergence) but interoperable with any ROS 2 publisher by topic + DDS-type name. Proven in-process by crcl-nonbundled-sub-loopback (.dds wire publish -> .rcl route-b subscribe, same domain) and by RclNonbundledSubscribeIntegrationTests (LAN). Pairs with publish.serialized.non_bundled for full non-bundled pub/sub. zenoh-rmw variant caveat: route-b is CycloneDDS-only and unreachable via rmw_zenoh, so the zenoh variant throws unsupportedFeature on a registry miss instead of silently publishing onto an invisible DDS domain (#155 fail-loud gate); bundling (#154/#158) is the mitigation for every shipped type.",
       "id" : "subscribe.serialized.non_bundled",
       "platforms" : [
         "iOS",
@@ -959,7 +959,7 @@
     },
     {
       "apiSymbol" : "TransportConfig.type=.zenoh",
-      "evidence" : "MZ1: .zenoh(locator:) now routes to RclTransportSession in the zenoh-rmw variant via makeDefaultSession #elseif SWIFT_ROS2_RCL_RMW_ZENOH (zenoh-pico carved out). The router locator is injected into rmw_zenoh_cpp through RclClient.makeZenohSessionConfigJSON5 + applyZenohSessionEnv (ZENOH_SESSION_CONFIG_URI + ZENOH_ROUTER_CHECK_ATTEMPTS, a save/restore mirror of the DDS CYCLONEDDS_URI path), threaded through the createContext seam and RclTransportSession.open. RclZenohSessionEnvTests covers config shape, env apply/restore, and open() locator forwarding; the api-stability gate is green (createContext is a package requirement, public surface unchanged). End-to-end round-trip against a live rmw_zenohd router and the verification axes land in MZ3 (LAN). Build-time variant origin: M9 #128.",
+      "evidence" : "MZ1: .zenoh(locator:) now routes to RclTransportSession in the zenoh-rmw variant via makeDefaultSession #elseif SWIFT_ROS2_RCL_RMW_ZENOH (zenoh-pico carved out). The router locator is injected into rmw_zenoh_cpp through RclClient.makeZenohSessionConfigJSON5 + applyZenohSessionEnv (ZENOH_SESSION_CONFIG_URI + ZENOH_ROUTER_CHECK_ATTEMPTS, a save/restore mirror of the DDS CYCLONEDDS_URI path), threaded through the createContext seam and RclTransportSession.open. RclZenohSessionEnvTests covers config shape, env apply/restore, and open() locator forwarding; the api-stability gate is green (createContext is a package requirement, public surface unchanged). MZ3 verified: end-to-end vs a live rmw_zenohd router (Docker, jazzy 0.2.9) — latency/soak/correctness recorded on this row; resource lands with the MZ4 iPhone batch. Build-time variant origin: M9 #128. visionOS caveat: the zenoh variant ships no xros/xrsimulator slices (zenoh-c dep pnet_sys lacks visionOS support) — visionOS stays on the wire path or .dds.",
       "id" : "transport.zenoh",
       "platforms" : [
         "iOS",
@@ -973,19 +973,245 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "value" : "n/a — verified in M9 (zenoh-rmw golden 11/11, design §19.5)",
-          "verdict" : "na"
+          "value" : "MZ3: live field-level ros2 topic echo agreement vs real Jazzy host for Imu/PointCloud2(120KB)/CompressedImage(64KB); RIHS01 type hash accepted by the rmw_zenoh graph; crcl-loopback + crcl-svc-loopback (AddTwoInts+params) + crcl-action-loopback (Fibonacci+cancel) green on the zenoh variant. Byte parity: crcl-golden 11/11 (M9); PointCloud2 rmw_serialize byte divergence on the fastrtps typesupport is semantically benign (live echo decodes correctly) — tracked as a documented divergence. environment: Docker rmw_zenohd router on localhost (ros_jazzy_zenoh, jazzy 0.2.9), LAN host down; native-LAN rerun queued",
+          "verdict" : "pass"
         },
         "latency" : {
-          "value" : "n/a — rcl+rmw_zenoh variant (M9), separate xcframework; out of DDS scope",
-          "verdict" : "na"
+          "value" : "MZ3 zenoh-rcl via local rmw_zenohd: publish-call p99 imu 113us / image64k 138us / cloud120k 233us (SLO 1ms); e2e roundtrip p99 622/483/643us @100Hz (SLO 2ms); roundtrip-lan via Docker relay 3.97/5.39/5.94ms p99 (relay+bridge dominated). Wire-zenoh comparison: publish-call p99 417/3988/4747us — rcl ~20x faster on large payloads. environment: Docker rmw_zenohd router on localhost (ros_jazzy_zenoh, jazzy 0.2.9), LAN host down; native-LAN rerun queued",
+          "verdict" : "pass"
         },
         "resource" : {
           "value" : "n/a — not a Conduit on-device publish path",
           "verdict" : "na"
         },
         "soak" : {
-          "value" : "n/a — not a streaming publish data path (or covered by corpus / publish-side soak)",
+          "value" : "MZ3 zenoh-rcl 2x8h @100Hz --expect-echo: cloud120k rss_slope_b_per_min=-9129 fd_growth=0 tput_degradation_pct=0.0 published=2880000 received=2879863 verdict=healthy; image64k rss_slope_b_per_min=-19085 fd_growth=0 tput_degradation_pct=0.0 published=2880000 received=2879896 verdict=healthy. Fault run recorded separately. environment: Docker rmw_zenohd router on localhost (ros_jazzy_zenoh, jazzy 0.2.9), LAN host down; native-LAN rerun queued Fault run (1200s cloud120k, --inject-malformed, docker-restart of the router at t=300): verdict=healthy, publisher survived (100 msgs/s throughout), recv dipped 100->25/s and fully recovered within ~30s of the router returning (rmw_zenoh auto-reconnect), fd_growth=0, received 118741/120000 (98.9%; loss window = router downtime).",
+          "verdict" : "pass"
+        }
+      }
+    },
+    {
+      "apiSymbol" : "ROS2Publisher.publish(_:)",
+      "evidence" : "crcl_marshal_registry typed marshal for sensor_msgs/CameraInfo (#154); byte-parity vs pure-Swift CDR (CrossBackendBytesTests)",
+      "id" : "publish.typed.sensor_msgs/CameraInfo",
+      "platforms" : [
+        "iOS",
+        "Catalyst",
+        "macOS",
+        "visionOS"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "bundled",
+      "verification" : {
+        "correctness" : {
+          "value" : "byte parity vs pure-Swift CDR (#154)",
+          "verdict" : "pass"
+        },
+        "latency" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
+      "apiSymbol" : "ROS2Publisher.publish(_:)",
+      "evidence" : "tf2_msgs bundled into both xcframeworks (#158, PKGS_UP_TO + registry-only entry) — Conduit /tf_static publishes route-a over the rmw serialized seam with transient-local durability; MarshalRegistryResolveTests",
+      "id" : "publish.serialized.tf2_msgs/TFMessage",
+      "platforms" : [
+        "iOS",
+        "Catalyst",
+        "macOS",
+        "visionOS"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "bundled",
+      "verification" : {
+        "correctness" : {
+          "value" : "registry resolution + serialized seam (route-a); latched QoS maps to TRANSIENT_LOCAL (rcl_bridge)",
+          "verdict" : "pass"
+        },
+        "latency" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
+      "apiSymbol" : "ROS2Publisher.publish(_:)",
+      "evidence" : "audio_common_msgs vendored (ros-drivers/audio_common@db2770b, msg-only) + bundled (#158); registry-only entry publishes route-a over the rmw serialized seam; MarshalRegistryResolveTests",
+      "id" : "publish.serialized.audio_common_msgs/AudioData",
+      "platforms" : [
+        "iOS",
+        "Catalyst",
+        "macOS",
+        "visionOS"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "bundled",
+      "verification" : {
+        "correctness" : {
+          "value" : "registry resolution + serialized seam (route-a) (#158)",
+          "verdict" : "pass"
+        },
+        "latency" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
+      "apiSymbol" : "ROS2Publisher.publish(_:)",
+      "evidence" : "point_cloud_interfaces vendored (ros-perception/point_cloud_transport_plugins@1e4490c = 4.0.4, msg-only) + bundled (#158) — Conduit's Draco type is now a plain upstream type on the RCL path; MarshalRegistryResolveTests",
+      "id" : "publish.serialized.point_cloud_interfaces/CompressedPointCloud2",
+      "platforms" : [
+        "iOS",
+        "Catalyst",
+        "macOS",
+        "visionOS"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "supported",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "bundled",
+      "verification" : {
+        "correctness" : {
+          "value" : "registry resolution + serialized seam (route-a) (#158)",
+          "verdict" : "pass"
+        },
+        "latency" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
+      "apiSymbol" : "ROS2Context(distro:)",
+      "evidence" : "pure-Swift wire codecs speak Humble/Jazzy/Kilted/Rolling (ROS2Distro); the RCL backend bundles the Jazzy stack only (CRos2Jazzy*). A non-Jazzy distro on an RCL-backed session is a documented limitation.",
+      "id" : "distro.support",
+      "platforms" : [
+        "iOS",
+        "Catalyst",
+        "macOS",
+        "visionOS"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "partial",
+      "severity" : "minor",
+      "typeApplicability" : "n-a",
+      "verification" : {
+        "correctness" : {
+          "value" : "n/a — capability documentation row",
+          "verdict" : "na"
+        },
+        "latency" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
+      "apiSymbol" : "swift build (Linux)",
+      "evidence" : "pure-Swift wire ships + is CI-tested on Ubuntu 22.04/24.04 x86_64+aarch64; RCL backend is Apple-only today — MZ5 (Linux Zenoh-RCL via system ROS 2) in progress on feat/rcl-linux-zenoh.",
+      "id" : "platform.linux",
+      "platforms" : [
+        "Linux"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "missing",
+      "severity" : "minor",
+      "typeApplicability" : "n-a",
+      "verification" : {
+        "correctness" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "latency" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        }
+      }
+    },
+    {
+      "apiSymbol" : "swift build (Windows/Android)",
+      "evidence" : "pure-Swift wire (zenoh-pico) ships on Windows x86_64 and Android arm64/x86_64; RCL there is out of scope (MZ6 conditional on upstream rmw_zenoh Windows; Android full-rcl cross-build unsolved).",
+      "id" : "platform.windows-android",
+      "platforms" : [
+        "Windows",
+        "Android"
+      ],
+      "pureSwift" : "supported",
+      "rcl" : "missing",
+      "severity" : "n-a-by-design",
+      "typeApplicability" : "n-a",
+      "verification" : {
+        "correctness" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "latency" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "resource" : {
+          "value" : "n/a",
+          "verdict" : "na"
+        },
+        "soak" : {
+          "value" : "n/a",
           "verdict" : "na"
         }
       }

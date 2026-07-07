@@ -5,11 +5,20 @@
 // 2 s in-process smoke that asserts the harness itself works.
 //
 // Usage:
-//   rcl-soak <rcl|dds> [imu|image64k|cloud120k] [--duration-s N] [--sample-s N]
-//            [--rate-hz N] [--domain N] [--selftest] [--inject-malformed]
+//   rcl-soak <rcl|dds|zenoh> [imu|image64k|cloud120k] [--duration-s N] [--sample-s N]
+//            [--rate-hz N] [--domain N] [--locator STR] [--selftest]
+//            [--inject-malformed] [--expect-echo]
+//
+// The `zenoh` backend resolves to the zenoh-pico wire path on the default
+// build and to rcl + rmw_zenoh_cpp on the SWIFT_ROS2_RCL_RMW=zenoh variant;
+// its router locator comes from `--locator`, then SWIFT_ROS2_ZENOH_LOCATOR,
+// then tcp/127.0.0.1:7447. With `--expect-echo` the host relays `soak` ->
+// `soak_echo` (e.g. `ros2 run topic_tools relay`) and the harness counts
+// deliveries on the echo topic.
 //
 // Output: per-sample `rcl_soak SAMPLE t=.. rss_mb=.. fds=.. msgs_per_s=..`
-//         then a final `rcl_soak RESULT verdict=.. rss_slope_b_per_min=.. ...`.
+//         (plus `recv_per_s=..` with --expect-echo) then a final
+//         `rcl_soak RESULT verdict=.. rss_slope_b_per_min=.. ...`.
 
 import Darwin
 import Dispatch
@@ -37,9 +46,16 @@ let sampleS = intOpt("--sample-s", selftest ? 1 : 30)
 let rateHz = intOpt("--rate-hz", 100)
 let domainId = intOpt("--domain", 42)
 let injectMalformed = flag("--inject-malformed")
+let expectEcho = flag("--expect-echo")
+let zenohLocator = HarnessCLI.resolveZenohLocator(
+    arguments: args, environment: ProcessInfo.processInfo.environment)
 
-guard ["rcl", "dds"].contains(backend), ["imu", "image64k", "cloud120k"].contains(payload) else {
-    print("rcl_soak FAIL: usage: rcl-soak <rcl|dds> [imu|image64k|cloud120k] [--duration-s N] ...")
+guard HarnessCLI.supportedBackends.contains(backend),
+    ["imu", "image64k", "cloud120k"].contains(payload)
+else {
+    print(
+        "rcl_soak FAIL: usage: rcl-soak <rcl|dds|zenoh> [imu|image64k|cloud120k] [--duration-s N] ..."
+    )
     exit(2)
 }
 
@@ -113,8 +129,12 @@ final class Counter: @unchecked Sendable {
 
 func run() async throws {
     let qos = QoSProfile(reliability: .reliable, durability: .volatile, history: .keepLast(64))
-    let config: TransportConfig =
-        backend == "rcl" ? .rcl(domainId: domainId) : .ddsMulticast(domainId: domainId)
+    let config: TransportConfig
+    switch backend {
+    case "rcl": config = .rcl(domainId: domainId)
+    case "zenoh": config = .zenoh(locator: zenohLocator, domainId: domainId)
+    default: config = .ddsMulticast(domainId: domainId)
+    }
     let ctx = try await ROS2Context(transport: config)
     let node = try await ctx.createNode(
         name: "rcl_soak", namespace: "/rcl_soak",
@@ -128,6 +148,26 @@ func run() async throws {
         probe.onMessage { _ in }
     }
 
+    // H7 receive-side observability: with --expect-echo the host relays
+    // `soak` -> `soak_echo` and we count deliveries on the echo topic,
+    // mirroring rcl-bench's roundtrip-lan subscription.
+    let received = Counter()
+    if expectEcho {
+        switch payload {
+        case "imu":
+            let sub = try await node.createSubscription(Imu.self, topic: "soak_echo", qos: qos)
+            sub.onMessage { _ in received.add(1) }
+        case "image64k":
+            let sub = try await node.createSubscription(
+                CompressedImage.self, topic: "soak_echo", qos: qos)
+            sub.onMessage { _ in received.add(1) }
+        default:
+            let sub = try await node.createSubscription(
+                PointCloud2.self, topic: "soak_echo", qos: qos)
+            sub.onMessage { _ in received.add(1) }
+        }
+    }
+
     let published = Counter()
     let periodNS: UInt64 = rateHz > 0 ? UInt64(1_000_000_000 / UInt64(rateHz)) : 0
 
@@ -138,8 +178,10 @@ func run() async throws {
         let startNS = nowNS()
         let endNS = startNS + UInt64(durationS) * 1_000_000_000
         var samples: [SoakSample] = []
+        var recvSeries: [Double] = []
         var nextSampleNS = startNS + UInt64(sampleS) * 1_000_000_000
         var lastSampleCount = 0
+        var lastRecvCount = 0
         var lastSampleNS = startNS
         var lastFDs = max(0, openFDCount())  // baseline; carried if a read fails
         var next = startNS
@@ -160,28 +202,49 @@ func run() async throws {
                 let rawFDs = openFDCount()
                 let fds = rawFDs >= 0 ? rawFDs : lastFDs  // carry last good on a failed read
                 lastFDs = fds
+                let recvTotal = received.value
+                let recvPerS = dt > 0 ? Double(recvTotal - lastRecvCount) / dt : 0
                 let s = SoakSample(
                     tSeconds: Double(now - startNS) / 1e9, rssBytes: currentRSSBytes(),
                     openFDs: fds, msgsPerSec: mps)
                 samples.append(s)
+                if expectEcho { recvSeries.append(recvPerS) }
                 print(
                     "rcl_soak SAMPLE t=\(String(format: "%.1f", s.tSeconds)) "
                         + "rss_mb=\(String(format: "%.1f", Double(s.rssBytes) / 1_048_576)) "
-                        + "fds=\(s.openFDs) msgs_per_s=\(String(format: "%.0f", s.msgsPerSec))")
+                        + "fds=\(s.openFDs) msgs_per_s=\(String(format: "%.0f", s.msgsPerSec))"
+                        + (expectEcho ? " recv_per_s=\(String(format: "%.0f", recvPerS))" : ""))
                 fflush(stdout)
                 lastSampleCount = total
+                lastRecvCount = recvTotal
                 lastSampleNS = now
                 nextSampleNS = now + UInt64(sampleS) * 1_000_000_000
             }
         }
         let v = SoakAnalysis.analyze(samples)
-        print(
-            "rcl_soak RESULT backend=\(backend) payload=\(payload) duration_s=\(durationS) "
-                + "samples=\(samples.count) published=\(published.value) "
-                + "verdict=\(v.leakSuspected ? "LEAK" : "healthy") "
-                + "rss_slope_b_per_min=\(Int(v.rssSlopeBytesPerMin.rounded())) "
-                + "fd_growth=\(v.fdGrowth) "
-                + "tput_degradation_pct=\(String(format: "%.1f", v.throughputDegradationPct))")
+        var result =
+            "rcl_soak RESULT backend=\(backend) stack=\(HarnessCLI.stack(forBackend: backend)) "
+            + "payload=\(payload) duration_s=\(durationS) "
+            + "samples=\(samples.count) published=\(published.value) "
+            + "verdict=\(v.leakSuspected ? "LEAK" : "healthy") "
+            + "rss_slope_b_per_min=\(Int(v.rssSlopeBytesPerMin.rounded())) "
+            + "fd_growth=\(v.fdGrowth) "
+            + "tput_degradation_pct=\(String(format: "%.1f", v.throughputDegradationPct))"
+        if expectEcho {
+            // A sample counts as stalled below half the target publish rate —
+            // a strict zero-only check misses partial outages (e.g. a router
+            // restart inside one window), and the first window is excluded
+            // while the relay/subscription match warms up.
+            let stallThreshold = Double(rateHz) * 0.5
+            let echo = SoakAnalysis.echoContinuity(
+                recvPerSecond: recvSeries, stallThreshold: stallThreshold, excludeWarmup: true)
+            result +=
+                " received=\(received.value)"
+                + " recv_stall_threshold=\(String(format: "%.0f", stallThreshold))"
+                + " recv_stall_run_max=\(echo.maxConsecutiveZeroRecvSamples)"
+                + " recv_recovered=\(echo.recoveredAfterZeroRecv)"
+        }
+        print(result)
         fflush(stdout)
         if selftest {
             guard samples.count >= 1, samples.allSatisfy({ $0.rssBytes > 0 }) else {

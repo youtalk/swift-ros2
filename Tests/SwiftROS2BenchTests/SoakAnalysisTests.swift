@@ -81,4 +81,94 @@ final class SoakAnalysisTests: XCTestCase {
         XCTAssertEqual(v.rssSlopeBytesPerMin, 0)
         XCTAssertFalse(v.leakSuspected)
     }
+
+    // MARK: - echoContinuity (H7 receive-side observability)
+
+    func testEchoContinuityEmptySeries() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 0)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityAllNonZeroHasNoStall() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [100, 99, 101])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 0)
+        // No zero sample means there was nothing to recover from.
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityMidRunStallThatRecovers() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [100, 0, 0, 0, 100])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 3)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityStallAtEndIsNotRecovered() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [100, 100, 0, 0])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 2)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityLongestZeroRunWins() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [0, 100, 0, 0, 0, 100, 0, 0, 100])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 3)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityAllZerosIsNeverRecovered() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [0, 0, 0])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 3)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuitySingleZeroThenRecovery() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [0, 100])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 1)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
+
+    // MARK: - echoContinuity (threshold-aware overload)
+
+    func testEchoContinuityThresholdCatchesPartialStall() {
+        // A router restart that drops delivery to 25/s inside one window is a
+        // real stall the zero-only check misses (observed in the MZ3 fault run).
+        let r = SoakAnalysis.echoContinuity(
+            recvPerSecond: [100, 92, 25, 100, 100], stallThreshold: 50, excludeWarmup: false)
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 1)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityWarmupExclusionSkipsLeadingStall() {
+        // Relay/subscription match completing after the first window must not
+        // count as a stall.
+        let r = SoakAnalysis.echoContinuity(
+            recvPerSecond: [0, 100, 100, 100], stallThreshold: 50, excludeWarmup: true)
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 0)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityWarmupExclusionStillSeesRealStall() {
+        let r = SoakAnalysis.echoContinuity(
+            recvPerSecond: [0, 0, 100, 30, 30, 100], stallThreshold: 50, excludeWarmup: true)
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 2)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityThresholdOverloadDefaultsMatchLegacy() {
+        // stallThreshold 0 + no warmup exclusion must be the legacy zero-only
+        // semantics the two-argument form forwards to.
+        let series: [Double] = [0, 100, 0, 0, 0, 100, 0, 0, 100]
+        let legacy = SoakAnalysis.echoContinuity(recvPerSecond: series)
+        let explicit = SoakAnalysis.echoContinuity(
+            recvPerSecond: series, stallThreshold: 0, excludeWarmup: false)
+        XCTAssertEqual(legacy.maxConsecutiveZeroRecvSamples, explicit.maxConsecutiveZeroRecvSamples)
+        XCTAssertEqual(legacy.recoveredAfterZeroRecv, explicit.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityAllWarmupSeriesReportsClean() {
+        let r = SoakAnalysis.echoContinuity(
+            recvPerSecond: [0, 0, 0], stallThreshold: 50, excludeWarmup: true)
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 0)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
 }

@@ -94,4 +94,56 @@ public enum SoakAnalysis {
             fdGrowth: fdGrowth, throughputDegradationPct: throughputDegradationPct,
             summary: summary)
     }
+
+    /// Receive-side echo continuity for an `--expect-echo` soak run.
+    ///
+    /// Given the per-sample receive rates (the `recv_per_s` series), returns
+    /// the length of the longest run of consecutive zero-recv samples and
+    /// whether delivery recovered after stalling. `recoveredAfterZeroRecv` is
+    /// true iff the series contains at least one zero sample and does not end
+    /// in one (delivery resumed after the last stall). A series with no zero
+    /// samples reports `(0, false)` — there was nothing to recover from. An
+    /// empty series reports `(0, false)`.
+    public static func echoContinuity(
+        recvPerSecond: [Double]
+    ) -> (maxConsecutiveZeroRecvSamples: Int, recoveredAfterZeroRecv: Bool) {
+        echoContinuity(recvPerSecond: recvPerSecond, stallThreshold: 0, excludeWarmup: false)
+    }
+
+    /// Threshold-aware echo continuity.
+    ///
+    /// A sample counts as stalled iff its rate is `<= stallThreshold` — a
+    /// strict `== 0` check misses partial outages (a router restart that
+    /// drops delivery to a fraction of the target rate within one sample
+    /// window is a real stall the zero-only check reports as clean). With
+    /// `excludeWarmup`, leading stalled samples before the first healthy one
+    /// are skipped: an `--expect-echo` run whose relay/subscription match
+    /// completes after the first window would otherwise report a phantom
+    /// stall. `recoveredAfterZeroRecv` is true iff at least one (post-warmup)
+    /// stall run exists and the series ends healthy. Caveat: a series that
+    /// never delivers is consumed entirely by warmup exclusion and reports
+    /// clean — callers must also check the total received count (the soak
+    /// RESULT line carries `received=` for exactly this reason).
+    public static func echoContinuity(
+        recvPerSecond: [Double],
+        stallThreshold: Double,
+        excludeWarmup: Bool
+    ) -> (maxConsecutiveZeroRecvSamples: Int, recoveredAfterZeroRecv: Bool) {
+        var series = recvPerSecond[...]
+        if excludeWarmup {
+            series = series.drop(while: { $0 <= stallThreshold })
+        }
+        var maxRun = 0
+        var run = 0
+        for value in series {
+            if value <= stallThreshold {
+                run += 1
+                maxRun = max(maxRun, run)
+            } else {
+                run = 0
+            }
+        }
+        // run == 0 here means the series does not end in a stalled sample.
+        return (maxRun, maxRun > 0 && run == 0)
+    }
 }

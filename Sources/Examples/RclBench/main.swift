@@ -1,10 +1,13 @@
 // rcl-bench — typed rcl_publish (.rcl backend) vs pure-Swift wire-DDS (.dds)
-// benchmark (spec §19.3 M5). One backend per process so the two DDS stacks
-// never share a participant.
+// vs Zenoh (.zenoh) benchmark (spec §19.3 M5). One backend per process so the
+// two DDS stacks never share a participant. The `zenoh` backend resolves to
+// the zenoh-pico wire path on the default build and to rcl + rmw_zenoh_cpp on
+// the SWIFT_ROS2_RCL_RMW=zenoh variant; its router locator comes from
+// `--locator`, then SWIFT_ROS2_ZENOH_LOCATOR, then tcp/127.0.0.1:7447.
 //
 // Usage:
-//   rcl-bench <rcl|dds> <publish|roundtrip|roundtrip-lan|encode> [imu|image64k|cloud120k]
-//             [--count N] [--rate-hz N] [--domain N]
+//   rcl-bench <rcl|dds|zenoh> <publish|roundtrip|roundtrip-lan|encode> [imu|image64k|cloud120k]
+//             [--count N] [--rate-hz N] [--domain N] [--locator STR]
 //
 // Modes:
 //   publish       — per-publish call latency + max-rate throughput (no subscriber)
@@ -23,6 +26,7 @@
 
 import Foundation
 import SwiftROS2
+import SwiftROS2Bench
 import SwiftROS2RCL
 
 // MARK: - CLI
@@ -31,15 +35,15 @@ let args = CommandLine.arguments
 guard args.count >= 3 else {
     print(
         """
-        usage: rcl-bench <rcl|dds> <publish|roundtrip|roundtrip-lan|encode> \
-        [imu|image64k|cloud120k] [--count N] [--rate-hz N] [--domain N]
+        usage: rcl-bench <rcl|dds|zenoh> <publish|roundtrip|roundtrip-lan|encode> \
+        [imu|image64k|cloud120k] [--count N] [--rate-hz N] [--domain N] [--locator STR]
         """)
     exit(2)
 }
 let backend = args[1]
 let mode = args[2]
 let payload = args.count > 3 && !args[3].hasPrefix("--") ? args[3] : "imu"
-guard ["rcl", "dds"].contains(backend),
+guard HarnessCLI.supportedBackends.contains(backend),
     ["publish", "roundtrip", "roundtrip-lan", "encode"].contains(mode),
     ["imu", "image64k", "cloud120k"].contains(payload)
 else {
@@ -60,6 +64,8 @@ let count = intOption(
 let rateHz = intOption("--rate-hz", default: 0)  // 0 = max rate
 let warmup = isLarge ? 100 : 1_000
 let domainId = intOption("--domain", default: 42)
+let zenohLocator = HarnessCLI.resolveZenohLocator(
+    arguments: args, environment: ProcessInfo.processInfo.environment)
 
 // MARK: - timing helpers
 
@@ -76,7 +82,7 @@ func percentiles(_ samplesNS: [UInt64]) -> (p50: Double, p95: Double, p99: Doubl
 
 func printResult(_ fields: [String: String]) {
     let ordered = [
-        "backend", "mode", "payload", "count", "received", "rate_hz", "msgs_per_s",
+        "backend", "stack", "mode", "payload", "count", "received", "rate_hz", "msgs_per_s",
         "p50us", "p95us", "p99us", "maxus", "wall_s", "bytes",
     ]
     let kv = ordered.compactMap { k in fields[k].map { "\(k)=\($0)" } }
@@ -158,7 +164,10 @@ func runEncode() throws {
     samples.reserveCapacity(count)
     var bytes = 0
     let start = nowNS()
-    switch (backend, payload) {
+    // `zenoh` measures the same pure-Swift CDREncoder the zenoh-pico wire
+    // path uses; the rcl marshal + rmw_serialize proxy stays on the `rcl`
+    // token (one encode seam per token, regardless of rmw variant).
+    switch (backend == "rcl" ? "rcl" : "dds", payload) {
     case ("dds", "imu"):
         let m = makeImu()
         for _ in 0..<count {
@@ -206,7 +215,8 @@ func runEncode() throws {
     let wall = Double(nowNS() - start) / 1e9
     let p = percentiles(samples)
     printResult([
-        "backend": backend, "mode": mode, "payload": payload, "count": "\(count)",
+        "backend": backend, "stack": HarnessCLI.stack(forBackend: backend),
+        "mode": mode, "payload": payload, "count": "\(count)",
         "msgs_per_s": String(format: "%.0f", Double(count) / wall),
         "p50us": String(format: "%.2f", p.p50), "p95us": String(format: "%.2f", p.p95),
         "p99us": String(format: "%.2f", p.p99), "maxus": String(format: "%.2f", p.max),
@@ -217,7 +227,11 @@ func runEncode() throws {
 // MARK: - publish / roundtrip modes
 
 func transportConfig() -> TransportConfig {
-    backend == "rcl" ? .rcl(domainId: domainId) : .ddsMulticast(domainId: domainId)
+    switch backend {
+    case "rcl": return .rcl(domainId: domainId)
+    case "zenoh": return .zenoh(locator: zenohLocator, domainId: domainId)
+    default: return .ddsMulticast(domainId: domainId)
+    }
 }
 
 func runPubSub() async throws {
@@ -307,7 +321,8 @@ func runPubSub() async throws {
 
     let p = isRoundtrip ? percentiles(collector.snapshot) : percentiles(callNS)
     printResult([
-        "backend": backend, "mode": mode, "payload": payload, "count": "\(count)",
+        "backend": backend, "stack": HarnessCLI.stack(forBackend: backend),
+        "mode": mode, "payload": payload, "count": "\(count)",
         "received": isRoundtrip ? "\(received)" : "-",
         "rate_hz": rateHz > 0 ? "\(rateHz)" : "max",
         "msgs_per_s": String(format: "%.0f", Double(count) / wall),

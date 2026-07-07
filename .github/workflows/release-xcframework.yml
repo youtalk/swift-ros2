@@ -64,9 +64,13 @@ jobs:
             rmw_variant: cyclonedds
             slices: maccatalyst iphoneos iphonesimulator macosx xros xrsimulator
             build_dir: build/ros2
+          # No xros/xrsimulator for the zenoh variant: zenoh-c's dependency
+          # graph (pnet_sys 0.35) does not compile for visionOS yet, so those
+          # slices are dropped by design — visionOS consumers stay on the
+          # zenoh-pico wire path or the .dds transport.
           - framework: CRos2JazzyZenoh
             rmw_variant: zenoh
-            slices: maccatalyst iphoneos iphonesimulator macosx xros xrsimulator
+            slices: maccatalyst iphoneos iphonesimulator macosx
             build_dir: build/ros2zenoh
     steps:
       - uses: actions/checkout@v4

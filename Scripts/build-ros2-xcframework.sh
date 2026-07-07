@@ -301,11 +301,12 @@ zenohc_triple() { case "$1" in
   macosx)      echo aarch64-apple-darwin ;;
   iphoneos)    echo aarch64-apple-ios ;;
   iphonesimulator) echo aarch64-apple-ios-sim ;;
-  # Stable rust-std ships the visionOS targets (rustup target list includes
-  # them), so the mapping is ready; the xros/xrsimulator slices themselves are
-  # built by a follow-up PR.
-  xros)        echo aarch64-apple-visionos ;;
-  xrsimulator) echo aarch64-apple-visionos-sim ;;
+  # visionOS: prebuilt rust-std exists on stable (1.96+), but zenoh-c's
+  # dependency graph does not compile for the target yet (pnet_sys 0.35
+  # lacks visionOS cfg — timeval field-width mismatch). Until upstream pnet
+  # catches up, the zenoh variant ships without visionOS slices; visionOS
+  # consumers stay on the zenoh-pico wire path or the .dds transport.
+  xros|xrsimulator) echo "zenoh variant: zenoh-c deps (pnet_sys) do not build for visionOS; slice dropped by design" >&2; return 1 ;;
   *) echo "zenoh variant: no stable Rust std for slice '$1'" >&2; return 1 ;; esac; }
 
 # Cross-build zenoh-c (Rust staticlib) and assemble the CMake prefix that

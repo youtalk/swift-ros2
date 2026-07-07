@@ -214,4 +214,31 @@
                 "ZENOH_SESSION_CONFIG_URI not restored to unset")
         }
     }
+
+    // MARK: - RclZenohTransportConfigTests (S6)
+
+    /// `.rcl` / `.rclUnicast` target rmw_cyclonedds: in the zenoh-rmw build they
+    /// would open rmw_zenoh with default session settings while exporting a
+    /// meaningless CYCLONEDDS_URI. The supported transports here are `.zenoh`
+    /// (RCL via rmw_zenoh) and `.dds` (wire CycloneDDS) — reject the rest.
+    final class RclZenohTransportConfigTests: XCTestCase {
+        private func assertRejected(_ config: TransportConfig) async {
+            do {
+                _ = try await ROS2Context(transport: config)
+                XCTFail("expected unsupportedFeature for \(config.type)")
+            } catch TransportError.unsupportedFeature(let message) {
+                XCTAssertTrue(message.contains(".zenoh"), "remedy missing from: \(message)")
+            } catch {
+                XCTFail("expected unsupportedFeature, got \(error)")
+            }
+        }
+
+        func testRclConfigIsRejected() async {
+            await assertRejected(.rcl())
+        }
+
+        func testRclUnicastConfigIsRejected() async {
+            await assertRejected(.rclUnicast(peers: [DDSPeer(address: "192.168.1.10")]))
+        }
+    }
 #endif

@@ -194,7 +194,16 @@ extension ROS2Context {
         case .dds:
             return DDSTransportSession(client: DDSClient())
         case .rcl:
-            #if SWIFT_ROS2_RCL
+            #if SWIFT_ROS2_RCL_RMW_ZENOH
+                // In the zenoh-rmw build the rcl stack speaks rmw_zenoh: a `.rcl`
+                // (or `.rclUnicast`) config would open rmw_zenoh with default
+                // session settings while exporting a meaningless CYCLONEDDS_URI —
+                // none of its discovery knobs reach the wire. Reject it loudly.
+                throw TransportError.unsupportedFeature(
+                    ".rcl/.rclUnicast target rmw_cyclonedds and are unavailable in the "
+                        + "zenoh-rmw build (SWIFT_ROS2_RCL_RMW=zenoh) — use .zenoh(locator:) "
+                        + "(the RCL transport in this build) or .dds (wire CycloneDDS)")
+            #elseif SWIFT_ROS2_RCL
                 return RclTransportSession(client: RclClient())
             #else
                 throw TransportError.unsupportedFeature(

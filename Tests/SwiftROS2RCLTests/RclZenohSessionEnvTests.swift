@@ -124,6 +124,11 @@
             XCTAssertTrue(cfg.contains("mode: \"client\""), "client mode missing")
             XCTAssertTrue(cfg.contains("connect"), "connect block missing")
             XCTAssertTrue(cfg.contains("enabled: false"), "multicast scouting must be disabled")
+            // rmw_zenoh_cpp builds every publisher as an AdvancedPublisher with
+            // Sequencing::Timestamp; zenoh-c aborts publisher creation unless the
+            // (wholesale-replacing) session config enables client timestamping.
+            XCTAssertTrue(cfg.contains("timestamping"), "timestamping block missing")
+            XCTAssertTrue(cfg.contains("client: true"), "client timestamping must be enabled")
         }
 
         func testApplyZenohSessionEnvExportsAndRestores() {

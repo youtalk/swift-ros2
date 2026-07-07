@@ -706,6 +706,17 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// ZENOH_SESSION_CONFIG_URI at session creation. Pure: no env, no rmw.
     /// `package` so SwiftROS2RCLTests can assert the shape without a router.
     package func makeZenohSessionConfigJSON5(locator: String) -> String {
+        // ZENOH_SESSION_CONFIG_URI REPLACES rmw_zenoh's DEFAULT_RMW_ZENOH_SESSION
+        // _CONFIG.json5 wholesale — it is not merged — so any default this minimal
+        // config omits reverts to the zenoh-c library default, not rmw_zenoh's.
+        // `timestamping` is the one that bites: rmw_zenoh_cpp creates every
+        // publisher as an AdvancedPublisher with Sequencing::Timestamp (needed for
+        // the PublicationCache behind transient_local durability), and zenoh-c
+        // refuses to build such a publisher unless timestamping is enabled — the
+        // library default for a client is disabled, so a config without it aborts
+        // the first publisher with "the 'timestamping' setting must be enabled in
+        // the Zenoh configuration." Mirror the default's block verbatim (see
+        // RmwZenohDefaultConfig, DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5).
         """
         {
           mode: "client",
@@ -716,6 +727,10 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
             multicast: {
               enabled: false,
             },
+          },
+          timestamping: {
+            enabled: { router: true, peer: true, client: true },
+            drop_future_timestamp: false,
           },
         }
         """

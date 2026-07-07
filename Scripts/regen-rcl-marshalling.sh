@@ -4,7 +4,7 @@
 # and the registry-only message entries.
 # Run from the repo root. The same invocation backs the ci-rcl drift guard.
 set -euo pipefail
-TYPES="Imu,Joy,BatteryState,CompressedImage,PointCloud2,MagneticField,FluidPressure,Illuminance,NavSatFix,Range,Temperature"
+TYPES="Imu,Joy,BatteryState,CompressedImage,PointCloud2,MagneticField,FluidPressure,Illuminance,NavSatFix,Range,Temperature,Image,CameraInfo"
 # M7 (spec section 20.3) service set: the six rcl_interfaces parameter
 # services, std_srvs, example_interfaces/AddTwoInts, sensor_msgs/SetCameraInfo,
 # and action_msgs/CancelGoal (M8 prep).
@@ -23,9 +23,59 @@ SRV_TYPES+=",action_msgs/srv/CancelGoal"
 # M8 (spec section 20.6) action set: example_interfaces/Fibonacci is the only
 # consumer (the in-process loopback gate + the ros2 action send_goal runbook).
 ACTION_TYPES="example_interfaces/action/Fibonacci"
-# Messages that get a typesupport entry without marshal functions (shapes that
-# exceed the flattener; published over the serialized seam instead).
+# Messages that get a typesupport entry without marshal functions — published
+# and subscribed over the rmw serialized seam (still fully route-a through
+# rcl/rmw). Covers every SwiftROS2Messages type whose package typesupport is
+# already bundled in CRos2Jazzy.xcframework. NOT here (typesupport not bundled
+# yet; a separate PR adds their packages to the xcframework): tf2_msgs,
+# audio_common_msgs, point_cloud_interfaces. Also skipped: action_msgs
+# GoalInfo/GoalStatus and unique_identifier_msgs/UUID (nested-only — no
+# standalone ROS2Message conformance in SwiftROS2Messages).
 REGISTRY_ONLY_TYPES="rcl_interfaces/msg/ParameterEvent"
+REGISTRY_ONLY_TYPES+=",action_msgs/msg/GoalStatusArray"
+REGISTRY_ONLY_TYPES+=",builtin_interfaces/msg/Time"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Accel"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Point"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Point32"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Pose"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/PoseStamped"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Quaternion"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Transform"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/TransformStamped"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Twist"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/TwistStamped"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Vector3"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Vector3Stamped"
+REGISTRY_ONLY_TYPES+=",geometry_msgs/msg/Wrench"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/FloatingPointRange"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/IntegerRange"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/ListParametersResult"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/Parameter"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/ParameterDescriptor"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/ParameterEventDescriptors"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/ParameterType"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/ParameterValue"
+REGISTRY_ONLY_TYPES+=",rcl_interfaces/msg/SetParametersResult"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/ChannelFloat32"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/JointState"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/JoyFeedback"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/JoyFeedbackArray"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/LaserEcho"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/LaserScan"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/MultiDOFJointState"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/MultiEchoLaserScan"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/NavSatStatus"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/PointCloud"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/PointField"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/RegionOfInterest"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/RelativeHumidity"
+REGISTRY_ONLY_TYPES+=",sensor_msgs/msg/TimeReference"
+REGISTRY_ONLY_TYPES+=",std_msgs/msg/Bool"
+REGISTRY_ONLY_TYPES+=",std_msgs/msg/Empty"
+REGISTRY_ONLY_TYPES+=",std_msgs/msg/Float64"
+REGISTRY_ONLY_TYPES+=",std_msgs/msg/Header"
+REGISTRY_ONLY_TYPES+=",std_msgs/msg/Int32"
+REGISTRY_ONLY_TYPES+=",std_msgs/msg/String"
 # unique_identifier_msgs is required for nested-reference resolution only
 # (action_msgs/msg/GoalInfo -> unique_identifier_msgs/UUID).
 swift run swift-ros2-gen --emit-rcl-marshalling \

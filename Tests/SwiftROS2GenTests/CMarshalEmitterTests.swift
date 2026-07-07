@@ -44,4 +44,19 @@ struct CMarshalEmitterTests {
         #expect(c.contains("sensor_msgs__msg__PointCloud2__fini(msg)"))
         #expect(c.contains("fini_point_cloud2(&msg)"))
     }
+
+    @Test("snakeCase matches rosidl file naming, including acronym runs")
+    func snakeCaseMatchesRosidl() {
+        // Plain PascalCase + digit suffixes.
+        #expect(CMarshalEmitter.snakeCase("Imu") == "imu")
+        #expect(CMarshalEmitter.snakeCase("PointCloud2") == "point_cloud2")
+        #expect(CMarshalEmitter.snakeCase("ChannelFloat32") == "channel_float32")
+        #expect(CMarshalEmitter.snakeCase("CameraInfo") == "camera_info")
+        // Acronym runs break before their trailing word (rosidl's
+        // convert_camel_case_to_lower_case_underscore behavior); this is what
+        // <sensor_msgs/msg/multi_dof_joint_state.h> depends on.
+        #expect(CMarshalEmitter.snakeCase("MultiDOFJointState") == "multi_dof_joint_state")
+        #expect(CMarshalEmitter.snakeCase("TFMessage") == "tf_message")
+        #expect(CMarshalEmitter.snakeCase("GoalStatusArray") == "goal_status_array")
+    }
 }

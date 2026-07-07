@@ -224,7 +224,10 @@ build_host_tools() {
   ignore_unbuildable
   patch_sources
   # shellcheck disable=SC1091
-  source "$BUILD/venv/bin/activate"
+  # The venv is shared from the cyclonedds tree (VENV, rmw-agnostic) — NOT
+  # $BUILD/venv, which does not exist for the zenoh variant on a clean
+  # checkout (the CI zenoh leg builds host tools before any cyclonedds run).
+  source "$VENV/bin/activate"
   colcon --log-base "$HOST/log" build \
     --base-paths "$SRC" \
     --build-base "$HOST/build" --install-base "$HOST/install" \

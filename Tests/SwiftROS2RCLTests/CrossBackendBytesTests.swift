@@ -46,6 +46,16 @@
                 XCTAssertEqual(
                     try wireEncode(decoded), wire,
                     "\(what): normalized rmw bytes diverge from wire bytes")
+                // Bytes beyond wire.count are uninitialized alignment padding
+                // whose VALUES cannot be checked, but their LENGTH can: final
+                // CDR alignment never exceeds 8 bytes. A longer tail means the
+                // serializer emitted real data the decode above never
+                // inspected — fail and show it.
+                let tail = Array(rcl.dropFirst(wire.count))
+                XCTAssertLessThanOrEqual(
+                    tail.count, 8,
+                    "\(what): rmw bytes carry a \(tail.count)-byte tail beyond the wire "
+                        + "encoding — not alignment padding: \(tail.prefix(32))")
             #else
                 XCTAssertEqual(
                     Array(rcl.prefix(wire.count)), wire,

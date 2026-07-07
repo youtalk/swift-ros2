@@ -748,10 +748,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         // and the live env desynchronize.
         Self.envLock.lock()
         defer { Self.envLock.unlock() }
-        // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
-        // ("saved, was unset") rather than collapsing to .none ("never saved") —
-        // restoreDiscoveryEnv relies on that distinction to unset vs. no-op.
-        priorCyclonedDDSURI = Optional(getenv("CYCLONEDDS_URI").map { String(cString: $0) })
+        saveEnvSlotLocked(&priorCyclonedDDSURI, "CYCLONEDDS_URI")
         setenv("CYCLONEDDS_URI", xml, 1)
         return true
     }
@@ -765,6 +762,16 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         guard let prior = saved else { return }
         saved = nil
         if let p = prior { setenv(name, p, 1) } else { unsetenv(name) }
+    }
+
+    /// Save the current value of an env variable into its slot before the
+    /// caller overwrites it — the counterpart of ``restoreEnvSlotLocked``.
+    /// Wraps in `Optional(...)` so a previously-UNSET env becomes
+    /// `.some(.none)` ("saved, was unset") rather than collapsing to `.none`
+    /// ("never saved"); the restore side relies on that distinction to unset
+    /// vs. no-op. Caller holds the relevant env lock.
+    private func saveEnvSlotLocked(_ slot: inout String??, _ name: String) {
+        slot = Optional(getenv(name).map { String(cString: $0) })
     }
 
     /// Restore CYCLONEDDS_URI to its pre-applyDiscoveryEnv value (unset it if it
@@ -795,12 +802,8 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         Self.zenohEnvLock.lock()
         defer { Self.zenohEnvLock.unlock() }
         zenohConfigFileURL = url
-        // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
-        // ("saved, was unset") rather than collapsing to .none ("never saved").
-        priorZenohSessionConfigURI = Optional(
-            getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) })
-        priorZenohRouterCheckAttempts = Optional(
-            getenv("ZENOH_ROUTER_CHECK_ATTEMPTS").map { String(cString: $0) })
+        saveEnvSlotLocked(&priorZenohSessionConfigURI, "ZENOH_SESSION_CONFIG_URI")
+        saveEnvSlotLocked(&priorZenohRouterCheckAttempts, "ZENOH_ROUTER_CHECK_ATTEMPTS")
         setenv("ZENOH_SESSION_CONFIG_URI", url.path, 1)
         // Check for the router once, then continue: a mobile publisher must not
         // block context creation when the remote router is briefly unreachable.
@@ -886,9 +889,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
                     "failed to synthesize the rmw_zenoh_cpp ament prefix at \(root.path): \(error)")
             }
             amentPrefixDirURL = root
-            // Wrap in Optional(...) so a previously-UNSET env becomes .some(.none)
-            // ("saved, was unset") rather than collapsing to .none ("never saved").
-            priorAmentPrefixPath = Optional(existing)
+            saveEnvSlotLocked(&priorAmentPrefixPath, "AMENT_PREFIX_PATH")
             if let existing, !existing.isEmpty {
                 setenv("AMENT_PREFIX_PATH", "\(root.path):\(existing)", 1)
             } else {

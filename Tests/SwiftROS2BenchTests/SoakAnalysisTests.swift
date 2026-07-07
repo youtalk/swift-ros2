@@ -81,4 +81,49 @@ final class SoakAnalysisTests: XCTestCase {
         XCTAssertEqual(v.rssSlopeBytesPerMin, 0)
         XCTAssertFalse(v.leakSuspected)
     }
+
+    // MARK: - echoContinuity (H7 receive-side observability)
+
+    func testEchoContinuityEmptySeries() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 0)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityAllNonZeroHasNoStall() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [100, 99, 101])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 0)
+        // No zero sample means there was nothing to recover from.
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityMidRunStallThatRecovers() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [100, 0, 0, 0, 100])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 3)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityStallAtEndIsNotRecovered() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [100, 100, 0, 0])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 2)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityLongestZeroRunWins() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [0, 100, 0, 0, 0, 100, 0, 0, 100])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 3)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuityAllZerosIsNeverRecovered() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [0, 0, 0])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 3)
+        XCTAssertFalse(r.recoveredAfterZeroRecv)
+    }
+
+    func testEchoContinuitySingleZeroThenRecovery() {
+        let r = SoakAnalysis.echoContinuity(recvPerSecond: [0, 100])
+        XCTAssertEqual(r.maxConsecutiveZeroRecvSamples, 1)
+        XCTAssertTrue(r.recoveredAfterZeroRecv)
+    }
 }

@@ -94,4 +94,30 @@ public enum SoakAnalysis {
             fdGrowth: fdGrowth, throughputDegradationPct: throughputDegradationPct,
             summary: summary)
     }
+
+    /// Receive-side echo continuity for an `--expect-echo` soak run.
+    ///
+    /// Given the per-sample receive rates (the `recv_per_s` series), returns
+    /// the length of the longest run of consecutive zero-recv samples and
+    /// whether delivery recovered after stalling. `recoveredAfterZeroRecv` is
+    /// true iff the series contains at least one zero sample and does not end
+    /// in one (delivery resumed after the last stall). A series with no zero
+    /// samples reports `(0, false)` — there was nothing to recover from. An
+    /// empty series reports `(0, false)`.
+    public static func echoContinuity(
+        recvPerSecond: [Double]
+    ) -> (maxConsecutiveZeroRecvSamples: Int, recoveredAfterZeroRecv: Bool) {
+        var maxRun = 0
+        var run = 0
+        for value in recvPerSecond {
+            if value == 0 {
+                run += 1
+                maxRun = max(maxRun, run)
+            } else {
+                run = 0
+            }
+        }
+        // run == 0 here means the series does not end in a zero sample.
+        return (maxRun, maxRun > 0 && run == 0)
+    }
 }

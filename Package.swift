@@ -703,7 +703,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "rcl-bench",
-            dependencies: ["SwiftROS2", "SwiftROS2RCL"],
+            dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench"],
             path: "Sources/Examples/RclBench",
             linkerSettings: [.linkedLibrary("c++")]
         ))

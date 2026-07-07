@@ -5,18 +5,41 @@ on:
       slices:
         description: "space-separated slices"
         default: "maccatalyst iphoneos"
+      rmw_variant:
+        description: "rmw variant (cyclonedds or zenoh)"
+        type: choice
+        options:
+          - cyclonedds
+          - zenoh
+        default: cyclonedds
 jobs:
   build:
-    runs-on: macos-15
-    timeout-minutes: 180
+    runs-on: macos-26
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: brew install cmake
-      - run: Scripts/build-ros2-xcframework.sh ${{ inputs.slices }}
+      # ament_cmake's package_xml_2_cmake.py runs under the runner's base
+      # python, so the ROS 2 build deps must be importable there too.
+      - name: Install ROS 2 build deps into runner python
+        run: pip install -r Scripts/ros2/requirements.txt
+      # The zenoh variant cross-builds zenoh-c (Rust staticlib) per slice.
+      - name: Install Rust cross targets (zenoh variant)
+        if: inputs.rmw_variant == 'zenoh'
+        run: |
+          rustup target add \
+            aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim \
+            aarch64-apple-ios-macabi aarch64-apple-visionos aarch64-apple-visionos-sim
+      - name: Build xcframework
+        env:
+          RMW_VARIANT: ${{ inputs.rmw_variant }}
+        run: Scripts/build-ros2-xcframework.sh ${{ inputs.slices }}
       - uses: actions/upload-artifact@v4
         with:
-          name: CRos2Jazzy.xcframework
-          path: build/ros2/CRos2Jazzy.xcframework
+          name: ${{ inputs.rmw_variant == 'zenoh' && 'CRos2JazzyZenoh.xcframework' || 'CRos2Jazzy.xcframework' }}
+          path: ${{ inputs.rmw_variant == 'zenoh' && 'build/ros2zenoh/CRos2JazzyZenoh.xcframework' || 'build/ros2/CRos2Jazzy.xcframework' }}

@@ -345,8 +345,13 @@ var targets: [Target] = [
     ),
 
     // Internal benchmark / soak-analysis target — not exported as a product.
+    // Depends on SwiftROS2Zenoh whenever the wire family is in the graph so
+    // `canImport(SwiftROS2Zenoh)` inside HarnessCLI.zenohStack agrees with the
+    // umbrella's own conditional dep (line ~501) and with the test target —
+    // otherwise the RESULT-line stack stamp reads "rcl-rmw_zenoh" on the wire path.
     .target(
         name: "SwiftROS2Bench",
+        dependencies: dropZenohWire ? [] : ["SwiftROS2Zenoh"],
         path: "Sources/SwiftROS2Bench"
     ),
     .testTarget(

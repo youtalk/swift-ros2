@@ -182,3 +182,74 @@ multicast is blocked) until that is fixed.
   is rejected by the CycloneDDS bundled in `CRos2Jazzy.xcframework` (see the Axis 4
   caveat above). LAN runs can use multicast (RCL), `.rclUnicast` (RCL, macOS), or
   the pure-Swift `.ddsUnicast` path.
+
+## MZ3 — zenoh-rmw variant (RCL-over-Zenoh)
+
+The MZ arc re-runs the four axes with `.zenoh(locator:)` routed through
+`rcl + rmw_zenoh_cpp + zenoh-c` (`SWIFT_ROS2_RCL_RMW=zenoh`). Everything below
+was measured with a local `rmw_zenohd` router in Docker
+(`conduit/support/docker`, `ros_jazzy_zenoh`, rmw_zenoh 0.2.9) because the LAN
+Jazzy host was unavailable — repeat the latency/correctness axes against a
+native LAN host when it returns.
+
+### Build (per-variant scratch paths are mandatory)
+
+```bash
+# The zenoh variant; NEVER share .build between variants (stale-manifest graph).
+SWIFT_ROS2_ENABLE_RCL=1 SWIFT_ROS2_RCL_RMW=zenoh swift build --scratch-path .build-zenoh
+```
+
+### Router + environment
+
+```bash
+# Router (domain 0!): conduit/support/docker/.env pins ROS_DOMAIN_ID=123 — override:
+( cd <conduit>/support/docker && ROS_DOMAIN_ID=0 docker compose up -d --force-recreate ros-jazzy )
+
+# Until the AMENT synthesis (#155) is in your build, export the mini prefix:
+export AMENT_PREFIX_PATH=<repo>/build/ros2zenoh/ament-prefix
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+```
+
+### Axis 1 — latency
+
+```bash
+# In-process publish-call + roundtrip, and the relay-based LAN mode.
+# rcl-bench defaults to --domain 42; the router container is domain 0.
+.build-zenoh/debug/rcl-bench zenoh publish   imu       --count 3000 --rate-hz 100 --domain 0 --locator tcp/127.0.0.1:7447
+.build-zenoh/debug/rcl-bench zenoh roundtrip cloud120k --count 3000 --rate-hz 100 --domain 0 --locator tcp/127.0.0.1:7447
+# roundtrip-lan needs a relay on the host side; topic_tools relay LOCKS its
+# type at subscribe time — restart it between payload types:
+docker exec -d ros_jazzy_zenoh bash -c "source /opt/ros/jazzy/setup.bash && \
+  export RMW_IMPLEMENTATION=rmw_zenoh_cpp ROS_DOMAIN_ID=0 && \
+  ros2 run topic_tools relay /rcl_bench/bench /rcl_bench/bench_echo"
+.build-zenoh/debug/rcl-bench zenoh roundtrip-lan image64k --count 2000 --rate-hz 100 --domain 0 --locator tcp/127.0.0.1:7447
+```
+
+### Axis 2 — soak
+
+```bash
+# Two concurrent 8 h runs on different ROS domains share one router cleanly:
+.build-zenoh/debug/rcl-soak zenoh cloud120k --duration-s 28800 --sample-s 30 --rate-hz 100 --domain 0 --locator tcp/127.0.0.1:7447 --expect-echo
+.build-zenoh/debug/rcl-soak zenoh image64k  --duration-s 28800 --sample-s 30 --rate-hz 100 --domain 1 --locator tcp/127.0.0.1:7447 --expect-echo
+# (one relay per domain, as above, on /rcl_soak/soak -> /rcl_soak/soak_echo)
+# Fault run: shorter soak + `docker restart ros_jazzy_zenoh` mid-run +
+# --inject-malformed; recovery shows up as recv_zero_run_max > 0 with
+# recv_recovered=true in the RESULT line.
+```
+
+### Axis 3 — correctness
+
+```bash
+# Field-level agreement with a real Jazzy subscriber (echo decodes the fields):
+docker exec ros_jazzy_zenoh bash -c "source /opt/ros/jazzy/setup.bash && \
+  export RMW_IMPLEMENTATION=rmw_zenoh_cpp && ros2 topic echo /rcl_soak/soak --once --no-arr"
+# Type-hash: ros2 topic info <topic> --verbose  (RIHS01 must be accepted)
+# Behavioral parity on rmw_zenoh (all three green on the zenoh variant):
+.build-zenoh/debug/crcl-loopback && .build-zenoh/debug/crcl-svc-loopback && .build-zenoh/debug/crcl-action-loopback
+```
+
+### Recording convention (MZ3)
+
+Zenoh-variant results go on the `transport.zenoh` row (flip its `na` axis
+cells) — never overwrite the corpus rows' W4 cyclonedds values. The resource
+axis stays with the MZ4 iPhone batch.

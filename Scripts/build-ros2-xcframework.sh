@@ -224,7 +224,10 @@ build_host_tools() {
   ignore_unbuildable
   patch_sources
   # shellcheck disable=SC1091
-  source "$BUILD/venv/bin/activate"
+  # The venv is shared from the cyclonedds tree (VENV, rmw-agnostic) — NOT
+  # $BUILD/venv, which does not exist for the zenoh variant on a clean
+  # checkout (the CI zenoh leg builds host tools before any cyclonedds run).
+  source "$VENV/bin/activate"
   colcon --log-base "$HOST/log" build \
     --base-paths "$SRC" \
     --build-base "$HOST/build" --install-base "$HOST/install" \
@@ -273,7 +276,10 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
     git clone https://github.com/eclipse-zenoh/zenoh-cpp.git "$zcpp"
     git -C "$zcpp" checkout "$ZENOHCPP_PIN"
   fi
-  rustup target add "$triple"
+  # zenoh-c pins its Rust toolchain via rust-toolchain.toml (currently
+  # 1.93.0); running `rustup target add` inside the checkout installs the
+  # std for THAT toolchain, not the default one (E0463 otherwise).
+  ( cd "$zc" && rustup target add "$triple" )
   ( cd "$zc" && cargo build --release -j 4 --target "$triple" \
       --features unstable --features transport_serial )
   rm -rf "$out"

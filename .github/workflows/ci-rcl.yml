@@ -1,10 +1,18 @@
 name: CI (RCL)
-# RCL (native rcl + rmw_cyclonedds_cpp) backend CI. Runs on every PR as a
-# required check: the cost driver is cross-compiling the real ROS 2 stack into
-# CRos2Jazzy.xcframework (~20-25 min for the single maccatalyst slice), which
-# is accepted for main-line protection. The mock-based RCL unit tests need no
-# xcframework and already run in ci.yml; this job covers the parts that
-# require the real xcframework + Mac Catalyst.
+# RCL (native rcl) backend CI, both rmw variants:
+#   rcl-build-smoke — rmw_cyclonedds_cpp (CRos2Jazzy.xcframework): required
+#     check; Mac Catalyst umbrella/smoke builds + native execution of
+#     SwiftROS2RCLTests. The cost driver is cross-compiling the real ROS 2
+#     stack (~20-25 min per slice), so the finished xcframework is cached on
+#     the build inputs (Scripts/build-ros2-xcframework.sh + Scripts/ros2/**);
+#     warm runs skip the cross-build entirely.
+#   rcl-zenoh — rmw_zenoh_cpp (CRos2JazzyZenoh.xcframework): builds the zenoh
+#     rmw variant (SWIFT_ROS2_RCL_RMW=zenoh — the dropZenohWire manifest
+#     carve-out + SWIFT_ROS2_RCL_RMW_ZENOH define + Context routing) and
+#     executes SwiftROS2RCLTests natively. Same cache strategy.
+# SwiftROS2RCLTests only exists in the build graph when SWIFT_ROS2_ENABLE_RCL=1
+# (ci.yml's swift test runs never set it), so this workflow is the only place
+# those tests execute.
 on:
   pull_request:
     branches: [main]
@@ -34,17 +42,6 @@ jobs:
           submodules: recursive
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: brew install cmake
-
-      # ament_cmake's package_xml_2_cmake.py runs under the runner's base python
-      # (CMake's FindPython resolves to it, not the script's venv), so the ROS 2
-      # build deps must be importable there too — install them into the runner
-      # python in addition to the venv the build script creates.
-      - name: Install ROS 2 build deps into runner python
-        run: pip install -r Scripts/ros2/requirements.txt
 
       # Regen-drift guard: re-run the marshalling generator and assert the
       # checked-in C + Swift files are byte-identical. Pure generator (Swift
@@ -65,14 +62,53 @@ jobs:
             Sources/SwiftROS2RCL/Generated \
             || { echo "::error::generated RCL marshalling is stale — run Scripts/regen-rcl-marshalling.sh and commit"; exit 1; }
 
+      # The finished xcframework is a deterministic function of the build
+      # script (which pins the ros2 tag + package set) and Scripts/ros2/**
+      # (metas, patches, toolchain, modulemap) — cache it on those inputs so
+      # warm runs skip the ~40-50 min two-slice cross-build. The Xcode version
+      # is spelled into the key: bumping the toolchain invalidates the cache.
+      # restore/save are split so the cache is persisted right after a
+      # successful cross-build, even if a later smoke step fails.
+      - name: Restore CRos2Jazzy.xcframework cache (cyclonedds)
+        id: cache-ros2
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ros2/CRos2Jazzy.xcframework
+          key: ros2-xcfw-cyclonedds-maccatalyst-macosx-xcode26.4.1-${{ hashFiles('Scripts/build-ros2-xcframework.sh', 'Scripts/ros2/**') }}
+
+      # Python + cmake + the ROS 2 build deps only feed the cross-build; skip
+      # them entirely on a cache hit.
+      - uses: actions/setup-python@v5
+        if: steps.cache-ros2.outputs.cache-hit != 'true'
+        with:
+          python-version: "3.11"
+      - if: steps.cache-ros2.outputs.cache-hit != 'true'
+        run: brew install cmake
+
+      # ament_cmake's package_xml_2_cmake.py runs under the runner's base python
+      # (CMake's FindPython resolves to it, not the script's venv), so the ROS 2
+      # build deps must be importable there too — install them into the runner
+      # python in addition to the venv the build script creates.
+      - name: Install ROS 2 build deps into runner python
+        if: steps.cache-ros2.outputs.cache-hit != 'true'
+        run: pip install -r Scripts/ros2/requirements.txt
+
       # Cross-compile rcl + rmw_cyclonedds_cpp + rosidl introspection into a
-      # single-slice (maccatalyst) CRos2Jazzy.xcframework. One slice is enough:
-      # `xcodebuild -create-xcframework` accepts a single library, and every
-      # step below targets Mac Catalyst. Device-slice verification is done
-      # on-device via Conduit, not here. (The full maccatalyst+iphoneos pair is
-      # built by the separate build-ros2-xcframework.yml workflow when needed.)
-      - name: Build CRos2Jazzy.xcframework (maccatalyst)
-        run: Scripts/build-ros2-xcframework.sh maccatalyst
+      # two-slice CRos2Jazzy.xcframework: maccatalyst for the xcodebuild
+      # umbrella/smoke steps below, macosx so `swift test` can execute
+      # SwiftROS2RCLTests natively at the end. Device-slice verification is
+      # done on-device via Conduit, not here. (The full maccatalyst+iphoneos
+      # pair is built by the separate build-ros2-xcframework.yml workflow when
+      # needed.)
+      - name: Build CRos2Jazzy.xcframework (maccatalyst + macosx)
+        if: steps.cache-ros2.outputs.cache-hit != 'true'
+        run: Scripts/build-ros2-xcframework.sh maccatalyst macosx
+      - name: Save CRos2Jazzy.xcframework cache (cyclonedds)
+        if: steps.cache-ros2.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/ros2/CRos2Jazzy.xcframework
+          key: ros2-xcfw-cyclonedds-maccatalyst-macosx-xcode26.4.1-${{ hashFiles('Scripts/build-ros2-xcframework.sh', 'Scripts/ros2/**') }}
 
       # Regression guard for the umbrella build path
       # (SwiftROS2 -> SwiftROS2DDS -> CDDSBridge). This is the path the
@@ -244,3 +280,101 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -q "crcl_action_loopback OK:"
           ! printf '%s\n' "$out" | grep -qi "AddressSanitizer\|runtime error\|detected memory leaks"
+
+      # Execute the RCL unit tests (CrossBackendBytesTests byte parity vs
+      # rmw_serialize, RclDiscoveryEnvTests, RclZenohSessionEnvTests) natively
+      # against the macosx slice. All hermetic: rmw_serialize touches no DDS
+      # participant and the env tests never start rmw. This is the only place
+      # these tests run — the target only exists under SWIFT_ROS2_ENABLE_RCL=1,
+      # which ci.yml's swift test jobs never set.
+      - name: Run SwiftROS2RCLTests (cyclonedds, macOS native)
+        run: swift test --filter SwiftROS2RCLTests
+
+  rcl-zenoh:
+    name: RCL zenoh-rmw build + tests (macOS)
+    # Covers the zenoh rmw variant, which the required check above never
+    # touches: RMW_VARIANT=zenoh cross-build (rmw_zenoh_cpp no-SHM patch set,
+    # fastrtps typesupport pin, zenoh-c Rust staticlib), the dropZenohWire
+    # manifest carve-out (zenoh-pico wire family out of the graph — zenoh-c
+    # and zenoh-pico export the same C API and cannot co-link), the
+    # SWIFT_ROS2_RCL_RMW_ZENOH define, and Context's .zenoh -> rcl routing
+    # (MZ1). One macosx slice is the cheapest meaningful check: `swift build`
+    # compiles the whole carved-out graph natively and `swift test` executes
+    # SwiftROS2RCLTests against the real rmw_zenoh xcframework.
+    runs-on: macos-26
+    timeout-minutes: 180
+    env:
+      SWIFT_ROS2_ENABLE_RCL: "1"
+      SWIFT_ROS2_RCL_RMW: zenoh
+    steps:
+      # No submodules: the regen guard runs only in rcl-build-smoke, the
+      # cross-build does its own clones, and the zenoh-pico vendor tree is
+      # carved out of this variant's build graph anyway.
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_26.4.1.app
+
+      # Same input-keyed cache strategy as rcl-build-smoke (the script embeds
+      # the rmw_zenoh / zenoh-c / zenoh-cpp pins, so they are in the hash).
+      - name: Restore CRos2JazzyZenoh.xcframework cache (zenoh)
+        id: cache-ros2zenoh
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ros2zenoh/CRos2JazzyZenoh.xcframework
+          key: ros2-xcfw-zenoh-macosx-xcode26.4.1-${{ hashFiles('Scripts/build-ros2-xcframework.sh', 'Scripts/ros2/**') }}
+
+      - uses: actions/setup-python@v5
+        if: steps.cache-ros2zenoh.outputs.cache-hit != 'true'
+        with:
+          python-version: "3.11"
+      - if: steps.cache-ros2zenoh.outputs.cache-hit != 'true'
+        run: brew install cmake
+
+      # Same runner-python requirement as rcl-build-smoke: CMake's FindPython
+      # resolves the base python, not the script's venv.
+      - name: Install ROS 2 build deps into runner python
+        if: steps.cache-ros2zenoh.outputs.cache-hit != 'true'
+        run: pip install -r Scripts/ros2/requirements.txt
+
+      # build_zenohc drives cargo to build zenoh-c as a Rust staticlib and
+      # runs `rustup target add` for the slice triple (aarch64-apple-darwin
+      # for the macosx slice — the runner's native target, so no
+      # cross-toolchain is needed). GitHub macOS images ship rustup, but
+      # bootstrap it defensively in case a future image drops it.
+      - name: Ensure Rust toolchain
+        if: steps.cache-ros2zenoh.outputs.cache-hit != 'true'
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain stable
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version && cargo --version
+
+      # Cross-compile rcl + rmw_zenoh_cpp (+ prebuilt zenoh-c) into a
+      # single-slice (macosx) CRos2JazzyZenoh.xcframework.
+      - name: Build CRos2JazzyZenoh.xcframework (macosx)
+        if: steps.cache-ros2zenoh.outputs.cache-hit != 'true'
+        run: RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh macosx
+      - name: Save CRos2JazzyZenoh.xcframework cache (zenoh)
+        if: steps.cache-ros2zenoh.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/ros2zenoh/CRos2JazzyZenoh.xcframework
+          key: ros2-xcfw-zenoh-macosx-xcode26.4.1-${{ hashFiles('Scripts/build-ros2-xcframework.sh', 'Scripts/ros2/**') }}
+
+      # Whole-graph compile check of the carve-out: SwiftROS2Zenoh/CZenohPico
+      # must be absent, the umbrella's .zenoh arm must route through RCL, and
+      # every example/executable must still build without the wire family.
+      - name: Build (zenoh rmw variant, macOS native)
+        run: swift build
+
+      # CrossBackendBytesTests runs byte parity against rmw_zenoh's fastrtps
+      # typesupport serializer here (padding-normalized — Fast-CDR leaves
+      # alignment padding uninitialized); RclZenohSessionEnvTests covers the
+      # MZ1 router plumbing under the real zenoh-variant build graph.
+      - name: Run SwiftROS2RCLTests (zenoh, macOS native)
+        run: swift test --filter SwiftROS2RCLTests

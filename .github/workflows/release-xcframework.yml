@@ -86,12 +86,16 @@ jobs:
       - name: Install ROS 2 build deps into runner python
         run: pip install -r Scripts/ros2/requirements.txt
       # The zenoh variant cross-builds zenoh-c (Rust staticlib) per slice.
+      # This pre-warm targets the runner's default toolchain; build_zenohc
+      # re-adds each target scoped to zenoh-c's pinned toolchain (its
+      # rust-toolchain.toml governs the actual build). No visionOS triples:
+      # the zenoh matrix ships no xros/xrsimulator slices (pnet_sys).
       - name: Install Rust cross targets (zenoh variant)
         if: matrix.rmw_variant == 'zenoh'
         run: |
           rustup target add \
             aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim \
-            aarch64-apple-ios-macabi aarch64-apple-visionos aarch64-apple-visionos-sim
+            aarch64-apple-ios-macabi
       - name: Build ${{ matrix.framework }}.xcframework (all slices)
         env:
           RMW_VARIANT: ${{ matrix.rmw_variant }}
@@ -119,6 +123,12 @@ jobs:
 
   publish-xcframeworks:
     name: Publish (xcframeworks)
+    # Publishing is intentionally gated on BOTH build jobs: once Package.swift
+    # pins the CRos2Jazzy* URLs, a release without the ros2 assets would be
+    # broken for downstream anyway. The cost is that a transient failure in
+    # the long ros2 cross-build blocks the whole release — RECOVERY: re-run
+    # this workflow via workflow_dispatch with the existing tag; it rebuilds
+    # and re-attaches (--clobber) all assets.
     needs: [build-xcframework, build-ros2-xcframework]
     runs-on: ubuntu-24.04
     permissions:

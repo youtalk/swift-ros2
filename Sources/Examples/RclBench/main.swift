@@ -82,7 +82,7 @@ func percentiles(_ samplesNS: [UInt64]) -> (p50: Double, p95: Double, p99: Doubl
 
 func printResult(_ fields: [String: String]) {
     let ordered = [
-        "backend", "mode", "payload", "count", "received", "rate_hz", "msgs_per_s",
+        "backend", "stack", "mode", "payload", "count", "received", "rate_hz", "msgs_per_s",
         "p50us", "p95us", "p99us", "maxus", "wall_s", "bytes",
     ]
     let kv = ordered.compactMap { k in fields[k].map { "\(k)=\($0)" } }
@@ -215,7 +215,8 @@ func runEncode() throws {
     let wall = Double(nowNS() - start) / 1e9
     let p = percentiles(samples)
     printResult([
-        "backend": backend, "mode": mode, "payload": payload, "count": "\(count)",
+        "backend": backend, "stack": HarnessCLI.stack(forBackend: backend),
+        "mode": mode, "payload": payload, "count": "\(count)",
         "msgs_per_s": String(format: "%.0f", Double(count) / wall),
         "p50us": String(format: "%.2f", p.p50), "p95us": String(format: "%.2f", p.p95),
         "p99us": String(format: "%.2f", p.p99), "maxus": String(format: "%.2f", p.max),
@@ -320,7 +321,8 @@ func runPubSub() async throws {
 
     let p = isRoundtrip ? percentiles(collector.snapshot) : percentiles(callNS)
     printResult([
-        "backend": backend, "mode": mode, "payload": payload, "count": "\(count)",
+        "backend": backend, "stack": HarnessCLI.stack(forBackend: backend),
+        "mode": mode, "payload": payload, "count": "\(count)",
         "received": isRoundtrip ? "\(received)" : "-",
         "rate_hz": rateHz > 0 ? "\(rateHz)" : "max",
         "msgs_per_s": String(format: "%.0f", Double(count) / wall),

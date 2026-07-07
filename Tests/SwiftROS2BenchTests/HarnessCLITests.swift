@@ -49,4 +49,23 @@ final class HarnessCLITests: XCTestCase {
             arguments: [], environment: [HarnessCLI.zenohLocatorEnvVar: ""])
         XCTAssertEqual(locator, HarnessCLI.defaultZenohLocator)
     }
+
+    func testLocatorFollowedByAnotherFlagFallsThrough() {
+        // `--locator --duration-s 5` must not eat the flag as the value —
+        // a locator never legitimately starts with `-`.
+        let locator = HarnessCLI.resolveZenohLocator(
+            arguments: ["rcl-soak", "zenoh", "--locator", "--duration-s", "5"],
+            environment: [HarnessCLI.zenohLocatorEnvVar: "tcp/192.168.1.1:7447"])
+        XCTAssertEqual(locator, "tcp/192.168.1.1:7447")
+    }
+
+    func testStackForBackendIsSelfDescribing() {
+        XCTAssertEqual(HarnessCLI.stack(forBackend: "rcl"), "rcl-rmw_cyclonedds")
+        XCTAssertEqual(HarnessCLI.stack(forBackend: "dds"), "wire-cyclonedds")
+        #if canImport(SwiftROS2Zenoh)
+            XCTAssertEqual(HarnessCLI.stack(forBackend: "zenoh"), "wire-zenoh-pico")
+        #else
+            XCTAssertEqual(HarnessCLI.stack(forBackend: "zenoh"), "rcl-rmw_zenoh")
+        #endif
+    }
 }

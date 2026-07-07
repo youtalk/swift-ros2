@@ -223,17 +223,25 @@ func run() async throws {
         }
         let v = SoakAnalysis.analyze(samples)
         var result =
-            "rcl_soak RESULT backend=\(backend) payload=\(payload) duration_s=\(durationS) "
+            "rcl_soak RESULT backend=\(backend) stack=\(HarnessCLI.stack(forBackend: backend)) "
+            + "payload=\(payload) duration_s=\(durationS) "
             + "samples=\(samples.count) published=\(published.value) "
             + "verdict=\(v.leakSuspected ? "LEAK" : "healthy") "
             + "rss_slope_b_per_min=\(Int(v.rssSlopeBytesPerMin.rounded())) "
             + "fd_growth=\(v.fdGrowth) "
             + "tput_degradation_pct=\(String(format: "%.1f", v.throughputDegradationPct))"
         if expectEcho {
-            let echo = SoakAnalysis.echoContinuity(recvPerSecond: recvSeries)
+            // A sample counts as stalled below half the target publish rate —
+            // a strict zero-only check misses partial outages (e.g. a router
+            // restart inside one window), and the first window is excluded
+            // while the relay/subscription match warms up.
+            let stallThreshold = Double(rateHz) * 0.5
+            let echo = SoakAnalysis.echoContinuity(
+                recvPerSecond: recvSeries, stallThreshold: stallThreshold, excludeWarmup: true)
             result +=
                 " received=\(received.value)"
-                + " recv_zero_run_max=\(echo.maxConsecutiveZeroRecvSamples)"
+                + " recv_stall_threshold=\(String(format: "%.0f", stallThreshold))"
+                + " recv_stall_run_max=\(echo.maxConsecutiveZeroRecvSamples)"
                 + " recv_recovered=\(echo.recoveredAfterZeroRecv)"
         }
         print(result)

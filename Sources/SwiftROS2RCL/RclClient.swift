@@ -894,10 +894,32 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         crcl_node_destroy(b.ptr)
     }
 
+    #if SWIFT_ROS2_RCL_RMW_ZENOH
+        /// Fail-loud gate for the zenoh-rmw variant: on a marshal-registry miss
+        /// the cyclonedds variant falls back to route (b) — a raw-CDR writer /
+        /// reader on a sibling **CycloneDDS** participant. Under rmw_zenoh the
+        /// rcl graph speaks Zenoh through a router, so that sibling participant's
+        /// DDS multicast domain has no counterpart: route-(b) traffic would go
+        /// out (or be listened for) where nobody communicates — silent data
+        /// loss, not degraded service. Throw instead. Runs before the node
+        /// handle is inspected, so SwiftROS2RCLTests can assert the gate
+        /// without a live rmw context (`package` for exactly that).
+        package static func requireBundledTypesupport(_ typeName: String) throws {
+            guard crcl_marshal_resolve_typesupport(typeName) == nil else { return }
+            throw TransportError.unsupportedFeature(
+                "type \(typeName) has no bundled typesupport; the raw-CDR fallback is "
+                    + "CycloneDDS-only and unreachable via rmw_zenoh — bundle the type or "
+                    + "use the .dds transport")
+        }
+    #endif
+
     package func createPublisher(
         node: any RclNodeHandle, typeName: String, typeHash: String?, topic: String,
         qos: TransportQoS
     ) throws -> any RclPublisherHandle {
+        #if SWIFT_ROS2_RCL_RMW_ZENOH
+            try Self.requireBundledTypesupport(typeName)
+        #endif
         guard let b = node as? RclNodeBox else {
             throw TransportError.publisherCreationFailed("invalid node handle")
         }
@@ -1057,6 +1079,9 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any RclSubscriptionHandle {
+        #if SWIFT_ROS2_RCL_RMW_ZENOH
+            try Self.requireBundledTypesupport(typeName)
+        #endif
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }

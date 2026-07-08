@@ -23,47 +23,43 @@
         /// empty); the `rcl.count >= wire.count` tolerance is kept for future
         /// types where rmw might align-pad.
         ///
-        /// The cyclonedds variant (introspection typesupport) zeroes alignment
-        /// padding, so the comparison is strict byte equality. The zenoh
-        /// variant serializes through Fast-CDR (fastrtps typesupport), which
-        /// leaves alignment-padding bytes uninitialized — a CDR don't-care —
-        /// so exact byte equality cannot hold at padding positions. There the
+        /// CDR alignment padding is a don't-care region, and BOTH backends can
+        /// leave it uninitialized: the zenoh variant serializes through
+        /// Fast-CDR (fastrtps typesupport), and the cyclonedds variant
+        /// (introspection typesupport) zeroes padding on Apple but leaves
+        /// interior alignment padding as uninitialized heap garbage on Linux.
+        /// So neither backend can be checked with strict byte equality across
+        /// padding positions — parity is instead verified structurally: the
         /// rmw bytes are normalized through the pure-Swift codec first
-        /// (decode → re-encode zeroes the padding) and the normalized form
-        /// must match the wire bytes exactly; any structural divergence
-        /// (field order, alignment, lengths, endianness) still fails because
-        /// the decode misparses and the re-encoded bytes differ.
+        /// (decode → re-encode canonicalizes the padding), and the normalized
+        /// form must match the wire bytes exactly. This is not a weaker check
+        /// than strict equality — any real structural divergence (field
+        /// order, alignment, lengths, endianness) still fails, because a
+        /// misparse either throws, decodes to a different message, or
+        /// re-encodes to different bytes; only the don't-care padding
+        /// positions are given a pass.
         private func assertByteParity<M: CDREncodable & CDRDecodable & Equatable>(
             _ message: M, _ rcl: [UInt8], _ what: String
         ) throws {
             let wire = try wireEncode(message)
             XCTAssertGreaterThanOrEqual(
                 rcl.count, wire.count, "\(what): rmw bytes shorter than wire bytes")
-            #if SWIFT_ROS2_RCL_RMW_ZENOH
-                let decoded = try M(from: CDRDecoder(data: Data(rcl.prefix(wire.count))))
-                XCTAssertEqual(
-                    decoded, message, "\(what): rmw bytes decode to a different message")
-                XCTAssertEqual(
-                    try wireEncode(decoded), wire,
-                    "\(what): normalized rmw bytes diverge from wire bytes")
-                // Bytes beyond wire.count are uninitialized alignment padding
-                // whose VALUES cannot be checked, but their LENGTH can: final
-                // CDR alignment never exceeds 8 bytes. A longer tail means the
-                // serializer emitted real data the decode above never
-                // inspected — fail and show it.
-                let tail = Array(rcl.dropFirst(wire.count))
-                XCTAssertLessThanOrEqual(
-                    tail.count, 8,
-                    "\(what): rmw bytes carry a \(tail.count)-byte tail beyond the wire "
-                        + "encoding — not alignment padding: \(tail.prefix(32))")
-            #else
-                XCTAssertEqual(
-                    Array(rcl.prefix(wire.count)), wire,
-                    "\(what): CDR bytes diverge from rmw_serialize")
-                XCTAssertTrue(
-                    rcl.dropFirst(wire.count).allSatisfy { $0 == 0 },
-                    "\(what): trailing rmw bytes are not zero padding")
-            #endif
+            let decoded = try M(from: CDRDecoder(data: Data(rcl.prefix(wire.count))))
+            XCTAssertEqual(
+                decoded, message, "\(what): rmw bytes decode to a different message")
+            XCTAssertEqual(
+                try wireEncode(decoded), wire,
+                "\(what): normalized rmw bytes diverge from wire bytes")
+            // Bytes beyond wire.count are uninitialized alignment padding
+            // whose VALUES cannot be checked, but their LENGTH can: final
+            // CDR alignment never exceeds 8 bytes. A longer tail means the
+            // serializer emitted real data the decode above never
+            // inspected — fail and show it.
+            let tail = Array(rcl.dropFirst(wire.count))
+            XCTAssertLessThanOrEqual(
+                tail.count, 8,
+                "\(what): rmw bytes carry a \(tail.count)-byte tail beyond the wire "
+                    + "encoding — not alignment padding: \(tail.prefix(32))")
         }
 
         func testImuByteParity() throws {

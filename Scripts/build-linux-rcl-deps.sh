@@ -26,6 +26,14 @@ done
 
 # Libraries the CRclBridge marshal/srv/action registries + rcl stack link
 # against. (Confirmed in MZ5 Task 1 against ROS 2 Jazzy.)
+#
+# Each message package also needs its __rosidl_generator_c library: the
+# marshal registries reference the package's __init/__create/__destroy
+# symbols, which live in generator_c, not typesupport_c. The linker won't
+# pull generator_c transitively via DT_NEEDED, and ld.gold rejects
+# --copy-dt-needed-entries, so Package.swift links both libs explicitly for
+# every message package — this list must verify both to stay the single
+# source of truth for "does the install have everything the link needs."
 REQUIRED_LIBS=(rcl rmw rmw_implementation rcutils rcl_action \
   rosidl_runtime_c rosidl_typesupport_c rosidl_typesupport_introspection_c \
   action_msgs__rosidl_typesupport_c geometry_msgs__rosidl_typesupport_c \
@@ -33,7 +41,13 @@ REQUIRED_LIBS=(rcl rmw rmw_implementation rcutils rcl_action \
   std_srvs__rosidl_typesupport_c tf2_msgs__rosidl_typesupport_c \
   builtin_interfaces__rosidl_typesupport_c rcl_interfaces__rosidl_typesupport_c \
   example_interfaces__rosidl_typesupport_c audio_common_msgs__rosidl_typesupport_c \
-  point_cloud_interfaces__rosidl_typesupport_c)
+  point_cloud_interfaces__rosidl_typesupport_c \
+  action_msgs__rosidl_generator_c geometry_msgs__rosidl_generator_c \
+  sensor_msgs__rosidl_generator_c std_msgs__rosidl_generator_c \
+  std_srvs__rosidl_generator_c tf2_msgs__rosidl_generator_c \
+  builtin_interfaces__rosidl_generator_c rcl_interfaces__rosidl_generator_c \
+  example_interfaces__rosidl_generator_c audio_common_msgs__rosidl_generator_c \
+  point_cloud_interfaces__rosidl_generator_c)
 
 missing=()
 for lib in "${REQUIRED_LIBS[@]}"; do

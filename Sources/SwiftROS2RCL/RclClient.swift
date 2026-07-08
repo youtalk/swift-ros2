@@ -633,6 +633,13 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// Saved CYCLONEDDS_URI to restore on destroyContext. Guarded by `envLock`.
     /// Outer optional = "we saved"; inner = "was previously set".
     private var priorCyclonedDDSURI: String??
+    #if os(Linux)
+        /// Serializes RMW_IMPLEMENTATION reads/writes (process-global env slot).
+        private static let rmwEnvLock = NSLock()
+        /// Saved RMW_IMPLEMENTATION to restore. Outer optional = "we saved";
+        /// inner = "was previously set". Guarded by `rmwEnvLock`.
+        private var priorRmwImplementation: String??
+    #endif
     /// Serializes ZENOH_SESSION_CONFIG_URI / ZENOH_ROUTER_CHECK_ATTEMPTS reads &
     /// writes across all RclClient instances (process-global env slots; same
     /// rationale as `envLock`).
@@ -848,6 +855,32 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         #endif
     }
 
+    #if os(Linux)
+        /// Linux selects the rmw at runtime (process-global RMW_IMPLEMENTATION).
+        /// `.zenoh` ⇒ rmw_zenoh_cpp; `.dds`/`.rcl` ⇒ rmw_cyclonedds_cpp. Saves the
+        /// prior value; pair with restoreRmwImplementationEnv() on teardown or a
+        /// failed create. Always succeeds (setenv on a process env slot).
+        package func applyRmwImplementationEnv(zenoh: Bool) -> Bool {
+            Self.rmwEnvLock.lock()
+            defer { Self.rmwEnvLock.unlock() }
+            priorRmwImplementation = Optional(
+                getenv("RMW_IMPLEMENTATION").map { String(cString: $0) })
+            setenv("RMW_IMPLEMENTATION", zenoh ? "rmw_zenoh_cpp" : "rmw_cyclonedds_cpp", 1)
+            return true
+        }
+
+        /// Restore RMW_IMPLEMENTATION to its pre-apply value (unset what was unset).
+        /// Idempotent: a no-op when nothing was saved.
+        package func restoreRmwImplementationEnv() {
+            Self.rmwEnvLock.lock()
+            defer { Self.rmwEnvLock.unlock() }
+            if let prior = priorRmwImplementation {
+                priorRmwImplementation = nil
+                if let p = prior { setenv("RMW_IMPLEMENTATION", p, 1) } else { unsetenv("RMW_IMPLEMENTATION") }
+            }
+        }
+    #endif
+
     #if SWIFT_ROS2_RCL_RMW_ZENOH
         /// True when the colon-separated ament prefix path registers
         /// rmw_zenoh_cpp in its resource index — i.e. ament_index (and therefore
@@ -928,6 +961,10 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         ctxUnicastPeerAddresses = unicastPeerAddresses
         ctxNetworkInterface = networkInterface
         lock.unlock()
+        #if os(Linux)
+            // Pick the process rmw from the transport (zenoh locator ⇒ rmw_zenoh).
+            let appliedRmwEnv = applyRmwImplementationEnv(zenoh: zenohRouterLocator != nil)
+        #endif
         // DDS variant: export CYCLONEDDS_URI for non-default discovery.
         // Zenoh variant: export ZENOH_SESSION_CONFIG_URI for the router locator.
         // The two are mutually exclusive by build variant; rmw reads its env once
@@ -943,12 +980,18 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         if let locator = zenohRouterLocator {
             guard Self.isEmbeddableZenohLocator(locator) else {
                 if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+                #if os(Linux)
+                    if appliedRmwEnv { restoreRmwImplementationEnv() }
+                #endif
                 throw TransportError.invalidConfiguration(
                     "Zenoh router locator cannot be embedded in the session config "
                         + "(contains a quote, backslash, or control character): \(locator)")
             }
             guard applyZenohSessionEnv(locator: locator) else {
                 if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+                #if os(Linux)
+                    if appliedRmwEnv { restoreRmwImplementationEnv() }
+                #endif
                 throw TransportError.connectionFailed(
                     "failed to write the Zenoh session config for locator \(locator)")
             }
@@ -961,12 +1004,18 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
                 try applyAmentPrefixEnv()
             } catch {
                 if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+                #if os(Linux)
+                    if appliedRmwEnv { restoreRmwImplementationEnv() }
+                #endif
                 restoreZenohSessionEnv()
                 throw error
             }
         #endif
         guard let c = crcl_context_create(Int(domainId)) else {
             if appliedDiscoveryEnv { restoreDiscoveryEnv() }
+            #if os(Linux)
+                if appliedRmwEnv { restoreRmwImplementationEnv() }
+            #endif
             // Idempotent — restores only the slots this context applied (the
             // session-config env when a locator was given; the AMENT prefix in
             // the zenoh variant) and no-ops on the rest.
@@ -989,6 +1038,9 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         if let c { crcl_context_destroy(c) }
         restoreDiscoveryEnv()
         restoreZenohSessionEnv()
+        #if os(Linux)
+            restoreRmwImplementationEnv()
+        #endif
     }
 
     package func createNode(name: String, namespace: String) throws -> any RclNodeHandle {

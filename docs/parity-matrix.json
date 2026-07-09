@@ -932,7 +932,8 @@
         "iOS",
         "Catalyst",
         "macOS",
-        "visionOS"
+        "visionOS",
+        "Linux"
       ],
       "pureSwift" : "supported",
       "rcl" : "supported",
@@ -940,7 +941,7 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "value" : "LAN round-trip over CycloneDDS domain 0 (#140 unicast/interface honoured); stock-ros2 type-hash RIHS01_7d9a00ff... match",
+          "value" : "LAN round-trip over CycloneDDS domain 0 (#140 unicast/interface honoured); stock-ros2 type-hash RIHS01_7d9a00ff... match | MZ5 Linux (ROS 2 Jazzy, system install; no xcframework): .dds/.rcl -> rcl+rmw_cyclonedds_cpp (runtime rmw via RMW_IMPLEMENTATION); crcl-loopback 20/20 messages round-tripped in-process (typed rcl_publish -> rcl_take_serialized -> CDRDecoder)",
           "verdict" : "pass"
         },
         "latency" : {
@@ -965,7 +966,8 @@
         "iOS",
         "Catalyst",
         "macOS",
-        "visionOS"
+        "visionOS",
+        "Linux"
       ],
       "pureSwift" : "supported",
       "rcl" : "supported",
@@ -973,7 +975,7 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "value" : "MZ3: live field-level ros2 topic echo agreement vs real Jazzy host for Imu/PointCloud2(120KB)/CompressedImage(64KB); RIHS01 type hash accepted by the rmw_zenoh graph; crcl-loopback + crcl-svc-loopback (AddTwoInts+params) + crcl-action-loopback (Fibonacci+cancel) green on the zenoh variant. Byte parity: crcl-golden 11/11 (M9); PointCloud2 rmw_serialize byte divergence on the fastrtps typesupport is semantically benign (live echo decodes correctly) — tracked as a documented divergence. environment: Docker rmw_zenohd router on localhost (ros_jazzy_zenoh, jazzy 0.2.9), LAN host down; native-LAN rerun queued",
+          "value" : "MZ3: live field-level ros2 topic echo agreement vs real Jazzy host for Imu/PointCloud2(120KB)/CompressedImage(64KB); RIHS01 type hash accepted by the rmw_zenoh graph; crcl-loopback + crcl-svc-loopback (AddTwoInts+params) + crcl-action-loopback (Fibonacci+cancel) green on the zenoh variant. Byte parity: crcl-golden 11/11 (M9); PointCloud2 rmw_serialize byte divergence on the fastrtps typesupport is semantically benign (live echo decodes correctly) — tracked as a documented divergence. environment: Docker rmw_zenohd router on localhost (ros_jazzy_zenoh, jazzy 0.2.9), LAN host down; native-LAN rerun queued | MZ5 Linux (ROS 2 Jazzy, system install; no xcframework): .zenoh -> rcl+rmw_zenoh_cpp (runtime rmw via RMW_IMPLEMENTATION); talker->listener 10/10 on /chatter via live rmw_zenohd (tcp/127.0.0.1:7447); timestamping fix (#160) present so no AdvancedPublisher SIGABRT",
           "verdict" : "pass"
         },
         "latency" : {
@@ -1157,13 +1159,13 @@
     },
     {
       "apiSymbol" : "swift build (Linux)",
-      "evidence" : "pure-Swift wire ships + is CI-tested on Ubuntu 22.04/24.04 x86_64+aarch64; RCL backend is Apple-only today — MZ5 (Linux Zenoh-RCL via system ROS 2) in progress on feat/rcl-linux-zenoh.",
+      "evidence" : "pure-Swift wire ships + is CI-tested on Ubuntu 22.04/24.04 x86_64+aarch64. MZ5 landed the Linux RCL backend via a system ROS 2 install (ament prefix, not an xcframework): .zenoh -> rcl+rmw_zenoh_cpp and .dds/.rcl -> rcl+rmw_cyclonedds_cpp, with the rmw selected per-process at runtime via RMW_IMPLEMENTATION. Verified on Ubuntu 24.04 / ROS 2 Jazzy: crcl-loopback 20/20 in-process over cyclonedds; talker->listener 10/10 over a live rmw_zenohd router; SwiftROS2RCLTests green in the ci-rcl Linux leg. One process serves .zenoh OR .dds (the rmw is process-global) — switching transports needs separate processes. rcl=partial: the transport layer is verified end-to-end; the full per-type/service/action Linux capability matrix is not yet individually run.",
       "id" : "platform.linux",
       "platforms" : [
         "Linux"
       ],
       "pureSwift" : "supported",
-      "rcl" : "missing",
+      "rcl" : "partial",
       "severity" : "minor",
       "typeApplicability" : "n-a",
       "verification" : {

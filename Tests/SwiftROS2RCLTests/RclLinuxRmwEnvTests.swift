@@ -13,7 +13,7 @@
             }
             unsetenv("RMW_IMPLEMENTATION")
             let c = RclClient()
-            XCTAssertTrue(c.applyRmwImplementationEnv(zenoh: true))
+            c.applyRmwImplementationEnv(zenoh: true)
             XCTAssertEqual(getenv("RMW_IMPLEMENTATION").map { String(cString: $0) }, "rmw_zenoh_cpp")
             c.restoreRmwImplementationEnv()
             XCTAssertNil(getenv("RMW_IMPLEMENTATION").map { String(cString: $0) })
@@ -26,9 +26,36 @@
             }
             unsetenv("RMW_IMPLEMENTATION")
             let c = RclClient()
-            XCTAssertTrue(c.applyRmwImplementationEnv(zenoh: false))
+            c.applyRmwImplementationEnv(zenoh: false)
             XCTAssertEqual(getenv("RMW_IMPLEMENTATION").map { String(cString: $0) }, "rmw_cyclonedds_cpp")
             c.restoreRmwImplementationEnv()
+            XCTAssertNil(
+                getenv("RMW_IMPLEMENTATION").map { String(cString: $0) },
+                "restore must unset RMW_IMPLEMENTATION when nothing was set before apply")
+        }
+
+        /// Two overlapping contexts (here on two RclClient instances) must, on the
+        /// last teardown, restore RMW_IMPLEMENTATION to the value present BEFORE
+        /// the first apply — never to an intermediate value a nested apply saw.
+        func testOverlappingContextsRestoreToOriginalValue() {
+            let outer = getenv("RMW_IMPLEMENTATION").map { String(cString: $0) }
+            defer {
+                if let p = outer { setenv("RMW_IMPLEMENTATION", p, 1) } else { unsetenv("RMW_IMPLEMENTATION") }
+            }
+            setenv("RMW_IMPLEMENTATION", "rmw_original", 1)
+            let a = RclClient()
+            let b = RclClient()
+            a.applyRmwImplementationEnv(zenoh: true)  // rmw_zenoh_cpp
+            b.applyRmwImplementationEnv(zenoh: false)  // rmw_cyclonedds_cpp
+            XCTAssertEqual(getenv("RMW_IMPLEMENTATION").map { String(cString: $0) }, "rmw_cyclonedds_cpp")
+            a.restoreRmwImplementationEnv()  // inner ref drops; slot must NOT be restored yet
+            XCTAssertEqual(
+                getenv("RMW_IMPLEMENTATION").map { String(cString: $0) }, "rmw_cyclonedds_cpp",
+                "a non-final restore must not touch the env slot")
+            b.restoreRmwImplementationEnv()  // last ref drops; restore the original
+            XCTAssertEqual(
+                getenv("RMW_IMPLEMENTATION").map { String(cString: $0) }, "rmw_original",
+                "the final restore must return the pre-apply value, not a nested one")
         }
     }
 #endif

@@ -345,6 +345,7 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     private(set) var contextCreated = false
     private(set) var contextDestroyed = false
     private(set) var lastDomainId: Int32 = -1
+    private(set) var lastTransportType: TransportType?
     private(set) var lastUnicastPeerAddresses: [String] = []
     private(set) var lastNetworkInterface: String?
     /// Records the zenoh router locator passed to createContext (wrapped in Optional
@@ -412,12 +413,13 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
     var onSendRequest: ((Int64, Data) -> Void)?
 
     func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
-        zenohRouterLocator: String?
+        domainId: Int32, transportType: TransportType, unicastPeerAddresses: [String],
+        networkInterface: String?, zenohRouterLocator: String?
     ) throws {
         sync {
             contextCreated = true
             lastDomainId = domainId
+            lastTransportType = transportType
             lastUnicastPeerAddresses = unicastPeerAddresses
             lastNetworkInterface = networkInterface
             recordedZenohLocator = Optional(zenohRouterLocator)

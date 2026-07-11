@@ -58,6 +58,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         // locator on the `.zenoh` path. Only one is set per build variant.
         try client.createContext(
             domainId: Int32(config.domainId),
+            transportType: config.type,
             unicastPeerAddresses: config.ddsUnicastPeers.map { $0.address },
             networkInterface: config.ddsNetworkInterface,
             zenohRouterLocator: config.type == .zenoh ? config.zenohLocator : nil)

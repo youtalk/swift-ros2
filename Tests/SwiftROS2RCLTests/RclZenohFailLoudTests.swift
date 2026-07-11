@@ -199,8 +199,8 @@
             let client = RclClient()
             do {
                 try client.createContext(
-                    domainId: 0, unicastPeerAddresses: [], networkInterface: nil,
-                    zenohRouterLocator: "tcp/127.0.0.1:7447")
+                    domainId: 0, transportType: .zenoh, unicastPeerAddresses: [],
+                    networkInterface: nil, zenohRouterLocator: "tcp/127.0.0.1:7447")
                 client.destroyContext()
             } catch {
                 let description = String(describing: error)

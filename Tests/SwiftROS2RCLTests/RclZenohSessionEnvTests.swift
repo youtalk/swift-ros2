@@ -17,8 +17,8 @@
         private(set) var recordedZenohLocator: String??
 
         func createContext(
-            domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
-            zenohRouterLocator: String?
+            domainId: Int32, transportType: TransportType, unicastPeerAddresses: [String],
+            networkInterface: String?, zenohRouterLocator: String?
         ) throws {
             recordedZenohLocator = Optional(zenohRouterLocator)
         }
@@ -198,8 +198,8 @@
             let before = getenv("ZENOH_SESSION_CONFIG_URI").map { String(cString: $0) }
             XCTAssertThrowsError(
                 try RclClient().createContext(
-                    domainId: 0, unicastPeerAddresses: [], networkInterface: nil,
-                    zenohRouterLocator: "tcp/host:7447\"]}injected")
+                    domainId: 0, transportType: .zenoh, unicastPeerAddresses: [],
+                    networkInterface: nil, zenohRouterLocator: "tcp/host:7447\"]}injected")
             ) { error in
                 guard case TransportError.invalidConfiguration = error else {
                     return XCTFail("expected invalidConfiguration, got \(error)")

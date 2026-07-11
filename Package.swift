@@ -86,7 +86,11 @@ let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.
 // local path-based binaryTarget for the not-yet-released CRos2Jazzy
 // xcframework (built by Scripts/build-ros2-xcframework.sh) plus an rcl_init
 // smoke executable. Replaced by a URL+checksum binaryTarget in M3.
-let enableRcl = Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1" && targetOS == "apple"
+// RCL is provisioned as a prebuilt xcframework on Apple and from a system ROS 2
+// install (ament prefix) on Linux (MZ5). Windows/Android have no RCL path yet.
+let enableRcl =
+    Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1"
+    && (targetOS == "apple" || targetOS == "linux")
 
 // SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the RCL binary
 // target: "cyclonedds" (default) -> build/ros2/CRos2Jazzy.xcframework, or
@@ -110,6 +114,95 @@ let rclRmwVariant: String = {
 // graph; the umbrella's `.zenoh` transport arm compiles out via
 // `#if canImport(SwiftROS2Zenoh)` and throws unsupportedFeature at runtime.
 let dropZenohWire = enableRcl && rclRmwVariant == "zenoh"
+
+// Linux consumes system ROS 2 via a COLON-SEPARATED, ament-overlay-style prefix
+// list (ROS2_RCL_PREFIX, e.g. "$HOME/ros2_ws/install:/opt/ros/jazzy"; overlay
+// first, base distro last). When unset it defaults to a single
+// /opt/ros/${ROS_DISTRO:-jazzy}. rcl is an ament/CMake package with NO
+// pkg-config, so — like the Windows CYCLONEDDS_DIR path — the manifest injects
+// -I/-L/-l flags itself rather than deferring to pkg-config. Each ROS 2 package
+// installs its headers under an isolated include/<pkg>/ dir, so add one -I per
+// include subdir present in every prefix. The -l set is kept in lockstep with
+// Scripts/build-linux-rcl-deps.sh's REQUIRED_LIBS (the single source of truth
+// for "which ROS 2 libs must resolve").
+let rclLinuxPrefixes: [String] = {
+    let raw =
+        Context.environment["ROS2_RCL_PREFIX"].flatMap { $0.isEmpty ? nil : $0 }
+        ?? "/opt/ros/\(Context.environment["ROS_DISTRO"] ?? "jazzy")"
+    return raw.split(separator: ":").map(String.init).filter { !$0.isEmpty }
+}()
+let rclLinuxIncludeFlags: [String] = {
+    guard enableRcl && isLinuxBuild else { return [] }
+    var flags: [String] = []
+    for prefix in rclLinuxPrefixes {
+        let inc = "\(prefix)/include"
+        flags.append("-I\(inc)")
+        let subdirs = (try? FileManager.default.contentsOfDirectory(atPath: inc)) ?? []
+        for d in subdirs.sorted() where !d.hasPrefix(".") {
+            flags.append("-I\(inc)/\(d)")
+        }
+    }
+    return flags
+}()
+let rclLinuxLinkerFlags: [String] = {
+    guard enableRcl && isLinuxBuild else { return [] }
+    // rcl stack + per-package typesupport. Kept identical to
+    // Scripts/build-linux-rcl-deps.sh REQUIRED_LIBS (the presence check).
+    let typesupportLibs = [
+        "rcl", "rmw", "rmw_implementation", "rcutils", "rcl_action",
+        "rosidl_runtime_c", "rosidl_typesupport_c", "rosidl_typesupport_introspection_c",
+        "action_msgs__rosidl_typesupport_c", "geometry_msgs__rosidl_typesupport_c",
+        "sensor_msgs__rosidl_typesupport_c", "std_msgs__rosidl_typesupport_c",
+        "std_srvs__rosidl_typesupport_c", "tf2_msgs__rosidl_typesupport_c",
+        "builtin_interfaces__rosidl_typesupport_c", "rcl_interfaces__rosidl_typesupport_c",
+        "example_interfaces__rosidl_typesupport_c", "audio_common_msgs__rosidl_typesupport_c",
+        "point_cloud_interfaces__rosidl_typesupport_c",
+    ]
+    // Each <pkg>__rosidl_typesupport_c.so carries only a DT_NEEDED on its
+    // sibling <pkg>__rosidl_generator_c.so, which defines the message/srv
+    // __create/__init/__destroy functions the marshal + srv/action registries
+    // call directly. Modern linkers default to --no-copy-dt-needed-entries, so
+    // an indirectly-NEEDED library is not used to resolve references from our
+    // own objects, and ld.gold (this toolchain's linker) rejects
+    // --copy-dt-needed-entries outright — so the generator_c libs must be named
+    // explicitly. (On Apple the single merged xcframework archive sidesteps
+    // this: every symbol is already inside one .a.)
+    let generatorLibs = [
+        "action_msgs", "geometry_msgs", "sensor_msgs", "std_msgs", "std_srvs",
+        "tf2_msgs", "builtin_interfaces", "rcl_interfaces", "example_interfaces",
+        "audio_common_msgs", "point_cloud_interfaces",
+    ].map { "\($0)__rosidl_generator_c" }
+    // The ROS libs live outside the default loader path, so carry an rpath per
+    // prefix for the final executable link. SPM forwards linker unsafeFlags
+    // verbatim to the compiler driver, which understands -L/-l directly but not
+    // the `-Wl,` passthrough — so express rpath with the `-Xlinker` idiom.
+    var flags: [String] = []
+    for prefix in rclLinuxPrefixes {
+        flags.append("-L\(prefix)/lib")
+        flags.append(contentsOf: ["-Xlinker", "-rpath", "-Xlinker", "\(prefix)/lib"])
+    }
+    flags.append(contentsOf: (typesupportLibs + generatorLibs).map { "-l\($0)" })
+    // C++ runtime. libswiftCore.so (which the SPM link driver pulls into every
+    // executable, even the C-only rcl-smoke / crcl-smoke) has a DT_NEEDED on
+    // libstdc++.so.6, and the dlopen'd rmw C++ impl needs it at runtime.
+    // `-lstdc++` requires a libstdc++.so dev symlink that clang's selected GCC
+    // dir does not provide on this toolchain (only libstdc++.so.6 ships), so
+    // link the versioned runtime by exact filename — it resolves from the
+    // standard multiarch dir regardless of which GCC clang selects.
+    flags.append("-l:libstdc++.so.6")
+    return flags
+}()
+// Swift targets that `import CRclBridge` (directly, or transitively via
+// SwiftROS2RCL / the SwiftROS2 umbrella) must build the CRclBridge Clang
+// module, whose PUBLIC headers `#include <rcl/...>` / <rosidl_runtime_c/...>.
+// C-target cSettings do not propagate to that module build (on Apple the
+// xcframework's header path does the job; the Linux systemLibrary has no
+// pkg-config to propagate absolute paths), so forward the same include set as
+// `-Xcc -I` on those Swift targets.
+let rclLinuxSwiftSettings: [SwiftSetting] =
+    (enableRcl && isLinuxBuild)
+    ? [.unsafeFlags(rclLinuxIncludeFlags.flatMap { ["-Xcc", $0] })]
+    : []
 
 // Non-unix zenoh-pico platform backends shared between the Linux and
 // Android arms — both use the unix backend inside `src/system/unix`.
@@ -603,34 +696,59 @@ if canBuildDDS {
 // executable, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple only).
 //
 if enableRcl {
-    targets.append(
-        .binaryTarget(
-            name: "CRos2Jazzy",
-            path: rclRmwVariant == "zenoh"
-                ? "build/ros2zenoh/CRos2JazzyZenoh.xcframework"
-                : "build/ros2/CRos2Jazzy.xcframework"
-        ))
+    // Apple: prebuilt merged xcframework. Linux: the system ROS 2 install
+    // (ament prefix). rcl has no pkg-config, so — unlike CCycloneDDS on Linux —
+    // no `pkgConfig:` is passed; the -I/-L/-l come from the CRclBridge cSettings
+    // + the per-target linker flags below (the same shape as the Windows
+    // CCycloneDDS systemLibrary path). Nothing `import`s the CRos2Jazzy module
+    // from Swift, so on Linux the systemLibrary's shim.h/modulemap is
+    // declared-but-never-compiled — CRclBridge reaches rcl through plain
+    // `#include` resolved by its own -I flags.
+    if isLinuxBuild {
+        targets.append(
+            .systemLibrary(name: "CRos2Jazzy", path: "Sources/CRos2Jazzy"))
+    } else {
+        targets.append(
+            .binaryTarget(
+                name: "CRos2Jazzy",
+                path: rclRmwVariant == "zenoh"
+                    ? "build/ros2zenoh/CRos2JazzyZenoh.xcframework"
+                    : "build/ros2/CRos2Jazzy.xcframework"
+            ))
+    }
     // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++, so every target
-    // that links the merged archive needs the C++ runtime. The zenoh variant
-    // additionally bundles zenoh-c's Rust staticlib, whose rustls/ring TLS,
-    // network monitoring, and serialport (transport_serial feature) code
-    // require these system frameworks at final link. Applied to CRclBridge
-    // AND to targets that depend on CRos2Jazzy directly (rcl-smoke).
+    // that links the merged archive needs the C++ runtime. On Apple that is
+    // libc++ (`-lc++`); on Linux the system ROS 2 libs are built against
+    // libstdc++ (linked via `-l:libstdc++.so.6` inside rclLinuxLinkerFlags),
+    // and the ament prefix -L/-l/-rpath flags ride along so the final
+    // executable link resolves rcl and friends. Every RCL executable/test below
+    // therefore uses `isLinuxBuild ? rclLinuxLinkAll : <Apple settings>`. The
+    // Apple zenoh variant additionally bundles zenoh-c's Rust staticlib, whose
+    // rustls/ring TLS, network monitoring, and serialport (transport_serial
+    // feature) code require these system frameworks at final link.
+    let rclLinuxLinkAll: [LinkerSetting] = [.unsafeFlags(rclLinuxLinkerFlags)]
+    // Applied to CRclBridge AND to targets that depend on CRos2Jazzy directly
+    // (rcl-smoke).
     let rclBridgeLinkerSettings: [LinkerSetting] =
-        rclRmwVariant == "zenoh"
-        ? [
-            .linkedLibrary("c++"),
-            .linkedFramework("Security"),
-            .linkedFramework("SystemConfiguration"),
-            .linkedFramework("CoreFoundation"),
-            .linkedFramework("IOKit"),
-        ]
-        : [.linkedLibrary("c++")]
+        isLinuxBuild
+        ? rclLinuxLinkAll
+        : (rclRmwVariant == "zenoh"
+            ? [
+                .linkedLibrary("c++"),
+                .linkedFramework("Security"),
+                .linkedFramework("SystemConfiguration"),
+                .linkedFramework("CoreFoundation"),
+                .linkedFramework("IOKit"),
+            ]
+            : [.linkedLibrary("c++")])
     targets.append(
         .executableTarget(
             name: "rcl-smoke",
             dependencies: ["CRos2Jazzy"],
             path: "Sources/Examples/RclSmoke",
+            // C source that `#include <rcl/rcl.h>` directly; cSettings do not
+            // propagate from CRos2Jazzy (no pkg-config), so inject -I here too.
+            cSettings: isLinuxBuild ? [.unsafeFlags(rclLinuxIncludeFlags)] : [],
             linkerSettings: rclBridgeLinkerSettings
         ))
     products.append(.executable(name: "rcl-smoke", targets: ["rcl-smoke"]))
@@ -644,6 +762,10 @@ if enableRcl {
                 "rcl_action_server.c", "rcl_action_client.c", "Generated",
             ],
             publicHeadersPath: "include",
+            // On Linux the rcl / rmw / rosidl headers CRclBridge `#include`s
+            // resolve from the ament prefix via these -I flags (no pkg-config
+            // for rcl). On Apple the xcframework supplies them, so no cSettings.
+            cSettings: isLinuxBuild ? [.unsafeFlags(rclLinuxIncludeFlags)] : [],
             linkerSettings: rclBridgeLinkerSettings
         ))
     targets.append(
@@ -651,7 +773,11 @@ if enableRcl {
             name: "crcl-smoke",
             dependencies: ["CRclBridge"],
             path: "Sources/Examples/CrclSmoke",
-            linkerSettings: [.linkedLibrary("c++")]
+            // C source that `#include "rcl_bridge.h"` (which transitively pulls
+            // rosidl headers); cSettings do not propagate from CRclBridge, so
+            // inject -I here too.
+            cSettings: isLinuxBuild ? [.unsafeFlags(rclLinuxIncludeFlags)] : [],
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-smoke", targets: ["crcl-smoke"]))
     targets.append(
@@ -659,7 +785,7 @@ if enableRcl {
             name: "crcl-golden",
             dependencies: ["SwiftROS2", "SwiftROS2RCL"],
             path: "Sources/Examples/CrclGolden",
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-golden", targets: ["crcl-golden"]))
     targets.append(
@@ -667,7 +793,7 @@ if enableRcl {
             name: "crcl-loopback",
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/CrclLoopback",
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-loopback", targets: ["crcl-loopback"]))
     targets.append(
@@ -675,7 +801,7 @@ if enableRcl {
             name: "crcl-nonbundled-loopback",
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/CrclNonbundledLoopback",
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(
         .executable(name: "crcl-nonbundled-loopback", targets: ["crcl-nonbundled-loopback"]))
@@ -684,7 +810,7 @@ if enableRcl {
             name: "crcl-nonbundled-sub-loopback",
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/CrclNonbundledSubLoopback",
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(
         .executable(
@@ -694,7 +820,7 @@ if enableRcl {
             name: "crcl-svc-loopback",
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/CrclSvcLoopback",
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-svc-loopback", targets: ["crcl-svc-loopback"]))
     targets.append(
@@ -702,7 +828,7 @@ if enableRcl {
             name: "crcl-action-loopback",
             dependencies: ["SwiftROS2"],
             path: "Sources/Examples/CrclActionLoopback",
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "crcl-action-loopback", targets: ["crcl-action-loopback"]))
     targets.append(
@@ -710,22 +836,28 @@ if enableRcl {
             name: "rcl-bench",
             dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench"],
             path: "Sources/Examples/RclBench",
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
     products.append(.executable(name: "rcl-bench", targets: ["rcl-bench"]))
-    targets.append(
-        .executableTarget(
-            name: "rcl-soak",
-            dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench"],
-            path: "Sources/Examples/RclSoak",
-            linkerSettings: [.linkedLibrary("c++")]
-        ))
-    products.append(.executable(name: "rcl-soak", targets: ["rcl-soak"]))
+    // rcl-soak samples RSS via Mach (`mach_task_basic_info` / `task_info` /
+    // `mach_task_self_`) so its source is Apple-only; keep it out of the Linux
+    // RCL graph (rcl-bench above is portable and stays). A Linux soak harness
+    // would need a procfs/getrusage rewrite — out of scope for provisioning.
+    if !isLinuxBuild {
+        targets.append(
+            .executableTarget(
+                name: "rcl-soak",
+                dependencies: ["SwiftROS2", "SwiftROS2RCL", "SwiftROS2Bench"],
+                path: "Sources/Examples/RclSoak",
+                linkerSettings: [.linkedLibrary("c++")]
+            ))
+        products.append(.executable(name: "rcl-soak", targets: ["rcl-soak"]))
+    }
     // The rmw-variant define must reach SwiftROS2RCL itself, not just the
     // umbrella: RclClient's zenoh-only behavior (the route-(b) fail-loud gate
     // and the AMENT_PREFIX_PATH synthesis) lives in this target and would be
     // dead code behind an undefined `#if SWIFT_ROS2_RCL_RMW_ZENOH` otherwise.
-    var rclSwiftSettings: [SwiftSetting] = []
+    var rclSwiftSettings: [SwiftSetting] = rclLinuxSwiftSettings
     if rclRmwVariant == "zenoh" {
         rclSwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
     }
@@ -752,7 +884,7 @@ if enableRcl {
             ],
             path: "Tests/SwiftROS2RCLTests",
             swiftSettings: rclTestsSwiftSettings,
-            linkerSettings: [.linkedLibrary("c++")]
+            linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]
         ))
 }
 

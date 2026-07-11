@@ -178,7 +178,12 @@ extension ROS2Context {
     static func makeDefaultSession(for config: TransportConfig) throws -> any TransportSession {
         switch config.type {
         case .zenoh:
-            #if canImport(SwiftROS2Zenoh)
+            #if os(Linux) && SWIFT_ROS2_RCL
+                // Linux RCL: rmw selected at runtime (RMW_IMPLEMENTATION=rmw_zenoh_cpp,
+                // set by RclClient from the zenoh locator). Wire zenoh-pico is still
+                // linked (R1 = no collision) but RCL is preferred on Linux.
+                return RclTransportSession(client: RclClient())
+            #elseif canImport(SwiftROS2Zenoh)
                 // Wire path (zenoh-pico) — every build except the zenoh-rmw variant.
                 return ZenohTransportSession(client: ZenohClient())
             #elseif SWIFT_ROS2_RCL_RMW_ZENOH
@@ -192,7 +197,12 @@ extension ROS2Context {
                         + "(SWIFT_ROS2_RCL_RMW=zenoh) — use .rcl, or build without the variant")
             #endif
         case .dds:
-            return DDSTransportSession(client: DDSClient())
+            #if os(Linux) && SWIFT_ROS2_RCL
+                // Linux RCL: .dds resolves to rcl + rmw_cyclonedds_cpp (runtime rmw).
+                return RclTransportSession(client: RclClient())
+            #else
+                return DDSTransportSession(client: DDSClient())
+            #endif
         case .rcl:
             #if SWIFT_ROS2_RCL_RMW_ZENOH
                 // In the zenoh-rmw build the rcl stack speaks rmw_zenoh: a `.rcl`
@@ -207,7 +217,8 @@ extension ROS2Context {
                 return RclTransportSession(client: RclClient())
             #else
                 throw TransportError.unsupportedFeature(
-                    "rcl backend not built — set SWIFT_ROS2_ENABLE_RCL=1 and rebuild on an Apple platform")
+                    "rcl backend not built — set SWIFT_ROS2_ENABLE_RCL=1 and rebuild "
+                        + "on Apple (xcframework) or Linux (system ROS 2)")
             #endif
         }
     }

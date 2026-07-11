@@ -23,23 +23,32 @@
         /// empty); the `rcl.count >= wire.count` tolerance is kept for future
         /// types where rmw might align-pad.
         ///
-        /// The cyclonedds variant (introspection typesupport) zeroes alignment
-        /// padding, so the comparison is strict byte equality. The zenoh
-        /// variant serializes through Fast-CDR (fastrtps typesupport), which
-        /// leaves alignment-padding bytes uninitialized — a CDR don't-care —
-        /// so exact byte equality cannot hold at padding positions. There the
-        /// rmw bytes are normalized through the pure-Swift codec first
-        /// (decode → re-encode zeroes the padding) and the normalized form
-        /// must match the wire bytes exactly; any structural divergence
-        /// (field order, alignment, lengths, endianness) still fails because
-        /// the decode misparses and the re-encoded bytes differ.
+        /// Two byte-parity regimes, chosen by what the backend guarantees about
+        /// alignment padding — a CDR don't-care region:
+        ///
+        /// - Apple + cyclonedds (introspection typesupport) zero-fills padding,
+        ///   so the check is STRICT: exact prefix equality plus an all-zero tail.
+        ///   This is the tightest guard and must not be relaxed on the platform
+        ///   that can honor it — it catches any divergence in a padding byte too.
+        /// - The zenoh variant (Fast-CDR / fastrtps typesupport) and cyclonedds
+        ///   ON LINUX leave interior alignment padding as uninitialized heap
+        ///   garbage, so strict equality cannot hold at padding positions. There
+        ///   parity is verified STRUCTURALLY: normalize the rmw bytes through the
+        ///   pure-Swift codec (decode → re-encode canonicalizes the padding) and
+        ///   require the normalized form to equal the wire bytes. That is not a
+        ///   weaker check than strict equality for real divergence — any field
+        ///   order / alignment / length / endianness mismatch still fails,
+        ///   because a misparse either throws, decodes to a different message,
+        ///   or re-encodes to different bytes; only the don't-care padding
+        ///   positions are given a pass.
         private func assertByteParity<M: CDREncodable & CDRDecodable & Equatable>(
             _ message: M, _ rcl: [UInt8], _ what: String
         ) throws {
             let wire = try wireEncode(message)
             XCTAssertGreaterThanOrEqual(
                 rcl.count, wire.count, "\(what): rmw bytes shorter than wire bytes")
-            #if SWIFT_ROS2_RCL_RMW_ZENOH
+            #if os(Linux) || SWIFT_ROS2_RCL_RMW_ZENOH
+                // Tolerant (uninitialized padding): structural normalization.
                 let decoded = try M(from: CDRDecoder(data: Data(rcl.prefix(wire.count))))
                 XCTAssertEqual(
                     decoded, message, "\(what): rmw bytes decode to a different message")
@@ -57,6 +66,7 @@
                     "\(what): rmw bytes carry a \(tail.count)-byte tail beyond the wire "
                         + "encoding — not alignment padding: \(tail.prefix(32))")
             #else
+                // Strict (Apple cyclonedds zero-fills padding): exact bytes.
                 XCTAssertEqual(
                     Array(rcl.prefix(wire.count)), wire,
                     "\(what): CDR bytes diverge from rmw_serialize")

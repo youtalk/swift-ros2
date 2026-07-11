@@ -115,9 +115,14 @@ package protocol RclClientProtocol: Sendable {
     /// Whether the native rcl stack is linked and usable.
     var isAvailable: Bool { get }
 
+    /// `transportType` selects the backend rmw where that is a runtime choice
+    /// (Linux: `.zenoh` ⇒ rmw_zenoh_cpp, `.dds`/`.rcl` ⇒ rmw_cyclonedds_cpp).
+    /// It is authoritative for that decision — do NOT re-infer the transport
+    /// from `zenohRouterLocator`, which is nil for a locator-less (multicast /
+    /// peer-to-peer) zenoh session and would then mis-select the rmw.
     func createContext(
-        domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?,
-        zenohRouterLocator: String?) throws
+        domainId: Int32, transportType: TransportType, unicastPeerAddresses: [String],
+        networkInterface: String?, zenohRouterLocator: String?) throws
     func destroyContext()
 
     func createNode(name: String, namespace: String) throws -> any RclNodeHandle
@@ -276,14 +281,14 @@ extension RclClientProtocol {
         domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?
     ) throws {
         try createContext(
-            domainId: domainId, unicastPeerAddresses: unicastPeerAddresses,
+            domainId: domainId, transportType: .rcl, unicastPeerAddresses: unicastPeerAddresses,
             networkInterface: networkInterface, zenohRouterLocator: nil)
     }
 
     /// Back-compat: multicast discovery (no peers / no pinned interface).
     func createContext(domainId: Int32) throws {
         try createContext(
-            domainId: domainId, unicastPeerAddresses: [], networkInterface: nil,
-            zenohRouterLocator: nil)
+            domainId: domainId, transportType: .rcl, unicastPeerAddresses: [],
+            networkInterface: nil, zenohRouterLocator: nil)
     }
 }

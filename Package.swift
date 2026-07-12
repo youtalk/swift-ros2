@@ -81,13 +81,16 @@ let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir !=
 
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.2.0"
 
-// M0-only (native-rcl spike): opt-in via SWIFT_ROS2_ENABLE_RCL=1 so default
-// consumers are unaffected. When set on an Apple build, the manifest adds a
-// local path-based binaryTarget for the not-yet-released CRos2Jazzy
-// xcframework (built by Scripts/build-ros2-xcframework.sh) plus an rcl_init
-// smoke executable. Replaced by a URL+checksum binaryTarget in M3.
-// RCL is provisioned as a prebuilt xcframework on Apple and from a system ROS 2
-// install (ament prefix) on Linux (MZ5). Windows/Android have no RCL path yet.
+// Native-rcl backend: opt-in via SWIFT_ROS2_ENABLE_RCL=1 so default consumers
+// are unaffected. When set, the manifest adds the full RCL family — CRos2Jazzy,
+// CRclBridge, SwiftROS2RCL, plus the smoke / loopback / bench executables and
+// tests (see the `if enableRcl` block near the bottom of this manifest).
+// Apple consumes a local prebuilt xcframework built by
+// Scripts/build-ros2-xcframework.sh and selected by `rclRmwVariant` below;
+// release-xcframework.yml attaches the CRos2Jazzy(.Zenoh) zips to release tags,
+// and a URL+checksum binaryTarget pin arrives with the next release tag. Linux
+// consumes the system ROS 2 install (ament prefix, see ROS2_RCL_PREFIX below).
+// Windows/Android have no RCL path yet.
 let enableRcl =
     Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1"
     && (targetOS == "apple" || targetOS == "linux")
@@ -697,8 +700,8 @@ if canBuildDDS {
     ])
 }
 
-// M0-only native-rcl spike: local CRos2Jazzy xcframework + rcl_init smoke
-// executable, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple only).
+// Native-rcl backend family, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple +
+// Linux; see the `enableRcl` block comment near the top of this manifest).
 //
 if enableRcl {
     // Apple: prebuilt merged xcframework. Linux: the system ROS 2 install

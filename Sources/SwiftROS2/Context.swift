@@ -20,7 +20,10 @@ import SwiftROS2Wire
 /// ROS 2 context — the entry point for creating nodes
 ///
 /// A context owns a single transport session. All nodes created from this context
-/// share the session. Multiple contexts can coexist (e.g., Zenoh + DDS simultaneously).
+/// share the session. Multiple contexts can coexist (e.g., Zenoh + DDS simultaneously)
+/// on wire-path builds and on Apple RCL builds. On Linux RCL builds the rmw is
+/// process-global (`RMW_IMPLEMENTATION` is selected once per process), so one process
+/// serves one rmw at a time — mixing `.zenoh` and `.dds` contexts there is unsupported.
 ///
 /// ```swift
 /// let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.1:7447"))
@@ -40,7 +43,7 @@ public final class ROS2Context: @unchecked Sendable {
     /// Create a new ROS 2 context
     ///
     /// - Parameters:
-    ///   - transport: Transport configuration (Zenoh or DDS)
+    ///   - transport: Transport configuration (Zenoh, DDS, or RCL)
     ///   - distro: ROS 2 distribution for wire format (default: .jazzy)
     ///   - domainId: ROS 2 domain ID (default: 0)
     public convenience init(

@@ -1,5 +1,7 @@
 // RclClient.swift
-// Concrete RclClientProtocol over the CRclBridge C FFI. Apple-only, gated.
+// Concrete RclClientProtocol over the CRclBridge C FFI. Gated behind
+// SWIFT_ROS2_ENABLE_RCL=1: Apple (prebuilt xcframework, rmw baked per build
+// variant) and Linux (system ROS 2 install, rmw selected at runtime).
 
 import CDDSBridge
 import CRclBridge

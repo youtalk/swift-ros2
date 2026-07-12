@@ -313,11 +313,11 @@ extension Pipeline {
                     unresolvedIRs.append(
                         (run: primaryRun, ir: entry.ir, sourceLabel: entry.sourceLabel))
                 }
-                // Phase 4: union services across the multi-distro runs, but
-                // require structural agreement. A `.srv` whose request or
-                // response shape differs between distros surfaces as an
-                // IRMergeError so we never silently emit one distro's shape.
-                // Phase 5 will widen this to true multi-distro service merging.
+                // Union services across the multi-distro runs, requiring
+                // structural agreement. Multi-distro service merging is
+                // intentionally unsupported: a `.srv` whose request or
+                // response shape differs between distros is rejected here
+                // so we never silently emit one distro's shape.
                 var servicesByName: [String: ParsedService] = [:]
                 var serviceOrder: [String] = []
                 for run in pkgRuns {
@@ -333,7 +333,7 @@ extension Pipeline {
                                         file: "\(svc.package)/srv/\(svc.typeName).srv",
                                         line: 1,
                                         message:
-                                            "service '\(svc.typeName)' differs between distros — multi-distro service merging is not implemented yet (Phase 5)"
+                                            "service '\(svc.typeName)' differs between distros — multi-distro service merging is not supported"
                                     ))
                             }
                         } else {
@@ -419,8 +419,10 @@ extension Pipeline {
             //     fast path): the presence map is empty, so we fall back to
             //     the run's distro. For a humble-only run that means the
             //     emitted `typeInfo` advertises a `nil` humble hash.
-            //   - Service halves (`kind == .srv`): treat as supported on
-            //     every distro for now — Phase 5 will multi-distro-merge them.
+            //   - Service halves (`kind == .srv`): treated as supported on
+            //     every distro — cross-distro shape differences are rejected
+            //     during the service union above, so a `.srv` that reaches
+            //     this point is identical in every contributing distro.
             let distros: Set<String>
             if entry.ir.kind == .srv {
                 distros = ["humble", "jazzy", "kilted", "rolling"]

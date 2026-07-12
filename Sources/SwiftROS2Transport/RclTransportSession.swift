@@ -1,11 +1,13 @@
 // RclTransportSession.swift
-// TransportSession backed by the real rcl + rmw_cyclonedds_cpp stack via
-// RclClientProtocol. Publish (M1) + subscribe (M4); assumes a single node.
+// TransportSession backed by the real rcl stack via RclClientProtocol. The rmw
+// is baked per build variant on Apple (rmw_cyclonedds_cpp or rmw_zenoh_cpp)
+// and selected at runtime from the transport type on Linux (MZ5).
 
 import Foundation
 
-/// `TransportSession` backed by the real `rcl` + `rmw_cyclonedds_cpp` stack via
-/// `RclClientProtocol`. Publish (M1) + subscribe (M4); assumes a single node.
+/// `TransportSession` backed by the real `rcl` stack via `RclClientProtocol`.
+/// The rmw is baked per build variant on Apple and selected at runtime from
+/// the transport type on Linux (MZ5).
 public final class RclTransportSession: TransportSession, @unchecked Sendable {
     let client: any RclClientProtocol
     private let lock = NSLock()
@@ -43,11 +45,15 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     }
 
     public func open(config: TransportConfig) async throws {
-        // The zenoh-rmw variant routes `.zenoh` here (zenoh-pico is carved out);
-        // `.rcl` is the DDS variant. Both open a real rcl context.
-        guard config.type == .rcl || config.type == .zenoh else {
+        // Every accepted config opens a real rcl context; the client selects
+        // the rmw from the transport type. `.rcl` is the cyclonedds variant's
+        // config, `.zenoh` arrives from the zenoh-rmw variant (zenoh-pico
+        // carved out) or Linux runtime-rmw routing, and `.dds` arrives from
+        // Linux runtime-rmw routing (MZ5). The guard is exhaustive today and
+        // exists to fail loud if a future transport type lands unrouted.
+        guard config.type == .rcl || config.type == .zenoh || config.type == .dds else {
             throw TransportError.invalidConfiguration(
-                "Expected RCL or Zenoh configuration, got \(config.type)")
+                "Expected RCL, Zenoh, or DDS configuration, got \(config.type)")
         }
         try config.validate()
         guard client.isAvailable else {

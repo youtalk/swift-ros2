@@ -1189,7 +1189,7 @@
     },
     {
       "apiSymbol" : "swift build (Windows/Android)",
-      "evidence" : "pure-Swift wire (zenoh-pico) ships on Windows x86_64 and Android arm64/x86_64; RCL there is out of scope (MZ6 conditional on upstream rmw_zenoh Windows; Android full-rcl cross-build unsolved).",
+      "evidence" : "pure-Swift wire (zenoh-pico) ships on Windows x86_64 and Android arm64/x86_64; RCL there is deferred. Windows (MZ6 spike 2026-07-11): upstream rmw_zenoh_cpp has supported Windows since Dec 2024 (ros2/rmw_zenoh#312, CI-tested upstream), but no official Jazzy Windows binary ships it (kilted/rolling ros2.repos only; community RoboStack aside), swift-ros2's RCL layer is Jazzy-pinned, and Windows verification is CI-only — re-gate when an official Jazzy-compatible Windows rmw_zenoh binary path exists or the RCL layer supports Kilted. Android: full-rcl NDK cross-build unsolved.",
       "id" : "platform.windows-android",
       "platforms" : [
         "Windows",

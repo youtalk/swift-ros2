@@ -19,22 +19,21 @@ public struct TFMessage: ROS2Message {
     public func encode(to encoder: CDREncoder) throws {
         encoder.writeUInt32(UInt32(transforms.count))
         for tf in transforms {
-            // Inline serialization (no encapsulation header per element)
-            try tf.header.encode(to: encoder)
-            encoder.writeString(tf.childFrameId)
-            try tf.transform.encode(to: encoder)
+            // Delegate per-element serialization (no encapsulation header per
+            // element) so a future TransformStamped field cannot desynchronize.
+            try tf.encode(to: encoder)
         }
     }
 
     public init(from decoder: CDRDecoder) throws {
-        let count = Int(try decoder.readUInt32())
+        // readSequenceCount applies the shared DoS cap — the count is
+        // network-controlled on the /tf subscribe path and must never reach
+        // reserveCapacity unchecked.
+        let count = try decoder.readSequenceCount()
         var tfs = [TransformStamped]()
         tfs.reserveCapacity(count)
         for _ in 0..<count {
-            let header = try Header(from: decoder)
-            let childFrameId = try decoder.readString()
-            let transform = try Transform(from: decoder)
-            tfs.append(TransformStamped(header: header, childFrameId: childFrameId, transform: transform))
+            tfs.append(try TransformStamped(from: decoder))
         }
         self.transforms = tfs
     }

@@ -1,9 +1,27 @@
+import Foundation
 import SwiftROS2Transport
 import XCTest
 
 @testable import SwiftROS2
 
 final class ParameterCallbacksTests: XCTestCase {
+    /// Bounded polling wait: checks `condition` every 5 ms for up to 1 s and
+    /// asserts that it eventually holds. Replaces fixed sleep-then-assert waits
+    /// on detached-Task side effects, which are flaky under scheduler load.
+    private func pollUntil(
+        _ message: @autoclosure () -> String = "condition not met within 1 s",
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        condition: @Sendable () async -> Bool
+    ) async throws {
+        for _ in 0..<200 {
+            if await condition() { return }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let satisfied = await condition()
+        XCTAssertTrue(satisfied, message(), file: file, line: line)
+    }
+
     private func declared(_ store: ParameterStore, _ name: String, _ value: ROS2ParameterValue) async throws {
         _ = try await store.declare(
             name: name, value: value,
@@ -60,8 +78,11 @@ final class ParameterCallbacksTests: XCTestCase {
             ROS2Parameter(name: "missing", value: .integer(0)),
             ROS2Parameter(name: "b", value: .integer(20)),
         ])
-        // Allow the detached Task posting into Box to drain.
-        try await Task.sleep(nanoseconds: 20_000_000)
+        // Wait (bounded poll, not a fixed sleep) for the detached Task posting
+        // into Box to drain.
+        try await pollUntil("post-set callback should observe the two successful sets") {
+            await box.seen.count >= 2
+        }
         let names = await box.seen.map { $0.name }
         XCTAssertEqual(names.sorted(), ["a", "b"])
     }
@@ -122,21 +143,32 @@ final class ParameterCallbacksTests: XCTestCase {
     func testRemovedCallbackStopsFiring() async throws {
         let store = ParameterStore()
         try await declared(store, "a", .integer(1))
-        actor Counter {
-            var n = 0
-            func inc() { n += 1 }
+        // Post-set callbacks are synchronous (`@Sendable ([ROS2Parameter]) -> Void`)
+        // and invoked inline by the store before `set` returns, so a lock-guarded
+        // counter observes them deterministically the moment `set` resumes.
+        // This also makes the negative assertion (callback must NOT fire after
+        // removal) exact instead of a sleep-and-hope check.
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = 0
+            func increment() {
+                lock.lock()
+                value += 1
+                lock.unlock()
+            }
+            var count: Int {
+                lock.lock()
+                defer { lock.unlock() }
+                return value
+            }
         }
         let c = Counter()
-        let h = await store.registerPostSet { _ in Task { await c.inc() } }
+        let h = await store.registerPostSet { _ in c.increment() }
         _ = await store.set(ROS2Parameter(name: "a", value: .integer(2)))
-        try await Task.sleep(nanoseconds: 20_000_000)
-        let firstN = await c.n
-        XCTAssertEqual(firstN, 1)
+        XCTAssertEqual(c.count, 1)
         let removed = await store.unregisterCallback(h)
         XCTAssertTrue(removed)
         _ = await store.set(ROS2Parameter(name: "a", value: .integer(3)))
-        try await Task.sleep(nanoseconds: 20_000_000)
-        let secondN = await c.n
-        XCTAssertEqual(secondN, 1)
+        XCTAssertEqual(c.count, 1, "removed post-set callback must not fire again")
     }
 }

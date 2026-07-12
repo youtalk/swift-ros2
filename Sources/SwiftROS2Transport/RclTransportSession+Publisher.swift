@@ -29,7 +29,7 @@ extension RclTransportSession {
         let handle = try client.createPublisher(
             node: node, typeName: typeName, typeHash: typeHash, topic: topic, qos: qos)
         let pub = RclTransportPublisher(client: client, handle: handle, topic: topic)
-        appendPublisher(pub, for: topic)
+        appendPublisher(pub)
         return pub
     }
 }

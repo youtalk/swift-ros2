@@ -15,7 +15,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
     private var _sessionId = ""
     private var nodes: [String: any RclNodeHandle] = [:]
     private var currentNode: (any RclNodeHandle)?
-    var publishers: [String: RclTransportPublisher] = [:]
+    var publishers: [RclTransportPublisher] = []
     var subscribers: [RclTransportSubscriber] = []
     var serviceServers: [RclTransportServiceServer] = []
     var serviceClients: [RclTransportServiceClient] = []
@@ -112,19 +112,18 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         return nodes[nodeKey(name, namespace ?? "/")]
     }
 
-    /// Atomically validate the session is open, the topic is free, and a node
-    /// exists; returns the node a new publisher attaches to. With
-    /// `nodeName`/`nodeNamespace` the entity binds to that registered node
-    /// (multi-node); nil falls back to the last-registered node.
+    /// Atomically validate the session is open and a node exists; returns the
+    /// node a new publisher attaches to. With `nodeName`/`nodeNamespace` the
+    /// entity binds to that registered node (multi-node); nil falls back to
+    /// the last-registered node. No topic-uniqueness restriction: rcl (like
+    /// rclcpp) allows multiple publishers on one topic, and every node
+    /// lazily publishes its own `/parameter_events`.
     func preflightPublisher(
         topic: String, nodeName: String?, nodeNamespace: String?
     ) throws -> any RclNodeHandle {
         lock.lock()
         defer { lock.unlock() }
         guard isOpen else { throw TransportError.notConnected }
-        guard publishers[topic] == nil else {
-            throw TransportError.publisherCreationFailed("Publisher already exists for topic: \(topic)")
-        }
         guard let node = resolveNodeLocked(nodeName, nodeNamespace) else {
             throw TransportError.publisherCreationFailed("no node registered — create a node first")
         }
@@ -159,7 +158,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         serviceServers.removeAll()
         let subs = subscribers
         subscribers.removeAll()
-        let pubs = Array(publishers.values)
+        let pubs = publishers
         publishers.removeAll()
         let ns = Array(nodes.values)
         nodes.removeAll()
@@ -192,9 +191,9 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         return ns.hasSuffix("/") ? "\(ns)\(name)" : "\(ns)/\(name)"
     }
 
-    func appendPublisher(_ pub: RclTransportPublisher, for topic: String) {
+    func appendPublisher(_ pub: RclTransportPublisher) {
         lock.lock()
-        publishers[topic] = pub
+        publishers.append(pub)
         lock.unlock()
     }
 

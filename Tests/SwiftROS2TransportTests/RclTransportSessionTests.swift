@@ -287,20 +287,53 @@ final class RclTransportSessionTests: XCTestCase {
         }
     }
 
-    func testCreatePublisherDuplicateTopicThrows() async throws {
+    // rcl (like rclcpp) allows multiple publishers on one topic — the session
+    // must not impose a one-publisher-per-topic restriction the underlying
+    // stack does not have.
+    func testTwoLivePublishersOnSameTopicAllowed() async throws {
         let client = MockRclClient()
         let s = try await openSession(client)
         try s.registerNode(name: "imu_node", namespace: "/ios")
-        _ = try s.createPublisher(
+        let first = try s.createPublisher(
             topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
-        XCTAssertThrowsError(
-            try s.createPublisher(
-                topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
-        ) { error in
-            guard case TransportError.publisherCreationFailed = error else {
-                return XCTFail("got \(error)")
-            }
-        }
+        let second = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        XCTAssertTrue(first.isActive)
+        XCTAssertTrue(second.isActive)
+        XCTAssertEqual(client.publishersCreated.count, 2)
+    }
+
+    // A closed publisher must release its topic: stop/recreate cycles within
+    // one context were impossible while the closed entry stayed registered.
+    func testCreatePublisherAfterCloseReusesTopic() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let first = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        try first.close()
+        let second = try s.createPublisher(
+            topic: "/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        XCTAssertTrue(second.isActive)
+    }
+
+    // Two nodes in one session each publish the same topic — the lazily
+    // created per-node /parameter_events publisher is the production case;
+    // the second node's events were silently lost while the guard existed.
+    func testTwoNodesCanCreatePublishersOnSameTopic() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "node_a", namespace: "/")
+        try s.registerNode(name: "node_b", namespace: "/")
+        _ = try s.createPublisher(
+            topic: "/parameter_events", typeName: "rcl_interfaces/msg/ParameterEvent",
+            typeHash: nil, qos: .sensorData, nodeName: "node_a", nodeNamespace: "/")
+        _ = try s.createPublisher(
+            topic: "/parameter_events", typeName: "rcl_interfaces/msg/ParameterEvent",
+            typeHash: nil, qos: .sensorData, nodeName: "node_b", nodeNamespace: "/")
+        XCTAssertEqual(client.publishersCreated.count, 2)
+        XCTAssertTrue(client.publisherHandles[0].node === client.nodeHandles[0])
+        XCTAssertTrue(client.publisherHandles[1].node === client.nodeHandles[1])
     }
 
     // MARK: - Multi-node entity binding (node.multi)

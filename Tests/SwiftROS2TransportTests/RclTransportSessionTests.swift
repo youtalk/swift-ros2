@@ -32,16 +32,21 @@ final class RclTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.lastNetworkInterface, "en0")
     }
 
-    // `.rcl` and `.zenoh` (the zenoh-rmw variant) are accepted; a DDS-wire
-    // config is not — RclTransportSession does not back the wire DDS path.
-    func testOpenRejectsNonRclOrZenohConfig() async {
-        let s = RclTransportSession(client: MockRclClient())
-        do {
-            try await s.open(config: .ddsMulticast(domainId: 0))
-            XCTFail("expected invalidConfiguration")
-        } catch let e as TransportError {
-            guard case .invalidConfiguration = e else { return XCTFail("got \(e)") }
-        } catch { XCTFail("got \(error)") }
+    // `.dds` must be accepted, not rejected: on Linux (MZ5 runtime rmw
+    // selection) makeDefaultSession routes `.dds` configs here and the client
+    // picks rmw_cyclonedds_cpp from the forwarded transport type. Rejecting it
+    // makes the whole Linux DDS-RCL path dead on arrival.
+    func testOpenAcceptsDdsConfigAndForwardsTransportType() async throws {
+        let client = MockRclClient()
+        let s = RclTransportSession(client: client)
+        try await s.open(config: .ddsMulticast(domainId: 3))
+        XCTAssertEqual(client.lastTransportType, .dds)
+        guard let recordedLocator = client.recordedZenohLocator else {
+            return XCTFail("createContext was never called")
+        }
+        XCTAssertNil(recordedLocator, "a .dds config must not carry a zenoh locator")
+        XCTAssertTrue(s.isConnected)
+        XCTAssertEqual(s.sessionId, "rcl-3")
     }
 
     func testOpenFailsWhenUnavailable() async {

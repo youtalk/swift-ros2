@@ -498,4 +498,6 @@ jobs:
           source "$HOME/ros2_overlay/install/setup.bash"
           export ROS2_RCL_PREFIX="$HOME/ros2_overlay/install:/opt/ros/jazzy"
           export PKG_CONFIG_PATH="/opt/ros/jazzy/lib/$(uname -m)-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}"
-          swift test --filter SwiftROS2RCLTests
+          # SwiftROS2BenchTests rides along: the RESULT-line stack stamp is
+          # build-arm-dependent and its Linux-RCL branch only exists here.
+          swift test --filter 'SwiftROS2RCLTests|SwiftROS2BenchTests'

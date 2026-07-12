@@ -442,15 +442,20 @@ var targets: [Target] = [
     // `canImport(SwiftROS2Zenoh)` inside HarnessCLI.zenohStack agrees with the
     // umbrella's own conditional dep (line ~501) and with the test target —
     // otherwise the RESULT-line stack stamp reads "rcl-rmw_zenoh" on the wire path.
+    // The SWIFT_ROS2_RCL define mirrors makeDefaultSession's Linux runtime-rmw
+    // arm, where `.zenoh` routes to rcl + rmw_zenoh_cpp even though the wire
+    // family stays linked (MZ5) — without it the stack stamp lies on Linux.
     .target(
         name: "SwiftROS2Bench",
         dependencies: dropZenohWire ? [] : ["SwiftROS2Zenoh"],
-        path: "Sources/SwiftROS2Bench"
+        path: "Sources/SwiftROS2Bench",
+        swiftSettings: enableRcl ? [.define("SWIFT_ROS2_RCL")] : []
     ),
     .testTarget(
         name: "SwiftROS2BenchTests",
         dependencies: ["SwiftROS2Bench"],
-        path: "Tests/SwiftROS2BenchTests"
+        path: "Tests/SwiftROS2BenchTests",
+        swiftSettings: enableRcl ? [.define("SWIFT_ROS2_RCL")] : []
     ),
 ]
 

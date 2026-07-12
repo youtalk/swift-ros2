@@ -610,7 +610,12 @@ void dds_bridge_destroy_writer(bridge_dds_writer_t* writer) {
         dds_delete(writer->topic);
         writer->topic = 0;
     }
-    writer->raw_sertype = NULL;
+    // Release the sertype reference held since create_raw_writer (mirrors
+    // dds_bridge_destroy_reader). Standard writers keep raw_sertype NULL.
+    if (writer->raw_sertype) {
+        ddsi_sertype_unref(writer->raw_sertype);
+        writer->raw_sertype = NULL;
+    }
 #endif
 
     free(writer);
@@ -713,6 +718,12 @@ bridge_dds_writer_t* dds_bridge_create_raw_writer(
 
     if (writer->topic < 0) {
         set_error("Failed to create raw CDR topic '%s': %s", topic_name, dds_strretcode(writer->topic));
+        // On failure dds_create_topic_impl does not consume the passed-in
+        // reference (its error label frees only new_qos; vendor/cyclonedds
+        // src/core/ddsc/src/dds_topic.c:592-598), so both of our references
+        // — the stored one and the one passed via sertype_for_topic (the
+        // same pointer at this point) — must be released here.
+        ddsi_sertype_unref(sertype_for_topic);
         ddsi_sertype_unref(writer->raw_sertype);
         free(writer);
         return NULL;
@@ -977,6 +988,10 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     if (reader->topic < 0) {
         set_error("Failed to create raw CDR topic '%s': %s",
                   topic_name, dds_strretcode(reader->topic));
+        // On failure dds_create_topic_impl does not consume the passed-in
+        // reference (see the matching comment in create_raw_writer), so
+        // release both of our references here.
+        ddsi_sertype_unref(sertype_for_topic);
         ddsi_sertype_unref(reader->raw_sertype);
         free(reader);
         return NULL;

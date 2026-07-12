@@ -835,14 +835,24 @@ int32_t dds_bridge_write_raw_cdr(
         return -5;
     }
 
-    // Write using dds_writecdr. On success CycloneDDS consumes the serdata
-    // reference; on failure ownership stays with us, so we must unref to avoid
-    // leaking one serdata per failed publish.
+    // dds_writecdr's ownership contract is asymmetric: once the writer lock
+    // is taken, dds_writecdr_impl_common consumes one serdata reference on
+    // every path, success or failure ("consumes 1 refc from din in all
+    // paths", vendor/cyclonedds/src/core/ddsc/src/dds_write.c:293). A
+    // RELIABLE writer with a full WHC returns DDS_RETCODE_TIMEOUT with the
+    // reference already consumed, so unref-on-failure would double-free.
+    // Only the pre-lock early-outs (NULL serdata, invalid writer handle,
+    // topic filter; dds_write.c:65-74) leave ownership with the caller.
+    // Take an extra reference before the call and release exactly one
+    // afterwards so success and all post-lock failures are balanced; the
+    // rare pre-lock failure then leaks one serdata instead of corrupting
+    // the heap.
+    ddsi_serdata_ref(serdata);
     dds_return_t ret = dds_writecdr(writer->writer, serdata);
+    ddsi_serdata_unref(serdata);
 
     if (ret < 0) {
         set_error("Failed to write raw CDR data: %s", dds_strretcode(ret));
-        ddsi_serdata_unref(serdata);
         return -6;
     }
 

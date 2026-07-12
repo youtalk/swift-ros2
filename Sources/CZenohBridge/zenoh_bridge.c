@@ -959,17 +959,33 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
         return -1;
     }
 
+    // Contract: finish_callback fires exactly once per call, success or
+    // failure. After the closure is built, zenoh-pico guarantees this by
+    // invoking the drop handler even when z_get fails (see the comment at
+    // the z_get call below). On every failure return BEFORE the closure is
+    // built, we must invoke finish_callback ourselves — otherwise the
+    // caller-retained context (Swift GetContext) leaks on each call against
+    // a disconnected session or an invalid key expression.
     if (z_session_is_closed(z_loan(session->session))) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
         return ZENOH_ERROR_SESSION_CLOSED;
     }
 
     z_view_keyexpr_t view_ke;
     if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
         return -1;
     }
 
     zenoh_get_callback_state_t* state = (zenoh_get_callback_state_t*)malloc(sizeof(zenoh_get_callback_state_t));
     if (!state) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
         return -1;
     }
     state->reply_callback = reply_callback;
@@ -987,6 +1003,9 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
     if (payload && payload_len > 0) {
         if (z_bytes_from_buf(&payload_bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
             free(state);
+            if (finish_callback) {
+                finish_callback(context);
+            }
             return -1;
         }
         options.payload = z_move(payload_bytes);
@@ -1000,6 +1019,9 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
                 z_drop(z_move(payload_bytes));
             }
             free(state);
+            if (finish_callback) {
+                finish_callback(context);
+            }
             return -1;
         }
         options.attachment = z_move(attachment_bytes);
@@ -1012,9 +1034,12 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
                        z_move(closure), &options);
 
     if (result < 0) {
-        // The closure drop handler already frees `state` even on z_get failure
-        // (zenoh-pico drops the moved closure when it cannot accept it). Do
-        // not double-free here.
+        // The closure drop handler already frees `state` and fires
+        // finish_callback even on z_get failure: zenoh-pico invokes the
+        // dropper via _z_pending_query_clear on register failure
+        // (vendor/zenoh-pico/src/net/primitives.c:510) and via the
+        // pending-query list drop on send failure (primitives.c:505-508).
+        // Do not double-finish or double-free here.
         return (zenoh_result_t)result;
     }
 

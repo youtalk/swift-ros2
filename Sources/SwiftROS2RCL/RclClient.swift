@@ -681,6 +681,12 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     private var ctxDomainId: Int32 = 0
     private var ctxUnicastPeerAddresses: [String] = []
     private var ctxNetworkInterface: String?
+    /// Whether the most recent createContext asked for a `.zenoh` transport —
+    /// on runtime-rmw platforms (Linux, MZ5) that selects rmw_zenoh_cpp, so the
+    /// route-(b) CycloneDDS fallback must be gated off exactly as in the baked
+    /// zenoh-rmw variant. Captured with the other context inputs; overwritten
+    /// by the next createContext.
+    private var ctxTransportIsZenoh = false
 
     public init() {}
 
@@ -978,10 +984,12 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
             throw TransportError.alreadyConnected
         }
         // Capture the discovery inputs so a later route-(b) raw session matches
-        // the rcl context's domain + peers + interface.
+        // the rcl context's domain + peers + interface — and the transport
+        // intent, which gates route-(b) off entirely for zenoh-backed contexts.
         ctxDomainId = domainId
         ctxUnicastPeerAddresses = unicastPeerAddresses
         ctxNetworkInterface = networkInterface
+        ctxTransportIsZenoh = transportType == .zenoh
         lock.unlock()
         #if os(Linux)
             // Pick the process rmw from the transport TYPE (authoritative — not
@@ -1084,32 +1092,45 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         crcl_node_destroy(b.ptr)
     }
 
-    #if SWIFT_ROS2_RCL_RMW_ZENOH
-        /// Fail-loud gate for the zenoh-rmw variant: on a marshal-registry miss
-        /// the cyclonedds variant falls back to route (b) — a raw-CDR writer /
-        /// reader on a sibling **CycloneDDS** participant. Under rmw_zenoh the
-        /// rcl graph speaks Zenoh through a router, so that sibling participant's
-        /// DDS multicast domain has no counterpart: route-(b) traffic would go
-        /// out (or be listened for) where nobody communicates — silent data
-        /// loss, not degraded service. Throw instead. Runs before the node
-        /// handle is inspected, so SwiftROS2RCLTests can assert the gate
-        /// without a live rmw context (`package` for exactly that).
-        package static func requireBundledTypesupport(_ typeName: String) throws {
-            guard crcl_marshal_resolve_typesupport(typeName) == nil else { return }
-            throw TransportError.unsupportedFeature(
-                "type \(typeName) has no bundled typesupport; the raw-CDR fallback is "
-                    + "CycloneDDS-only and unreachable via rmw_zenoh — bundle the type or "
-                    + "use the .dds transport")
-        }
-    #endif
+    /// Fail-loud gate for zenoh-backed rcl graphs: on a marshal-registry miss
+    /// the cyclonedds path falls back to route (b) — a raw-CDR writer /
+    /// reader on a sibling **CycloneDDS** participant. Under rmw_zenoh the
+    /// rcl graph speaks Zenoh through a router, so that sibling participant's
+    /// DDS multicast domain has no counterpart: route-(b) traffic would go
+    /// out (or be listened for) where nobody communicates — silent data
+    /// loss, not degraded service. Throw instead. Applies both when the rmw
+    /// is baked at compile time (SWIFT_ROS2_RCL_RMW_ZENOH) and when it is
+    /// selected at runtime from the transport type (Linux, MZ5). Runs before
+    /// the node handle is inspected, so SwiftROS2RCLTests can assert the gate
+    /// without a live rmw context (`package` for exactly that).
+    package static func requireBundledTypesupport(_ typeName: String) throws {
+        guard crcl_marshal_resolve_typesupport(typeName) == nil else { return }
+        throw TransportError.unsupportedFeature(
+            "type \(typeName) has no bundled typesupport; the raw-CDR fallback is "
+                + "CycloneDDS-only and unreachable via rmw_zenoh — bundle the type or "
+                + "use the .dds transport")
+    }
+
+    /// Apply the fail-loud gate wherever the rcl graph speaks Zenoh: always in
+    /// the baked zenoh-rmw variant (rmw fixed at compile time, gate must fire
+    /// even before a context exists), and on a captured `.zenoh` transport
+    /// intent where the rmw is selected at runtime (Linux, MZ5).
+    private func requireBundledTypesupportIfZenohBacked(_ typeName: String) throws {
+        #if SWIFT_ROS2_RCL_RMW_ZENOH
+            try Self.requireBundledTypesupport(typeName)
+        #else
+            lock.lock()
+            let zenohBacked = ctxTransportIsZenoh
+            lock.unlock()
+            if zenohBacked { try Self.requireBundledTypesupport(typeName) }
+        #endif
+    }
 
     package func createPublisher(
         node: any RclNodeHandle, typeName: String, typeHash: String?, topic: String,
         qos: TransportQoS
     ) throws -> any RclPublisherHandle {
-        #if SWIFT_ROS2_RCL_RMW_ZENOH
-            try Self.requireBundledTypesupport(typeName)
-        #endif
+        try requireBundledTypesupportIfZenohBacked(typeName)
         guard let b = node as? RclNodeBox else {
             throw TransportError.publisherCreationFailed("invalid node handle")
         }
@@ -1269,9 +1290,7 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         qos: TransportQoS,
         handler: @escaping @Sendable (Data, UInt64) -> Void
     ) throws -> any RclSubscriptionHandle {
-        #if SWIFT_ROS2_RCL_RMW_ZENOH
-            try Self.requireBundledTypesupport(typeName)
-        #endif
+        try requireBundledTypesupportIfZenohBacked(typeName)
         guard let b = node as? RclNodeBox else {
             throw TransportError.subscriberCreationFailed("invalid node handle")
         }

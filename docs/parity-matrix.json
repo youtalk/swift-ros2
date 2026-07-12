@@ -1159,7 +1159,7 @@
     },
     {
       "apiSymbol" : "swift build (Linux)",
-      "evidence" : "pure-Swift wire ships + is CI-tested on Ubuntu 22.04/24.04 x86_64+aarch64. MZ5 landed the Linux RCL backend via a system ROS 2 install (ament prefix, not an xcframework): .zenoh -> rcl+rmw_zenoh_cpp and .dds/.rcl -> rcl+rmw_cyclonedds_cpp, with the rmw selected per-process at runtime via RMW_IMPLEMENTATION. Verified on Ubuntu 24.04 / ROS 2 Jazzy: crcl-loopback 20/20 in-process over cyclonedds; talker->listener 10/10 over a live rmw_zenohd router; SwiftROS2RCLTests green in the ci-rcl Linux leg. One process serves .zenoh OR .dds (the rmw is process-global) — switching transports needs separate processes. rcl=partial: the transport layer is verified end-to-end; the full per-type/service/action Linux capability matrix is not yet individually run.",
+      "evidence" : "pure-Swift wire ships + is CI-tested on Ubuntu 22.04/24.04 x86_64+aarch64. MZ5 landed the Linux RCL backend via a system ROS 2 install (ament prefix, not an xcframework): .zenoh -> rcl+rmw_zenoh_cpp and .dds/.rcl -> rcl+rmw_cyclonedds_cpp, with the rmw selected per-process at runtime via RMW_IMPLEMENTATION. Verified on Ubuntu 24.04 / ROS 2 Jazzy: crcl-loopback 20/20 in-process over cyclonedds; talker->listener 10/10 over a live rmw_zenohd router; SwiftROS2RCLTests green in the ci-rcl Linux leg. One process serves .zenoh OR .dds (the rmw is process-global) — switching transports needs separate processes. Latency + correctness axes measured 2026-07-11 on youtalk-desktop (see axis cells) after the #164 routing fix — the earlier MZ5 verification exercised .rcl configs and crcl-loopback below the public API, which is how the .dds ROS2Context regression slipped through. rcl=partial: the transport layer is now verified end-to-end on both rmws; the full per-type/service/action Linux capability matrix is not yet individually run.",
       "id" : "platform.linux",
       "platforms" : [
         "Linux"
@@ -1170,12 +1170,12 @@
       "typeApplicability" : "n-a",
       "verification" : {
         "correctness" : {
-          "value" : "n/a",
-          "verdict" : "na"
+          "value" : "Ubuntu 24.04 / ROS 2 Jazzy live field-level agreement (branch 1226766cc): ros2 topic echo --once matches talker output over BOTH runtime rmws — .zenoh via rmw_zenohd (domain 87) and .dds via rmw_cyclonedds_cpp (domain 88, the public-API path unbroken by the #164 routing fix). SwiftROS2RCLTests 29/29 on the Linux host incl. CrossBackendBytesTests byte parity and the .ddsMulticast end-to-end smoke; /proc maps confirmed the zenoh leg loads librmw_zenoh_cpp/libzenohc (rcl data path, not wire zenoh-pico).",
+          "verdict" : "pass"
         },
         "latency" : {
-          "value" : "n/a",
-          "verdict" : "na"
+          "value" : "MZ5 scaled W4 run (Ubuntu 24.04 / ROS 2 Jazzy, Core Ultra 9 285, debug, 100 Hz, branch 1226766cc): rcl-bench publish p99 21.2-171.1 us and roundtrip p99 246.2-378.2 us across imu/image64k/cloud120k on BOTH runtime rmws (rmw_zenoh_cpp via local rmw_zenohd tcp/7447, rmw_cyclonedds_cpp) — all 12 runs within the Apple W4 SLOs (publish 1 ms / roundtrip 2 ms), 2000/2000 received on every roundtrip.",
+          "verdict" : "pass"
         },
         "resource" : {
           "value" : "n/a",

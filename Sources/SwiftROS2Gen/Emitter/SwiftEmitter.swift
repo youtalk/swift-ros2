@@ -114,22 +114,19 @@ public enum SwiftEmitter {
             }
             out += "    public init() {}\n"
             out += "\n"
-            // Service halves require a single 0x00 dummy byte after the
-            // encapsulation header so CycloneDDS does not collapse the sample
-            // to zero length. Plain messages (.msg) keep an empty body.
-            if ir.kind == .srv {
-                out += "    public func encode(to encoder: CDREncoder) throws {\n"
-                out += "        encoder.writeUInt8(0)\n"
-                out += "    }\n"
-                out += "\n"
-                out += "    public init(from decoder: CDRDecoder) throws {\n"
-                out += "        _ = try decoder.readUInt8()\n"
-                out += "    }\n"
-            } else {
-                out += "    public func encode(to encoder: CDREncoder) throws {}\n"
-                out += "\n"
-                out += "    public init(from decoder: CDRDecoder) throws {}\n"
-            }
+            // Every empty rosidl struct — message or service half — carries
+            // the implicit `uint8 structure_needs_at_least_one_member`
+            // sentinel, and rosidl SERIALIZES it (one 0x00 body byte after
+            // the encapsulation header). The RIHS01 hasher already models the
+            // sentinel field; the codec must match or an empty publish
+            // under-runs every rosidl-based subscriber by one byte.
+            out += "    public func encode(to encoder: CDREncoder) throws {\n"
+            out += "        encoder.writeUInt8(0)\n"
+            out += "    }\n"
+            out += "\n"
+            out += "    public init(from decoder: CDRDecoder) throws {\n"
+            out += "        _ = try decoder.readUInt8()\n"
+            out += "    }\n"
         } else {
             if preludeEmitted {
                 out += "\n"

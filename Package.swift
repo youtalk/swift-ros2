@@ -79,29 +79,39 @@ let windowsCycloneDDSDir: String? = {
 // can only when `CYCLONEDDS_DIR` is set; Android never can.
 let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.2.0"
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/1.3.0"
 
-// Native-rcl backend: opt-in via SWIFT_ROS2_ENABLE_RCL=1 so default consumers
-// are unaffected. When set, the manifest adds the full RCL family — CRos2Jazzy,
-// CRclBridge, SwiftROS2RCL, plus the smoke / loopback / bench executables and
-// tests (see the `if enableRcl` block near the bottom of this manifest).
-// Apple consumes a local prebuilt xcframework built by
-// Scripts/build-ros2-xcframework.sh and selected by `rclRmwVariant` below;
-// release-xcframework.yml attaches the CRos2Jazzy(.Zenoh) zips to release tags,
-// and a URL+checksum binaryTarget pin arrives with the next release tag. Linux
-// consumes the system ROS 2 install (ament prefix, see ROS2_RCL_PREFIX below).
+// Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
+// CRos2Jazzy(.Zenoh) xcframework resolves from the release URL, selected by
+// `rclRmwVariant` below (the MZ2 "Replace on Apple" decision: a plain Apple
+// `swift build` gets the RCL backend without any env opt-in).
+// SWIFT_ROS2_DISABLE_RCL=1 opts an Apple build back out (wire-only graph, no
+// xcframework download) — consumers who never use the RCL backend, and the
+// CI API-stability gate, which must digest the SAME module graph on both
+// sides of the diff (swift-api-digester emits a partial umbrella digest on
+// RCL-enabled graphs, misreporting the whole public surface as removed when
+// the baseline was built without RCL). Linux: opt-in via
+// SWIFT_ROS2_ENABLE_RCL=1 because it consumes a system ROS 2 install (ament
+// prefix, see ROS2_RCL_PREFIX below) that a plain build must not demand.
 // Windows/Android have no RCL path yet.
 let enableRcl =
-    Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1"
-    && (targetOS == "apple" || targetOS == "linux")
+    (targetOS == "apple" && Context.environment["SWIFT_ROS2_DISABLE_RCL"] != "1")
+    || (Context.environment["SWIFT_ROS2_ENABLE_RCL"] == "1" && targetOS == "linux")
+
+// Local-development override: SWIFT_ROS2_RCL_LOCAL=1 resolves the variant
+// xcframework from build/ros2*/ (the Scripts/build-ros2-xcframework.sh
+// output) instead of the released URL+checksum artifact — used by ci-rcl's
+// macOS legs (which build the xcframework from HEAD) and when iterating on
+// the ROS 2 cross-build itself.
+let useLocalRclXCFramework = Context.environment["SWIFT_ROS2_RCL_LOCAL"] == "1"
 
 // SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the RCL binary
-// target: "cyclonedds" (default) -> build/ros2/CRos2Jazzy.xcframework, or
-// "zenoh" -> build/ros2zenoh/CRos2JazzyZenoh.xcframework (rmw_zenoh_cpp +
-// fastrtps typesupport; build with
+// target: "cyclonedds" (default) -> CRos2Jazzy.xcframework.zip, or
+// "zenoh" -> CRos2JazzyZenoh.xcframework.zip (rmw_zenoh_cpp + fastrtps
+// typesupport), both resolved from the release URL — or from build/ros2*/
+// under SWIFT_ROS2_RCL_LOCAL=1 (build with
 // `RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`). Both variants
-// expose the identical rcl C API under the same module name, so every Swift
-// target is variant-agnostic.
+// expose the identical rcl C API, so every Swift target is variant-agnostic.
 let rclRmwVariant: String = {
     let raw = Context.environment["SWIFT_ROS2_RCL_RMW"] ?? "cyclonedds"
     guard ["cyclonedds", "zenoh"].contains(raw) else {
@@ -109,6 +119,14 @@ let rclRmwVariant: String = {
     }
     return raw
 }()
+
+// On Apple the binary target is NAMED after the variant so the released
+// zip's .xcframework basename matches the target name (SwiftPM resolves
+// url-based binary artifacts by that match). Linux keeps the single
+// CRos2Jazzy systemLibrary name for both transports (runtime rmw selection).
+// Nothing `import`s this module from Swift, so the name is link-graph-only.
+let ros2XCFrameworkName = rclRmwVariant == "zenoh" ? "CRos2JazzyZenoh" : "CRos2Jazzy"
+let ros2CTargetName = isLinuxBuild ? "CRos2Jazzy" : ros2XCFrameworkName
 
 // zenoh-pico (the wire path) and zenoh-c (bundled inside CRos2JazzyZenoh)
 // both export the standard zenoh C API, so they cannot link into one binary.
@@ -274,7 +292,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "8b2f47804138a06bba449dc56a68b62b52c73bc0f1aa67bc52149184b1699d23"
+            checksum: "4b2101d3c17aae13fcec80fd88b5d7f48fa5d3c183a8ca75daad5ae7999e5daa"
         )
     }
 }()
@@ -538,7 +556,7 @@ if canBuildDDS {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "36f30e40506b02cc994fc1f0e1f8f03c488d7bc6dc2e5aac37a919ccc9060d36"
+                checksum: "ae74ad27f66924db4f7850544225bb188038d56da5bef630c0e92b9f1a46fcb3"
             )
         }
     }()
@@ -715,13 +733,29 @@ if enableRcl {
     if isLinuxBuild {
         targets.append(
             .systemLibrary(name: "CRos2Jazzy", path: "Sources/CRos2Jazzy"))
+    } else if useLocalRclXCFramework {
+        // Local xcframework built by Scripts/build-ros2-xcframework.sh — the
+        // ci-rcl macOS legs and ROS-2-cross-build development use this.
+        targets.append(
+            .binaryTarget(
+                name: ros2XCFrameworkName,
+                path: rclRmwVariant == "zenoh"
+                    ? "build/ros2zenoh/CRos2JazzyZenoh.xcframework"
+                    : "build/ros2/CRos2Jazzy.xcframework"
+            ))
+    } else if rclRmwVariant == "zenoh" {
+        targets.append(
+            .binaryTarget(
+                name: "CRos2JazzyZenoh",
+                url: "\(releaseBaseURL)/CRos2JazzyZenoh.xcframework.zip",
+                checksum: "19f5925b71785a15f78f86d6b01732568277ef5f5e7e5ee180c50d13b0e74f0c"
+            ))
     } else {
         targets.append(
             .binaryTarget(
                 name: "CRos2Jazzy",
-                path: rclRmwVariant == "zenoh"
-                    ? "build/ros2zenoh/CRos2JazzyZenoh.xcframework"
-                    : "build/ros2/CRos2Jazzy.xcframework"
+                url: "\(releaseBaseURL)/CRos2Jazzy.xcframework.zip",
+                checksum: "181b0908388a6326b95f7dd0d50dd6d95fb48650c958365a1b795d9ed8b043ac"
             ))
     }
     // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++, so every target
@@ -752,7 +786,7 @@ if enableRcl {
     targets.append(
         .executableTarget(
             name: "rcl-smoke",
-            dependencies: ["CRos2Jazzy"],
+            dependencies: [.target(name: ros2CTargetName)],
             path: "Sources/Examples/RclSmoke",
             // C source that `#include <rcl/rcl.h>` directly; cSettings do not
             // propagate from CRos2Jazzy (no pkg-config), so inject -I here too.
@@ -763,7 +797,7 @@ if enableRcl {
     targets.append(
         .target(
             name: "CRclBridge",
-            dependencies: ["CRos2Jazzy"],
+            dependencies: [.target(name: ros2CTargetName)],
             path: "Sources/CRclBridge",
             sources: [
                 "rcl_bridge.c", "rcl_subscription.c", "rcl_service.c", "rcl_client.c",

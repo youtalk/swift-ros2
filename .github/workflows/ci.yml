@@ -153,6 +153,14 @@ jobs:
       - name: Swift version
         run: swift --version
       - name: Diagnose API breaking changes
+        env:
+          # Digest the SAME module graph on both sides of the diff: with the
+          # RCL family in the graph, swift-api-digester emits a partial
+          # umbrella digest and misreports the whole public surface as
+          # removed against a non-RCL baseline. The RCL-off graph still
+          # covers the entire frozen 1.x public surface (SwiftROS2RCL itself
+          # has no public API and is skipped as absent-from-baseline).
+          SWIFT_ROS2_DISABLE_RCL: "1"
         run: bash Scripts/diagnose-api-breaking-changes.sh "${{ steps.baseline.outputs.tag }}" Scripts/api-breakage-allowlist.txt
 
   build-docs:

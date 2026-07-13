@@ -39,6 +39,9 @@ jobs:
     timeout-minutes: 180
     env:
       SWIFT_ROS2_ENABLE_RCL: "1"
+      # This job cross-builds the xcframework from HEAD — resolve it from
+      # build/ros2*/ instead of the released URL+checksum artifact.
+      SWIFT_ROS2_RCL_LOCAL: "1"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -312,6 +315,9 @@ jobs:
     env:
       SWIFT_ROS2_ENABLE_RCL: "1"
       SWIFT_ROS2_RCL_RMW: zenoh
+      # This job cross-builds the xcframework from HEAD — resolve it from
+      # build/ros2*/ instead of the released URL+checksum artifact.
+      SWIFT_ROS2_RCL_LOCAL: "1"
     steps:
       # No submodules: the regen guard runs only in rcl-build-smoke, the
       # cross-build does its own clones, and the zenoh-pico vendor tree is

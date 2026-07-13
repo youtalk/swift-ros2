@@ -235,3 +235,50 @@ extension ROS2Node {
 ### Adopting
 
 No code change is required to upgrade — `Context.createNode(...)` keeps its old signature and now also auto-registers the six parameter services (opt out via `ROS2NodeOptions(startParameterServices: false)` if you don't need them).
+
+## 1.2 → 1.3 — RCL everywhere; the wire path is deprecated
+
+1.3.0 completes the native RCL backend on every platform it can currently
+reach: Apple (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw
+baked per build variant) and Linux (system ROS 2 install via
+`ROS2_RCL_PREFIX`, rmw selected at runtime from the transport type). No public
+symbol changed; the release is additive plus the deprecation below.
+
+### What is deprecated
+
+Constructing the wire clients directly:
+
+```swift
+import SwiftROS2Zenoh
+let client = ZenohClient()   // warning: deprecated, removed in 2.0.0
+
+import SwiftROS2DDS
+let dds = DDSClient()        // warning: deprecated, removed in 2.0.0
+```
+
+### What is NOT deprecated
+
+The umbrella API — it is backend-agnostic and routes to the RCL backend where
+available, the wire path elsewhere:
+
+```swift
+let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:7447"))
+let node = try await ctx.createNode(name: "talker")
+```
+
+If you construct `ZenohClient` / `DDSClient` only to hand them to
+`ROS2Context`, drop the explicit construction and let `ROS2Context` pick the
+backend. If you use the wire clients standalone (raw key-expression puts,
+wire-level subscribers), plan the move to the umbrella API before 2.0.0 —
+the wire runtime path is removed there, while the CDR / wire codecs survive
+as the golden-byte correctness fixtures.
+
+### Per-variant nuance
+
+- Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`): the zenoh wire
+  family is *physically absent* from the build graph (symbol collision with
+  the bundled zenoh-c), so `ZenohClient` does not exist there at all.
+- Linux RCL builds: both backends stay linked (no symbol collision — rmw is a
+  dlopen'd plugin); RCL is preferred at runtime for `.zenoh` and `.dds`.
+- Android, visionOS-zenoh, Windows: the wire path remains the automatic
+  fallback until an RCL path exists for them.

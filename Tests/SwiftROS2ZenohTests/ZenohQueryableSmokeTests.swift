@@ -17,7 +17,7 @@ final class ZenohQueryableSmokeTests: XCTestCase {
         try XCTSkipIf(skipReason != nil, skipReason ?? "")
         let linuxIP = ProcessInfo.processInfo.environment["LINUX_IP"] ?? ""
 
-        let z = ZenohClient()
+        let z = ZenohClient(wireFallback: ())
         try z.open(locator: "tcp/\(linuxIP):7447")
         defer { try? z.close() }
 

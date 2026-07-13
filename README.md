@@ -14,6 +14,47 @@ Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics ove
 
 Shipping on the SemVer-stable **1.x** line (latest tag in the release badge). Extracted from [Conduit, powered by ROS](https://apps.apple.com/app/id6757171237) — used cumulatively by **10,000+ ROS developers** and a former **#4** in the App Store's Developer Tools category.
 
+## Quick Start
+
+> **Android:** the umbrella is excluded on Android — use `SwiftROS2Zenoh.ZenohClient` directly until DDS (and the umbrella) land there.
+
+```swift
+import SwiftROS2
+
+// Publish an IMU message over Zenoh.
+let context = try await ROS2Context(
+    transport: .zenoh(locator: "tcp/192.168.1.100:7447"), distro: .jazzy)
+let node = try await context.createNode(name: "sensor_node", namespace: "/ios")
+let pub = try await node.createPublisher(Imu.self, topic: "imu")
+try pub.publish(Imu(
+    header: Header.now(frameId: "imu_link"),
+    linearAcceleration: Vector3(x: 0, y: 0, z: 9.81)))
+
+// Same over DDS — identical Node / Publisher / Subscription API from here on.
+let ddsContext = try await ROS2Context(transport: .ddsMulticast(domainId: 0))
+
+// Subscribe.
+let sub = try await node.createSubscription(Imu.self, topic: "imu")
+for await msg in sub.messages { print("accel: \(msg.linearAcceleration)") }
+```
+
+### Services
+
+`ROS2Service<S>` / `ROS2Client<S>` round-trip a typed request / response over either transport (Zenoh queryables or DDS rq/rr topics). Failures surface as `ServiceError` (`.timeout`, `.handlerFailed`, `.serviceUnavailable`, `.taskCancelled`, …).
+
+```swift
+let svc = try await node.createService(TriggerSrv.self, name: "/trigger") { _ in
+    TriggerSrv.Response(success: true, message: "ok")
+}
+let cli = try await node.createClient(TriggerSrv.self, name: "/trigger")
+try await cli.waitForService(timeout: .seconds(5))
+let resp = try await cli.call(.init(), timeout: .seconds(5))
+```
+
+### Parameters, Actions, and runnable examples
+
+Declare typed parameters (`node.declareParameter` + on-set veto callbacks; interoperates with `ros2 param list/set` and `/parameter_events`) and typed actions (`node.createActionServer` / `createActionClient` with goal handles and feedback `AsyncStream`). End-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift run talker zenoh`, `swift run listener dds`, `swift run parameter-demo zenoh` — live under [`Sources/Examples/README.md`](Sources/Examples/README.md).
+
 ## Backends: RCL (1.3.0+) and the wire path (deprecated, removed in 2.0.0)
 
 Two backends sit behind one backend-agnostic umbrella API. `.zenoh(locator:)` / `.dds(...)` resolve automatically:
@@ -125,47 +166,6 @@ SWIFT_ROS2_TARGET_OS=android swift build --swift-sdk aarch64-unknown-linux-andro
 ```
 
 `SWIFT_ROS2_TARGET_OS=android` is **required** for any cross-compile — SwiftPM evaluates manifest-scope `#if os(...)` against the host, so without it a Linux host pulls in the un-buildable DDS path and a macOS host never source-builds `zenoh-pico`. The value is allow-list-validated (`{android, apple, linux, windows}`); typos fail the manifest compile. The `SwiftROS2` umbrella isn't built on Android — `import SwiftROS2Zenoh` directly.
-
-## Quick Start
-
-> **Android:** the umbrella is excluded on Android — use `SwiftROS2Zenoh.ZenohClient` directly until DDS (and the umbrella) land there.
-
-```swift
-import SwiftROS2
-
-// Publish an IMU message over Zenoh.
-let context = try await ROS2Context(
-    transport: .zenoh(locator: "tcp/192.168.1.100:7447"), distro: .jazzy)
-let node = try await context.createNode(name: "sensor_node", namespace: "/ios")
-let pub = try await node.createPublisher(Imu.self, topic: "imu")
-try pub.publish(Imu(
-    header: Header.now(frameId: "imu_link"),
-    linearAcceleration: Vector3(x: 0, y: 0, z: 9.81)))
-
-// Same over DDS — identical Node / Publisher / Subscription API from here on.
-let ddsContext = try await ROS2Context(transport: .ddsMulticast(domainId: 0))
-
-// Subscribe.
-let sub = try await node.createSubscription(Imu.self, topic: "imu")
-for await msg in sub.messages { print("accel: \(msg.linearAcceleration)") }
-```
-
-### Services
-
-`ROS2Service<S>` / `ROS2Client<S>` round-trip a typed request / response over either transport (Zenoh queryables or DDS rq/rr topics). Failures surface as `ServiceError` (`.timeout`, `.handlerFailed`, `.serviceUnavailable`, `.taskCancelled`, …).
-
-```swift
-let svc = try await node.createService(TriggerSrv.self, name: "/trigger") { _ in
-    TriggerSrv.Response(success: true, message: "ok")
-}
-let cli = try await node.createClient(TriggerSrv.self, name: "/trigger")
-try await cli.waitForService(timeout: .seconds(5))
-let resp = try await cli.call(.init(), timeout: .seconds(5))
-```
-
-### Parameters, Actions, and runnable examples
-
-Declare typed parameters (`node.declareParameter` + on-set veto callbacks; interoperates with `ros2 param list/set` and `/parameter_events`) and typed actions (`node.createActionServer` / `createActionClient` with goal handles and feedback `AsyncStream`). End-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift run talker zenoh`, `swift run listener dds`, `swift run parameter-demo zenoh` — live under [`Sources/Examples/README.md`](Sources/Examples/README.md).
 
 ## Module layout
 

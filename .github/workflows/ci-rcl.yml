@@ -58,12 +58,15 @@ jobs:
       # expensive cross-build and fails fast if the generated tree is stale.
       - name: RCL marshalling regen-drift guard
         env:
-          # Clear the job-level opt-in for this step only: with it set,
-          # `swift run swift-ros2-gen` would resolve the CRos2Jazzy binary
-          # target at build/ros2/CRos2Jazzy.xcframework, which is not built
-          # until the cross-build step below. The generator itself needs no
-          # RCL target.
-          SWIFT_ROS2_ENABLE_RCL: ""
+          # Drop the RCL family from the graph for this step only: with the
+          # job-level SWIFT_ROS2_RCL_LOCAL=1, `swift run swift-ros2-gen`
+          # would resolve the CRos2Jazzy binary target at
+          # build/ros2/CRos2Jazzy.xcframework, which is not built until the
+          # cross-build step below. Apple builds RCL by default since the
+          # 1.3.0 pin, so the explicit opt-OUT is required here — clearing
+          # SWIFT_ROS2_ENABLE_RCL no longer removes it. The generator itself
+          # needs no RCL target.
+          SWIFT_ROS2_DISABLE_RCL: "1"
         run: |
           bash Scripts/regen-rcl-marshalling.sh
           git diff --exit-code Sources/CRclBridge/Generated \

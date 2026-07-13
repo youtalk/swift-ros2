@@ -719,10 +719,21 @@ bridge_dds_writer_t* dds_bridge_create_raw_writer(
     if (writer->topic < 0) {
         set_error("Failed to create raw CDR topic '%s': %s", topic_name, dds_strretcode(writer->topic));
         // On failure dds_create_topic_impl does not consume the passed-in
-        // reference (its error label frees only new_qos; vendor/cyclonedds
-        // src/core/ddsc/src/dds_topic.c:592-598), so both of our references
-        // — the stored one and the one passed via sertype_for_topic (the
-        // same pointer at this point) — must be released here.
+        // reference, so both of our references — the stored one and the one
+        // passed via sertype_for_topic (the same pointer at this point) —
+        // must be released here. Two failure classes exist and both leave the
+        // passed-in reference with us:
+        //   1. The plain `goto error` paths (bad qos, security, ktopic lookup;
+        //      vendor/cyclonedds src/core/ddsc/src/dds_topic.c) never touch
+        //      *sertype.
+        //   2. The DDS_HAS_TYPE_DISCOVERY `error_typeref` path DOES call
+        //      ddsi_sertype_unref(*sertype), but that only balances the +1 that
+        //      ddsi_sertype_register_locked took a few lines earlier — it is
+        //      the registration's own reference, not ours.
+        // CycloneDDS's own dds_create_topic confirms the contract: it holds a
+        // single reference and unrefs it exactly once on every failure
+        // (including error_typeref) without double-freeing. We hold two
+        // independent references, so we unref twice.
         ddsi_sertype_unref(sertype_for_topic);
         ddsi_sertype_unref(writer->raw_sertype);
         free(writer);
@@ -989,8 +1000,11 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
         set_error("Failed to create raw CDR topic '%s': %s",
                   topic_name, dds_strretcode(reader->topic));
         // On failure dds_create_topic_impl does not consume the passed-in
-        // reference (see the matching comment in create_raw_writer), so
-        // release both of our references here.
+        // reference — neither the plain `goto error` paths nor the
+        // DDS_HAS_TYPE_DISCOVERY `error_typeref` path (whose
+        // ddsi_sertype_unref only balances the registration's own +1). See the
+        // matching comment in create_raw_writer. Release both of our
+        // independent references here.
         ddsi_sertype_unref(sertype_for_topic);
         ddsi_sertype_unref(reader->raw_sertype);
         free(reader);

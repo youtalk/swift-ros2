@@ -36,11 +36,16 @@ public enum HarnessCLI {
     /// The transport stack the `zenoh` backend token actually resolves to in
     /// this build. The token is variant-dependent (an invisible build-time
     /// switch), so RESULT lines record it explicitly to keep archived soak
-    /// and bench logs self-describing: when the zenoh-pico wire family is in
-    /// the build graph, `.zenoh` is the wire path; when it is carved out
-    /// (SWIFT_ROS2_RCL_RMW=zenoh), `.zenoh` routes to rcl + rmw_zenoh_cpp.
+    /// and bench logs self-describing. Mirrors `makeDefaultSession`'s
+    /// `.zenoh` routing exactly: Linux RCL builds route to rcl +
+    /// rmw_zenoh_cpp even though the zenoh-pico wire family stays linked
+    /// (MZ5, R1 no-collision — proven via /proc maps of a live bench);
+    /// elsewhere the wire path wins when present, and the zenoh-rmw variant
+    /// (zenoh-pico carved out) is rcl + rmw_zenoh_cpp.
     public static var zenohStack: String {
-        #if canImport(SwiftROS2Zenoh)
+        #if os(Linux) && SWIFT_ROS2_RCL
+            return "rcl-rmw_zenoh"
+        #elseif canImport(SwiftROS2Zenoh)
             return "wire-zenoh-pico"
         #else
             return "rcl-rmw_zenoh"

@@ -610,7 +610,12 @@ void dds_bridge_destroy_writer(bridge_dds_writer_t* writer) {
         dds_delete(writer->topic);
         writer->topic = 0;
     }
-    writer->raw_sertype = NULL;
+    // Release the sertype reference held since create_raw_writer (mirrors
+    // dds_bridge_destroy_reader). Standard writers keep raw_sertype NULL.
+    if (writer->raw_sertype) {
+        ddsi_sertype_unref(writer->raw_sertype);
+        writer->raw_sertype = NULL;
+    }
 #endif
 
     free(writer);
@@ -713,6 +718,23 @@ bridge_dds_writer_t* dds_bridge_create_raw_writer(
 
     if (writer->topic < 0) {
         set_error("Failed to create raw CDR topic '%s': %s", topic_name, dds_strretcode(writer->topic));
+        // On failure dds_create_topic_impl does not consume the passed-in
+        // reference, so both of our references — the stored one and the one
+        // passed via sertype_for_topic (the same pointer at this point) —
+        // must be released here. Two failure classes exist and both leave the
+        // passed-in reference with us:
+        //   1. The plain `goto error` paths (bad qos, security, ktopic lookup;
+        //      vendor/cyclonedds src/core/ddsc/src/dds_topic.c) never touch
+        //      *sertype.
+        //   2. The DDS_HAS_TYPE_DISCOVERY `error_typeref` path DOES call
+        //      ddsi_sertype_unref(*sertype), but that only balances the +1 that
+        //      ddsi_sertype_register_locked took a few lines earlier — it is
+        //      the registration's own reference, not ours.
+        // CycloneDDS's own dds_create_topic confirms the contract: it holds a
+        // single reference and unrefs it exactly once on every failure
+        // (including error_typeref) without double-freeing. We hold two
+        // independent references, so we unref twice.
+        ddsi_sertype_unref(sertype_for_topic);
         ddsi_sertype_unref(writer->raw_sertype);
         free(writer);
         return NULL;
@@ -835,14 +857,24 @@ int32_t dds_bridge_write_raw_cdr(
         return -5;
     }
 
-    // Write using dds_writecdr. On success CycloneDDS consumes the serdata
-    // reference; on failure ownership stays with us, so we must unref to avoid
-    // leaking one serdata per failed publish.
+    // dds_writecdr's ownership contract is asymmetric: once the writer lock
+    // is taken, dds_writecdr_impl_common consumes one serdata reference on
+    // every path, success or failure ("consumes 1 refc from din in all
+    // paths", vendor/cyclonedds/src/core/ddsc/src/dds_write.c:293). A
+    // RELIABLE writer with a full WHC returns DDS_RETCODE_TIMEOUT with the
+    // reference already consumed, so unref-on-failure would double-free.
+    // Only the pre-lock early-outs (NULL serdata, invalid writer handle,
+    // topic filter; dds_write.c:65-74) leave ownership with the caller.
+    // Take an extra reference before the call and release exactly one
+    // afterwards so success and all post-lock failures are balanced; the
+    // rare pre-lock failure then leaks one serdata instead of corrupting
+    // the heap.
+    ddsi_serdata_ref(serdata);
     dds_return_t ret = dds_writecdr(writer->writer, serdata);
+    ddsi_serdata_unref(serdata);
 
     if (ret < 0) {
         set_error("Failed to write raw CDR data: %s", dds_strretcode(ret));
-        ddsi_serdata_unref(serdata);
         return -6;
     }
 
@@ -967,6 +999,13 @@ bridge_dds_reader_t* dds_bridge_create_raw_reader(
     if (reader->topic < 0) {
         set_error("Failed to create raw CDR topic '%s': %s",
                   topic_name, dds_strretcode(reader->topic));
+        // On failure dds_create_topic_impl does not consume the passed-in
+        // reference — neither the plain `goto error` paths nor the
+        // DDS_HAS_TYPE_DISCOVERY `error_typeref` path (whose
+        // ddsi_sertype_unref only balances the registration's own +1). See the
+        // matching comment in create_raw_writer. Release both of our
+        // independent references here.
+        ddsi_sertype_unref(sertype_for_topic);
         ddsi_sertype_unref(reader->raw_sertype);
         free(reader);
         return NULL;

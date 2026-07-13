@@ -2,7 +2,7 @@
 # See docs/superpowers/specs/2026-04-28-swift-ros2-1.0.0-runway-design.md §6.2.
 SwiftROS2CDR=80
 SwiftROS2Wire=90
-# Lowered post-phase-4 due to large unexercised generated corpus; restore as round-trip coverage grows.
-SwiftROS2Messages=60
+# Restored after the generated-message round-trip sweep (93.2% measured); keep a 5-point margin.
+SwiftROS2Messages=85
 SwiftROS2Transport=80
 SwiftROS2=70

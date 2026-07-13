@@ -101,6 +101,31 @@ typedef struct {
 } zenoh_get_callback_state_t;
 
 // ============================================================================
+// Internal helpers
+// ============================================================================
+
+// Copy a zenoh string view into a freshly malloc'd NUL-terminated C string.
+// zenoh-pico strings are length+pointer with no terminator (_z_string_t is
+// "A string with no terminator", vendor/zenoh-pico/include/zenoh-pico/
+// collections/string.h:64-70), and z_keyexpr_as_view_string merely aliases
+// the keyexpr suffix slice, so passing z_string_data() to a callback that
+// expects a C string would read past the end of the slice. Returns NULL on
+// allocation failure; callers substitute "" so the payload is still
+// delivered.
+static char* zenoh_string_dup_cstr(const z_loaned_string_t* s) {
+    size_t len = z_string_len(s);
+    char* cstr = (char*)malloc(len + 1);
+    if (!cstr) {
+        return NULL;
+    }
+    if (len > 0) {
+        memcpy(cstr, z_string_data(s), len);
+    }
+    cstr[len] = '\0';
+    return cstr;
+}
+
+// ============================================================================
 // Session management
 // ============================================================================
 
@@ -413,11 +438,13 @@ static void zenoh_sample_handler(z_loaned_sample_t* sample, void* context) {
         return;
     }
 
-    // Extract keyexpr as string
+    // Extract keyexpr as a NUL-terminated copy (the view is not terminated;
+    // see zenoh_string_dup_cstr).
     const z_loaned_keyexpr_t* keyexpr = z_sample_keyexpr(sample);
     z_view_string_t keyexpr_str;
     z_keyexpr_as_view_string(keyexpr, &keyexpr_str);
-    const char* ke_cstr = z_string_data(z_loan(keyexpr_str));
+    char* ke_copy = zenoh_string_dup_cstr(z_loan(keyexpr_str));
+    const char* ke_cstr = ke_copy ? ke_copy : "";
 
     // Extract payload
     const z_loaned_bytes_t* payload_bytes = z_sample_payload(sample);
@@ -431,6 +458,7 @@ static void zenoh_sample_handler(z_loaned_sample_t* sample, void* context) {
         payload_data = (uint8_t*)malloc(payload_len);
         if (!payload_data) {
             // Memory allocation failed, skip callback
+            if (ke_copy) free(ke_copy);
             return;
         }
         z_bytes_reader_read(&reader, payload_data, payload_len);
@@ -462,6 +490,7 @@ static void zenoh_sample_handler(z_loaned_sample_t* sample, void* context) {
     // Cleanup
     if (payload_data) free(payload_data);
     if (attachment_data) free(attachment_data);
+    if (ke_copy) free(ke_copy);
 }
 
 zenoh_result_t zenoh_declare_subscriber(zenoh_session_t* session,
@@ -656,11 +685,13 @@ static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
 
     zenoh_queryable_link_query(qbl, q);
 
-    // Extract keyexpr as a null-terminated string.
+    // Extract keyexpr as a NUL-terminated copy (the view is not terminated;
+    // see zenoh_string_dup_cstr).
     const z_loaned_keyexpr_t* keyexpr = z_query_keyexpr(query);
     z_view_string_t keyexpr_str;
     z_keyexpr_as_view_string(keyexpr, &keyexpr_str);
-    const char* ke_cstr = z_string_data(z_loan(keyexpr_str));
+    char* ke_copy = zenoh_string_dup_cstr(z_loan(keyexpr_str));
+    const char* ke_cstr = ke_copy ? ke_copy : "";
 
     // Extract payload (may be NULL).
     const z_loaned_bytes_t* payload_bytes = z_query_payload(query);
@@ -671,6 +702,7 @@ static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
         if (payload_len > 0) {
             payload_data = (uint8_t*)malloc(payload_len);
             if (!payload_data) {
+                if (ke_copy) free(ke_copy);
                 z_drop(z_move(q->query));
                 free(q);
                 return;
@@ -705,6 +737,7 @@ static void zenoh_query_handler(z_loaned_query_t* query, void* context) {
 
     if (payload_data) free(payload_data);
     if (attachment_data) free(attachment_data);
+    if (ke_copy) free(ke_copy);
 }
 
 zenoh_result_t zenoh_declare_queryable(zenoh_session_t* session,
@@ -884,12 +917,18 @@ static void zenoh_get_reply_handler(z_loaned_reply_t* reply, void* context) {
         }
     }
 
-    // Marshal keyexpr.
+    // Marshal keyexpr as a NUL-terminated copy (the view is not terminated;
+    // see zenoh_string_dup_cstr). Error replies carry no keyexpr, so the
+    // empty-string default stays for that arm.
+    char* ke_copy = NULL;
     const char* ke_cstr = "";
     z_view_string_t keyexpr_str;
     if (keyexpr) {
         z_keyexpr_as_view_string(keyexpr, &keyexpr_str);
-        ke_cstr = z_string_data(z_loan(keyexpr_str));
+        ke_copy = zenoh_string_dup_cstr(z_loan(keyexpr_str));
+        if (ke_copy) {
+            ke_cstr = ke_copy;
+        }
     }
 
     // Marshal payload.
@@ -930,6 +969,7 @@ static void zenoh_get_reply_handler(z_loaned_reply_t* reply, void* context) {
 
     if (payload_data) free(payload_data);
     if (attachment_data) free(attachment_data);
+    if (ke_copy) free(ke_copy);
 }
 
 // Drop handler invoked once when the reply closure is dropped (after the
@@ -959,17 +999,33 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
         return -1;
     }
 
+    // Contract: finish_callback fires exactly once per call, success or
+    // failure. After the closure is built, zenoh-pico guarantees this by
+    // invoking the drop handler even when z_get fails (see the comment at
+    // the z_get call below). On every failure return BEFORE the closure is
+    // built, we must invoke finish_callback ourselves — otherwise the
+    // caller-retained context (Swift GetContext) leaks on each call against
+    // a disconnected session or an invalid key expression.
     if (z_session_is_closed(z_loan(session->session))) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
         return ZENOH_ERROR_SESSION_CLOSED;
     }
 
     z_view_keyexpr_t view_ke;
     if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
         return -1;
     }
 
     zenoh_get_callback_state_t* state = (zenoh_get_callback_state_t*)malloc(sizeof(zenoh_get_callback_state_t));
     if (!state) {
+        if (finish_callback) {
+            finish_callback(context);
+        }
         return -1;
     }
     state->reply_callback = reply_callback;
@@ -987,6 +1043,9 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
     if (payload && payload_len > 0) {
         if (z_bytes_from_buf(&payload_bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
             free(state);
+            if (finish_callback) {
+                finish_callback(context);
+            }
             return -1;
         }
         options.payload = z_move(payload_bytes);
@@ -1000,6 +1059,9 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
                 z_drop(z_move(payload_bytes));
             }
             free(state);
+            if (finish_callback) {
+                finish_callback(context);
+            }
             return -1;
         }
         options.attachment = z_move(attachment_bytes);
@@ -1012,9 +1074,12 @@ zenoh_result_t zenoh_get(zenoh_session_t* session,
                        z_move(closure), &options);
 
     if (result < 0) {
-        // The closure drop handler already frees `state` even on z_get failure
-        // (zenoh-pico drops the moved closure when it cannot accept it). Do
-        // not double-free here.
+        // The closure drop handler already frees `state` and fires
+        // finish_callback even on z_get failure: zenoh-pico invokes the
+        // dropper via _z_pending_query_clear on register failure
+        // (vendor/zenoh-pico/src/net/primitives.c:510) and via the
+        // pending-query list drop on send failure (primitives.c:505-508).
+        // Do not double-finish or double-free here.
         return (zenoh_result_t)result;
     }
 

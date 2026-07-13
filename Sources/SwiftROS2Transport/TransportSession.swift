@@ -12,6 +12,8 @@ import SwiftROS2Wire
 /// Implementations provide the actual transport mechanism:
 /// - Zenoh: via zenoh-pico C-FFI
 /// - DDS: via CycloneDDS C-FFI
+/// - RCL: `RclTransportSession` over `RclClientProtocol` (real rcl + rmw,
+///   Apple xcframework or Linux system ROS 2)
 package protocol TransportSession: AnyObject, Sendable {
     var isConnected: Bool { get }
     var transportType: TransportType { get }

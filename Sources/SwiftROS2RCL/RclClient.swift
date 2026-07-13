@@ -1,5 +1,7 @@
 // RclClient.swift
-// Concrete RclClientProtocol over the CRclBridge C FFI. Apple-only, gated.
+// Concrete RclClientProtocol over the CRclBridge C FFI. Gated behind
+// SWIFT_ROS2_ENABLE_RCL=1: Apple (prebuilt xcframework, rmw baked per build
+// variant) and Linux (system ROS 2 install, rmw selected at runtime).
 
 import CDDSBridge
 import CRclBridge
@@ -630,9 +632,21 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// first-participant creation, so this serializes the mutations rather than
     /// giving each context an independent value.)
     private static let envLock = NSLock()
-    /// Saved CYCLONEDDS_URI to restore on destroyContext. Guarded by `envLock`.
-    /// Outer optional = "we saved"; inner = "was previously set".
-    private var priorCyclonedDDSURI: String??
+    /// CYCLONEDDS_URI as it was BEFORE the first live holder applied one.
+    /// Static + refcounted exactly like RMW_IMPLEMENTATION below: overlapping
+    /// contexts — possibly on different RclClient instances — must never
+    /// restore each other to a stale intermediate XML on a non-LIFO teardown.
+    /// Outer optional = "captured"; inner = "was previously set". Guarded by
+    /// `envLock`.
+    private static var cyclonedDDSURISaved: String??
+    /// Number of live contexts currently holding the CYCLONEDDS_URI slot.
+    /// Restore to `cyclonedDDSURISaved` fires only when this returns to 0.
+    /// Guarded by `envLock`.
+    private static var cyclonedDDSURIRefCount = 0
+    /// Whether THIS instance applied the discovery env and has not yet
+    /// restored it — keeps restore idempotent per instance. Guarded by
+    /// `envLock`.
+    private var cyclonedDDSURIHeld = false
     #if os(Linux)
         /// Serializes RMW_IMPLEMENTATION reads/writes (process-global env slot).
         private static let rmwEnvLock = NSLock()
@@ -657,13 +671,23 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     /// writes across all RclClient instances (process-global env slots; same
     /// rationale as `envLock`).
     private static let zenohEnvLock = NSLock()
-    /// Saved Zenoh env to restore on destroyContext. Outer optional = "we saved";
-    /// inner = "was previously set". Guarded by `zenohEnvLock`.
-    private var priorZenohSessionConfigURI: String??
-    private var priorZenohRouterCheckAttempts: String??
-    /// Temp file backing ZENOH_SESSION_CONFIG_URI; removed on restore.
+    /// Zenoh env as it was BEFORE the first live holder applied one (static +
+    /// refcounted, same contract as CYCLONEDDS_URI above). Guarded by
+    /// `zenohEnvLock`.
+    private static var zenohSessionConfigURISaved: String??
+    private static var zenohRouterCheckAttemptsSaved: String??
+    /// Number of live contexts currently holding the Zenoh env slots.
     /// Guarded by `zenohEnvLock`.
-    private var zenohConfigFileURL: URL?
+    private static var zenohEnvRefCount = 0
+    /// Temp files backing ZENOH_SESSION_CONFIG_URI across ALL live holders.
+    /// Deleted only when the last hold drops: even a holder deleting its own
+    /// file early would leave the still-exported env pointing at a dead path
+    /// for any locator-less context created during the overlap window.
+    /// Guarded by `zenohEnvLock`.
+    private static var zenohLiveConfigFileURLs: [URL] = []
+    /// Whether THIS instance applied the Zenoh env and has not yet restored
+    /// it. Guarded by `zenohEnvLock`.
+    private var zenohEnvHeld = false
     #if SWIFT_ROS2_RCL_RMW_ZENOH
         /// Saved AMENT_PREFIX_PATH to restore on destroyContext. Outer optional =
         /// "we saved"; inner = "was previously set". Guarded by `zenohEnvLock`.
@@ -786,10 +810,16 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         else { return false }
         // Save + export under the shared lock as one critical section: getenv and
         // setenv must not interleave with another instance's, or the saved value
-        // and the live env desynchronize.
+        // and the live env desynchronize. Only the FIRST live holder captures
+        // the pre-apply value; later holders just bump the ref count (the slot
+        // itself stays last-writer-wins, as before).
         Self.envLock.lock()
         defer { Self.envLock.unlock() }
-        saveEnvSlotLocked(&priorCyclonedDDSURI, "CYCLONEDDS_URI")
+        if Self.cyclonedDDSURIRefCount == 0 {
+            saveEnvSlotLocked(&Self.cyclonedDDSURISaved, "CYCLONEDDS_URI")
+        }
+        Self.cyclonedDDSURIRefCount += 1
+        cyclonedDDSURIHeld = true
         setenv("CYCLONEDDS_URI", xml, 1)
         return true
     }
@@ -815,14 +845,21 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         slot = Optional(getenv(name).map { String(cString: $0) })
     }
 
-    /// Restore CYCLONEDDS_URI to its pre-applyDiscoveryEnv value (unset it if it
-    /// was previously unset). Idempotent: a no-op when nothing was saved.
+    /// Drop this instance's hold on CYCLONEDDS_URI; the slot is restored to
+    /// its pre-FIRST-apply value only when the last live holder drops, so a
+    /// non-LIFO teardown never restores a stale intermediate XML. Idempotent
+    /// per instance: a no-op when this instance holds nothing.
     package func restoreDiscoveryEnv() {
         // Read + restore under the shared lock as one critical section (see
         // applyDiscoveryEnv): the saved slot and the live env move together.
         Self.envLock.lock()
         defer { Self.envLock.unlock() }
-        restoreEnvSlotLocked(&priorCyclonedDDSURI, "CYCLONEDDS_URI")
+        guard cyclonedDDSURIHeld else { return }
+        cyclonedDDSURIHeld = false
+        Self.cyclonedDDSURIRefCount -= 1
+        if Self.cyclonedDDSURIRefCount == 0 {
+            restoreEnvSlotLocked(&Self.cyclonedDDSURISaved, "CYCLONEDDS_URI")
+        }
     }
 
     /// Write the Zenoh session config to a unique temp file and export
@@ -842,9 +879,13 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         }
         Self.zenohEnvLock.lock()
         defer { Self.zenohEnvLock.unlock() }
-        zenohConfigFileURL = url
-        saveEnvSlotLocked(&priorZenohSessionConfigURI, "ZENOH_SESSION_CONFIG_URI")
-        saveEnvSlotLocked(&priorZenohRouterCheckAttempts, "ZENOH_ROUTER_CHECK_ATTEMPTS")
+        if Self.zenohEnvRefCount == 0 {
+            saveEnvSlotLocked(&Self.zenohSessionConfigURISaved, "ZENOH_SESSION_CONFIG_URI")
+            saveEnvSlotLocked(&Self.zenohRouterCheckAttemptsSaved, "ZENOH_ROUTER_CHECK_ATTEMPTS")
+        }
+        Self.zenohEnvRefCount += 1
+        zenohEnvHeld = true
+        Self.zenohLiveConfigFileURLs.append(url)
         setenv("ZENOH_SESSION_CONFIG_URI", url.path, 1)
         // Check for the router once, then continue: a mobile publisher must not
         // block context creation when the remote router is briefly unreachable.
@@ -852,18 +893,29 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         return true
     }
 
-    /// Restore the Zenoh env to its pre-apply values (unset what was unset) and
-    /// remove the temp config file. In the zenoh-rmw variant this also restores
-    /// AMENT_PREFIX_PATH and deletes the synthesized ament prefix. Idempotent:
-    /// a no-op when nothing was saved.
+    /// Drop this instance's hold on the Zenoh env slots; they are restored to
+    /// their pre-FIRST-apply values — and every held temp config file deleted
+    /// — only when the last live holder drops, so a non-LIFO teardown never
+    /// repoints the slot at a stale value or a deleted file. In the zenoh-rmw
+    /// variant this also restores AMENT_PREFIX_PATH and deletes the
+    /// synthesized ament prefix (per-instance: the prefix is re-synthesized
+    /// and re-validated on every apply, so no refcount is needed there).
+    /// Idempotent per instance: a no-op when this instance holds nothing.
     package func restoreZenohSessionEnv() {
         Self.zenohEnvLock.lock()
         defer { Self.zenohEnvLock.unlock() }
-        restoreEnvSlotLocked(&priorZenohSessionConfigURI, "ZENOH_SESSION_CONFIG_URI")
-        restoreEnvSlotLocked(&priorZenohRouterCheckAttempts, "ZENOH_ROUTER_CHECK_ATTEMPTS")
-        if let url = zenohConfigFileURL {
-            try? FileManager.default.removeItem(at: url)
-            zenohConfigFileURL = nil
+        if zenohEnvHeld {
+            zenohEnvHeld = false
+            Self.zenohEnvRefCount -= 1
+            if Self.zenohEnvRefCount == 0 {
+                restoreEnvSlotLocked(&Self.zenohSessionConfigURISaved, "ZENOH_SESSION_CONFIG_URI")
+                restoreEnvSlotLocked(
+                    &Self.zenohRouterCheckAttemptsSaved, "ZENOH_ROUTER_CHECK_ATTEMPTS")
+                for url in Self.zenohLiveConfigFileURLs {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                Self.zenohLiveConfigFileURLs.removeAll()
+            }
         }
         #if SWIFT_ROS2_RCL_RMW_ZENOH
             restoreEnvSlotLocked(&priorAmentPrefixPath, "AMENT_PREFIX_PATH")

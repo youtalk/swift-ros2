@@ -9,7 +9,16 @@ private final class ForeignKeyExprHandle: ZenohKeyExprHandle {}
 
 final class ZenohClientSmokeTests: XCTestCase {
     func testInitializationDoesNotCrash() {
-        _ = ZenohClient()
+        _ = ZenohClient(wireFallback: ())
+    }
+
+    // The deprecated public initializer must keep constructing a working
+    // client through 1.x — the annotation is a migration signal, not a
+    // behavior change. The test method carries the same deprecation so the
+    // pinned usage compiles without a warning.
+    @available(*, deprecated)
+    func testDeprecatedPublicInitStillConstructs() {
+        XCTAssertFalse(ZenohClient().isSessionHealthy())
     }
 
     /// Verifies that passing a foreign ZenohKeyExprHandle to put() throws ZenohError.invalidParameter.
@@ -17,7 +26,7 @@ final class ZenohClientSmokeTests: XCTestCase {
     /// The foreign-handle guard in ZenohClient.put(keyExpr:payload:attachment:) runs
     /// BEFORE the session-open guard, so this test does not need a live Zenoh router.
     func testForeignKeyExprHandleIsRejected() throws {
-        let client = ZenohClient()
+        let client = ZenohClient(wireFallback: ())
         let foreign = ForeignKeyExprHandle()
 
         XCTAssertThrowsError(try client.put(keyExpr: foreign, payload: Data(), attachment: nil)) { error in
@@ -35,7 +44,7 @@ final class ZenohClientSmokeTests: XCTestCase {
 
     /// Verifies that calling close() on a client that was never opened throws ZenohError.sessionCloseFailed.
     func testDoubleCloseOnFreshClientThrows() throws {
-        let client = ZenohClient()
+        let client = ZenohClient(wireFallback: ())
         XCTAssertThrowsError(try client.close()) { error in
             guard let zErr = error as? ZenohError else {
                 XCTFail("Expected ZenohError, got \(type(of: error))")

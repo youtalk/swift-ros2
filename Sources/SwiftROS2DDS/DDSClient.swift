@@ -141,6 +141,17 @@ public final class DDSClient: DDSClientProtocol {
     private var session: OpaquePointer?
     private let lock = NSLock()
 
+    /// Non-deprecated construction seam for in-package callers: the wire
+    /// path stays the automatic fallback wherever the RCL backend is not
+    /// available (`makeDefaultSession`) and remains exercised by tests as
+    /// the golden-byte oracle — those uses are not themselves deprecated.
+    package init(wireFallback: ()) {}
+
+    /// Initializes the DDS client (session not yet created)
+    @available(
+        *, deprecated,
+        message: "The pure-Swift wire path is deprecated; use the RCL backend. Removed in 2.0.0."
+    )
     public init() {}
 
     public var isAvailable: Bool {

@@ -188,7 +188,7 @@ extension ROS2Context {
                 return RclTransportSession(client: RclClient())
             #elseif canImport(SwiftROS2Zenoh)
                 // Wire path (zenoh-pico) — every build except the zenoh-rmw variant.
-                return ZenohTransportSession(client: ZenohClient())
+                return ZenohTransportSession(client: ZenohClient(wireFallback: ()))
             #elseif SWIFT_ROS2_RCL_RMW_ZENOH
                 // zenoh-pico is carved out (symbol collision with the variant's
                 // zenoh-c); `.zenoh` resolves to rcl + rmw_zenoh_cpp instead. The
@@ -204,7 +204,7 @@ extension ROS2Context {
                 // Linux RCL: .dds resolves to rcl + rmw_cyclonedds_cpp (runtime rmw).
                 return RclTransportSession(client: RclClient())
             #else
-                return DDSTransportSession(client: DDSClient())
+                return DDSTransportSession(client: DDSClient(wireFallback: ()))
             #endif
         case .rcl:
             #if SWIFT_ROS2_RCL_RMW_ZENOH

@@ -926,7 +926,7 @@
     },
     {
       "apiSymbol" : "TransportConfig.type=.dds",
-      "evidence" : "RclTransportSession.open forwards ddsUnicastPeers (bare host) + ddsNetworkInterface; RclClient.makeDiscoveryURIXML builds the SAME CycloneDDS discovery XML as the wire DDS path via the shared dds_bridge_build_domain_config_xml, exported as CYCLONEDDS_URI around context creation (restored on teardown). .rclUnicast factory + validate() peer check close the config hole. RclDiscoveryEnvTests asserts the XML shape; RclUnicastIntegrationTests is the LAN proof",
+      "evidence" : "RclTransportSession.open forwards ddsUnicastPeers (host:port via DDSPeer.discoveryAddress) + ddsNetworkInterface; RclClient.makeDiscoveryURIXML builds the SAME CycloneDDS discovery XML as the wire DDS path via the shared dds_bridge_build_domain_config_xml, exported as CYCLONEDDS_URI around context creation (restored on teardown). .rclUnicast factory + validate() peer check close the config hole. RclDiscoveryEnvTests asserts the XML shape; RclUnicastIntegrationTests is the LAN proof",
       "id" : "transport.dds",
       "platforms" : [
         "iOS",

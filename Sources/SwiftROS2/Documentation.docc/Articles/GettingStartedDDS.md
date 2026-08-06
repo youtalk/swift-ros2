@@ -29,3 +29,13 @@ let ctx = try await ROS2Context(transport: .ddsUnicast(peers: peers, domainId: 0
 
 CycloneDDS computes the discovery port as `7400 + domainId * 250`. SwiftROS2
 exposes the same formula via `DDSPeer.discoveryPort(forDomain:)`.
+
+The port is sent to CycloneDDS as part of the peer (`DDSPeer.discoveryAddress`
+renders `host:port`), so it has to match the domain you are joining. On any
+domain other than 0 the `port: 7400` default is wrong — build peers with the
+factory instead, which applies the formula for you:
+
+```swift
+let peers = [DDSPeer.peer(address: "192.168.1.10", domainId: 5)]
+let ctx = try await ROS2Context(transport: .ddsUnicast(peers: peers, domainId: 5))
+```

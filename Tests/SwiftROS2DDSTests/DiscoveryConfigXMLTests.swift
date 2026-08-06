@@ -61,6 +61,17 @@ final class DiscoveryConfigXMLTests: XCTestCase {
                 + "CycloneDDS builds without topic-discovery support, failing rmw_create_node (issue #149)")
     }
 
+    /// The `host:port` peer form the transport sessions build must reach the
+    /// XML attribute byte-for-byte. CycloneDDS only sends SPDP to the exact
+    /// port when the attribute carries one — strip it here and the caller's
+    /// port is lost just as it was in issue #176, one layer lower.
+    func testUnicastXMLPreservesPeerPort() {
+        let xml = buildXML(peers: ["192.168.1.85:7400", "[fe80::1]:7650"], interface: nil)
+        XCTAssertNotNil(xml)
+        XCTAssertTrue(xml!.contains("<Peer address=\"192.168.1.85:7400\"/>"))
+        XCTAssertTrue(xml!.contains("<Peer address=\"[fe80::1]:7650\"/>"))
+    }
+
     /// Multicast/default discovery emits no <Peers> block and therefore never
     /// reaches the offending element either.
     func testMulticastXMLHasNoPeersOrTopicDiscoveryElement() {

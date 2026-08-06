@@ -60,12 +60,13 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
             throw TransportError.unsupportedFeature(
                 "RCL transport not available (CRos2Jazzy not built)")
         }
-        // DDS discovery (bare host addresses) on the `.rcl` path; the router
-        // locator on the `.zenoh` path. Only one is set per build variant.
+        // DDS discovery (`host:port` peer addresses — the port is load-bearing,
+        // see `DDSPeer.discoveryAddress`) on the `.rcl` path; the router locator
+        // on the `.zenoh` path. Only one is set per build variant.
         try client.createContext(
             domainId: Int32(config.domainId),
             transportType: config.type,
-            unicastPeerAddresses: config.ddsUnicastPeers.map { $0.address },
+            unicastPeerAddresses: config.ddsUnicastPeers.map { $0.discoveryAddress },
             networkInterface: config.ddsNetworkInterface,
             zenohRouterLocator: config.type == .zenoh ? config.zenohLocator : nil)
         lock.lock()

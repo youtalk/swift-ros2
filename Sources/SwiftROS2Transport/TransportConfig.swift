@@ -64,6 +64,25 @@ public struct DDSPeer: Codable, Equatable, Sendable {
         "udp/\(address):\(port)"
     }
 
+    /// The peer as CycloneDDS consumes it in `<Peer address="..."/>` — always
+    /// `host:port`, with a bare IPv6 address bracketed.
+    ///
+    /// The port is not optional decoration. CycloneDDS only sends SPDP to the
+    /// exact port when the peer string carries one; a bare host makes it patch
+    /// in the *participant* unicast discovery port (`7400 + 250 * domain + 10`)
+    /// and probe participant indices up to `MaxAutoParticipantIndex` — 7410,
+    /// 7412, ... 7426 on domain 0. Nothing is bound there when the remote runs
+    /// the default `ParticipantIndex` ("none", which leaves its unicast ports
+    /// ephemeral), so discovery silently never completes (issue #176).
+    ///
+    /// Bracketing matters for the same reason: `ddsi_ipaddr_from_string` only
+    /// reads a port off an IPv6 address when the address part is bracketed, so
+    /// `fe80::1:7400` would parse as a *different* address with no port.
+    public var discoveryAddress: String {
+        let host = address.contains(":") && !address.hasPrefix("[") ? "[\(address)]" : address
+        return "\(host):\(port)"
+    }
+
     public static func discoveryPort(forDomain domainId: Int) -> UInt16 {
         UInt16(7400 + domainId * 250)
     }

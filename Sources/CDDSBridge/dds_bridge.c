@@ -315,6 +315,24 @@ bridge_dds_session_t* dds_bridge_create_session(
                 session->domain = domain;
                 g_domain_created = true;
                 g_domain_id = domain_id;
+            } else if (domain != DDS_RETCODE_PRECONDITION_NOT_MET) {
+                // CycloneDDS rejected the discovery config (bad peer address,
+                // unsupported element, ...). Falling through would create the
+                // participant on an implicit DEFAULT-configured domain: no
+                // <Peers>, multicast SPDP, and a session that reports itself
+                // connected while discovering nothing. That silent degradation
+                // is indistinguishable from a firewall block and is exactly the
+                // class of failure issue #176 was misdiagnosed as. Fail loudly.
+                //
+                // PRECONDITION_NOT_MET is the one tolerated case: the domain
+                // already exists (created by another session or by rmw), so the
+                // config cannot be applied but the existing one is valid. That
+                // is the documented process-lifetime limitation above.
+                set_error("CycloneDDS rejected the discovery configuration: %s",
+                    dds_strretcode(domain));
+                free(config_xml);
+                free(session);
+                return NULL;
             }
         }
 

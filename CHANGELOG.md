@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Fixed
+
+- **Unicast DDS discovery now reaches the configured port.** `DDSTransportSession` and `RclTransportSession` passed only `DDSPeer.address` into the CycloneDDS `<Peer address="..."/>` list, dropping `DDSPeer.port`. Without a port CycloneDDS patches in the *participant* unicast discovery port (`7400 + 250 * domain + 10`) and probes participant indices up to `MaxAutoParticipantIndex` — 7410, 7412, … 7426 on domain 0 — none of which a remote running the default `ParticipantIndex` ("none", ephemeral unicast ports) listens on. SPDP went to dead ports, discovery never completed, and nothing was reported: the failure looked exactly like a firewall or AP-isolation problem. Both call sites now emit the new `DDSPeer.discoveryAddress` (`host:port`, IPv6 bracketed), so SPDP lands on the port the caller configured. Thanks to @peichunhuang-1 for the diagnosis (#176).
+- **A discovery config CycloneDDS rejects now fails the session instead of degrading silently.** `dds_bridge_create_session` ignored a failed `dds_create_domain` and went on to `dds_create_participant`, which creates an *implicit* domain on the default configuration — multicast SPDP, no `<Peers>` — so the session reported itself connected while discovering nothing, the same "looks like a firewall" symptom as #176. The rejection is now surfaced as `DDSError.sessionCreationFailed`. "Domain already exists" (`DDS_RETCODE_PRECONDITION_NOT_MET`) stays tolerated: that is the documented process-lifetime limitation, where the config of the first session on a domain wins (#176).
+
 ## [1.2.0] - 2026-06-06
 
 ### Added

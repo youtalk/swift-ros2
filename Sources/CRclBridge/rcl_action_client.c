@@ -16,6 +16,15 @@
 // crcl_node_s body (stored rcl_context_t*) + crcl__set_error / crcl__capture_rcl_error.
 #include "crcl_internal.h"
 
+// Zeroing allocator for rmw_serialized_message to eliminate uninitialized CDR padding.
+static rcutils_allocator_t crcl_zeroing_allocator = {
+    .allocate = calloc,
+    .deallocate = rcutils_deallocate,
+    .reallocate = rcutils_reallocate,
+    .zero_allocate = calloc,
+    .allocator_state = NULL
+};
+
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -52,7 +61,7 @@ static bool crcl__action_client_take_response(
     const rosidl_message_type_support_t *(*ts_fn)(void),
     rcl_ret_t (*take_fn)(const rcl_action_client_t *, rmw_request_id_t *, void *)) {
     rcl_serialized_message_t msg = rmw_get_zero_initialized_serialized_message();
-    rcutils_allocator_t alloc = rcutils_get_default_allocator();
+    rcutils_allocator_t alloc = crcl_zeroing_allocator;
     if (rmw_serialized_message_init(&msg, 0, &alloc) != RMW_RET_OK) {
         rcl_reset_error();
         return false;
@@ -89,7 +98,7 @@ static bool crcl__action_client_take_response(
 // One drained feedback take: typed FeedbackMessage -> rmw_serialize -> bytes.
 static bool crcl__action_client_take_feedback(crcl_action_client_t *c) {
     rcl_serialized_message_t msg = rmw_get_zero_initialized_serialized_message();
-    rcutils_allocator_t alloc = rcutils_get_default_allocator();
+    rcutils_allocator_t alloc = crcl_zeroing_allocator;
     if (rmw_serialized_message_init(&msg, 0, &alloc) != RMW_RET_OK) {
         rcl_reset_error();
         return false;
@@ -386,7 +395,7 @@ static int crcl__action_client_send(
     ser.buffer = (uint8_t *)buf;
     ser.buffer_length = len;
     ser.buffer_capacity = len;
-    ser.allocator = rcutils_get_default_allocator();
+    ser.allocator = crcl_zeroing_allocator;
     if (rmw_deserialize(&ser, ts_fn(), request) != RMW_RET_OK) {
         crcl__capture_rcl_error();
         destroy_fn(request);

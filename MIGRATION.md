@@ -12,6 +12,7 @@
 | 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
 | 1.0.x | 1.1.0 | **None.** Parameter API (`ROS2Node.declareParameter` / `setParameter` / `setOnSetParametersCallback` / six standard parameter services / `/parameter_events` publisher / `ROS2ParameterClient`) is purely additive. |
 | 1.1.x | 1.2.0 | **None.** The `ROS2Publisher.publish(_:timestamp:sequenceNumber:)` source-timestamp overload is purely additive — the existing `publish(_:)` is unchanged (it now delegates to the overload with the same wall-clock timestamp + monotonic sequence). |
+| 1.3.x | 1.4.0 | **None.** Additive: umbrella on Android/DDS-less Windows; RCL default-on and the wire-client deprecation warnings first reach tagged consumers here. |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -236,13 +237,19 @@ extension ROS2Node {
 
 No code change is required to upgrade — `Context.createNode(...)` keeps its old signature and now also auto-registers the six parameter services (opt out via `ROS2NodeOptions(startParameterServices: false)` if you don't need them).
 
-## 1.2 → 1.3 — RCL everywhere; the wire path is deprecated
+## 1.2 → 1.3 — RCL everywhere
 
 1.3.0 completes the native RCL backend on every platform it can currently
 reach: Apple (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw
 baked per build variant) and Linux (system ROS 2 install via
 `ROS2_RCL_PREFIX`, rmw selected at runtime from the transport type). No public
-symbol changed; the release is additive plus the deprecation below.
+symbol changed; the release is purely additive. RCL is opt-in via
+`SWIFT_ROS2_ENABLE_RCL=1` on every platform at this tag, including Apple.
+
+> **Tag note:** the wire-client deprecation below and the RCL-default-on flip
+> for Apple were merged on `main` after the `1.3.0` tag (`ed83b5527`) was cut.
+> Consumers pinned to a tag see both for the first time in `1.4.0` — see the
+> "1.3 → 1.4 — the bridge to 2.0" section below.
 
 ### What is deprecated
 
@@ -250,10 +257,10 @@ Constructing the wire clients directly:
 
 ```swift
 import SwiftROS2Zenoh
-let client = ZenohClient()   // warning: deprecated, removed in 2.0.0
+let client = ZenohClient()   // warning: deprecated, removed from the public API in 2.0.0
 
 import SwiftROS2DDS
-let dds = DDSClient()        // warning: deprecated, removed in 2.0.0
+let dds = DDSClient()        // warning: deprecated, removed from the public API in 2.0.0
 ```
 
 ### What is NOT deprecated
@@ -270,8 +277,10 @@ If you construct `ZenohClient` / `DDSClient` only to hand them to
 `ROS2Context`, drop the explicit construction and let `ROS2Context` pick the
 backend. If you use the wire clients standalone (raw key-expression puts,
 wire-level subscribers), plan the move to the umbrella API before 2.0.0 —
-the wire runtime path is removed there, while the CDR / wire codecs survive
-as the golden-byte correctness fixtures.
+2.0.0 removes the wire clients from the public API; the wire runtime remains
+the internal fallback where RCL is not available and is retired per platform
+in 2.x minors, non-breaking. The CDR / wire codecs survive as the golden-byte
+correctness fixtures either way.
 
 ### Per-variant nuance
 
@@ -283,7 +292,12 @@ as the golden-byte correctness fixtures.
 - Android, visionOS-zenoh, Windows: the wire path remains the automatic
   fallback until an RCL path exists for them.
 
-## 1.3 → 1.4
+## 1.3 → 1.4 — the bridge to 2.0
+
+Tag `1.3.0` predates the deprecation annotations and the RCL-default-on pin; consumers
+pinned to a tag see both for the first time in 1.4.0. 2.0.0 removes the wire clients
+from the public API; the wire runtime remains the internal fallback where RCL is not
+available and is retired per platform in 2.x minors, non-breaking.
 
 ### Android / DDS-less Windows: move from `ZenohClient` to the umbrella
 

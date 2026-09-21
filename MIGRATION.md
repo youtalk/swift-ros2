@@ -13,7 +13,7 @@
 | 1.0.x | 1.1.0 | **None.** Parameter API (`ROS2Node.declareParameter` / `setParameter` / `setOnSetParametersCallback` / six standard parameter services / `/parameter_events` publisher / `ROS2ParameterClient`) is purely additive. |
 | 1.1.x | 1.2.0 | **None.** The `ROS2Publisher.publish(_:timestamp:sequenceNumber:)` source-timestamp overload is purely additive — the existing `publish(_:)` is unchanged (it now delegates to the overload with the same wall-clock timestamp + monotonic sequence). |
 | 1.3.x | 1.4.0 | **None.** Additive: umbrella on Android/DDS-less Windows; RCL default-on and the wire-client deprecation warnings first reach tagged consumers here. |
-| 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API; action wire format changed (see below). |
+| 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API. On the pure-Swift wire transports, the action frame layout and the DDS service request header (24 → 16 bytes) changed, so 1.x wire peers do not interoperate with 2.0 for actions or DDS services; 1.x peers on the RCL backend are unaffected (see below). |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -338,8 +338,12 @@ let ctx = try await ROS2Context(transport: .zenoh(locator: locator)); await ctx.
 **Replace raw puts / wire-level subscribers** with `node.createPublisher` /
 `node.createSubscription`. The CDR and wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public.
 
-**Action wire format.** 1.x spliced a second CDR encapsulation header into action goal /
-feedback / result frames. Two swift-ros2 peers cancelled it out; real ROS 2 nodes read it
-as data. 2.0 emits the upstream layout, so **actions between a 1.x and a 2.0 swift-ros2
-peer do not interoperate** — upgrade both sides. DDS service requests now carry
-`rmw_cyclonedds_cpp`'s 16-byte request header.
+**Action and DDS service wire format.** On the pure-Swift wire transports, 1.x spliced a
+second CDR encapsulation header into action goal / feedback / result frames (DDS and
+Zenoh) and prefixed DDS service requests and replies with a 24-byte request identity. Two
+1.x wire peers cancelled both out; real ROS 2 nodes read them as data. 2.0 emits the
+upstream layout — a single encapsulation header, and `rmw_cyclonedds_cpp`'s 16-byte
+request header — so **a 1.x peer on a wire transport does not interoperate with a 2.0
+peer for actions or DDS services** — upgrade both sides. A 1.x peer on the RCL backend
+(e.g. `.rcl`) already emitted the upstream layout through rmw and interoperates with 2.0
+unchanged. Topics and Zenoh services are unaffected.

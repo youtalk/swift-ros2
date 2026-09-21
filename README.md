@@ -16,8 +16,6 @@ Shipping on the SemVer-stable **1.x** line (latest tag in the release badge). Ex
 
 ## Quick Start
 
-> **Android:** the umbrella is excluded on Android — use `SwiftROS2Zenoh.ZenohClient` directly until DDS (and the umbrella) land there.
-
 ```swift
 import SwiftROS2
 
@@ -106,7 +104,7 @@ If you only build `ZenohClient` / `DDSClient` to hand to `ROS2Context`, drop the
 | visionOS     | 1.0                                     | `binaryTarget` xcframework                                       | Zenoh + DDS  |
 | Linux        | Ubuntu 22.04 / 24.04 (x86_64, aarch64)  | `zenoh-pico` source build + `pkg-config` for DDS                | Zenoh + DDS  |
 | Windows      | Windows 10 / 11 (x86_64)                | `zenoh-pico` source build (Winsock) + `vcpkg` for DDS           | Zenoh + DDS  |
-| Android      | API 28+ (arm64-v8a, x86_64)             | `zenoh-pico` source build (Bionic, unix backend)                | Zenoh only   |
+| Android      | API 28+ (arm64-v8a, x86_64)             | `zenoh-pico` source build (Bionic, unix backend)                | Zenoh only (umbrella API) |
 
 Swift 5.9+ on Apple; the CI matrix is unified on Swift 6.3.1 across macOS (Xcode 26.4.1), Linux, Windows, and Android. By worldwide market share ([Statcounter, March 2026](https://gs.statcounter.com/os-market-share)) swift-ros2 covers **≈99.7%** of the mobile market and **≈90.7%** of identifiable device share — nearly every consumer device you might attach to a ROS 2 graph. Non-host Apple slices are built end-to-end by [`release-xcframework.yml`](.github/workflows/release-xcframework.yml) at tag time; per-push iOS / visionOS / Mac Catalyst runtime validation comes from Conduit rather than CI. Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -165,7 +163,7 @@ SWIFT_ROS2_TARGET_OS=android swift build --swift-sdk aarch64-unknown-linux-andro
 # or x86_64-unknown-linux-android28 for emulator targets
 ```
 
-`SWIFT_ROS2_TARGET_OS=android` is **required** for any cross-compile — SwiftPM evaluates manifest-scope `#if os(...)` against the host, so without it a Linux host pulls in the un-buildable DDS path and a macOS host never source-builds `zenoh-pico`. The value is allow-list-validated (`{android, apple, linux, windows}`); typos fail the manifest compile. The `SwiftROS2` umbrella isn't built on Android — `import SwiftROS2Zenoh` directly.
+`SWIFT_ROS2_TARGET_OS=android` is **required** for any cross-compile — SwiftPM evaluates manifest-scope `#if os(...)` against the host, so without it a Linux host pulls in the un-buildable DDS path and a macOS host never source-builds `zenoh-pico`. The value is allow-list-validated (`{android, apple, linux, windows}`); typos fail the manifest compile. The `SwiftROS2` umbrella builds on Android (Zenoh-only): `.dds` transports throw `TransportError.unsupportedFeature`.
 
 ## Module layout
 

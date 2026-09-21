@@ -25,22 +25,35 @@ final class ContextFactoryTests: XCTestCase {
         }
     }
 
-    /// Same shape for DDS. DDS requires a live discovery environment; on
-    /// macOS (no multicast) we just verify the factory wires a DDSTransportSession
-    /// rather than throwing unsupportedFeature.
-    func testDDSContextBuildsDefaultSession() async {
-        let config = TransportConfig(
-            type: .dds,
-            domainId: 99  // unused domain
-        )
+    #if canImport(SwiftROS2DDS)
+        /// Same shape for DDS. DDS requires a live discovery environment; on
+        /// macOS (no multicast) we just verify the factory wires a DDSTransportSession
+        /// rather than throwing unsupportedFeature.
+        func testDDSContextBuildsDefaultSession() async {
+            let config = TransportConfig(
+                type: .dds,
+                domainId: 99  // unused domain
+            )
 
-        do {
-            let ctx = try await ROS2Context(transport: config)
-            _ = ctx
-        } catch TransportError.unsupportedFeature(let msg) {
-            XCTFail("Factory should build a default session, but hit unsupportedFeature: \(msg)")
-        } catch {
-            // connectionFailed or similar is acceptable.
+            do {
+                let ctx = try await ROS2Context(transport: config)
+                _ = ctx
+            } catch TransportError.unsupportedFeature(let msg) {
+                XCTFail("Factory should build a default session, but hit unsupportedFeature: \(msg)")
+            } catch {
+                // connectionFailed or similar is acceptable.
+            }
         }
-    }
+    #else
+        func testDDSContextFailsLoudlyWithoutCycloneDDS() async {
+            do {
+                _ = try await ROS2Context(transport: .ddsMulticast(domainId: 0))
+                XCTFail("expected unsupportedFeature")
+            } catch TransportError.unsupportedFeature {
+                // expected
+            } catch {
+                XCTFail("unexpected error: \(error)")
+            }
+        }
+    #endif
 }

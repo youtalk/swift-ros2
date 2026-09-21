@@ -295,6 +295,20 @@ jobs:
               || (echo "PluginSmoke missing on arm=$arm"; exit 1)
           done
 
+      - name: Verify umbrella target visible on every arm
+        run: |
+          for arm in apple linux windows android; do
+            echo "=== SWIFT_ROS2_TARGET_OS=$arm ==="
+            SWIFT_ROS2_TARGET_OS=$arm swift package describe --type json \
+              | jq -e '.targets[] | select(.name == "SwiftROS2") | .name' \
+              || (echo "SwiftROS2 umbrella missing on arm=$arm"; exit 1)
+          done
+          # Android has no CycloneDDS: the umbrella must not depend on SwiftROS2DDS there.
+          SWIFT_ROS2_TARGET_OS=android swift package describe --type json \
+            | jq -e '.targets[] | select(.name == "SwiftROS2")
+                     | (.target_dependencies | index("SwiftROS2DDS")) == null' \
+            || (echo "SwiftROS2 must not depend on SwiftROS2DDS on android"; exit 1)
+
   build-windows:
     name: Build & Test (Windows x86_64)
     needs: [lint-swift-format]

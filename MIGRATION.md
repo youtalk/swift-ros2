@@ -282,3 +282,23 @@ as the golden-byte correctness fixtures.
   dlopen'd plugin); RCL is preferred at runtime for `.zenoh` and `.dds`.
 - Android, visionOS-zenoh, Windows: the wire path remains the automatic
   fallback until an RCL path exists for them.
+
+## 1.3 → 1.4
+
+### Android / DDS-less Windows: move from `ZenohClient` to the umbrella
+
+1.4.0 builds the `SwiftROS2` umbrella on every platform. Replace direct wire-client use:
+
+```swift
+// before (deprecated; removed from the public API in 2.0.0)
+import SwiftROS2Zenoh
+let client = ZenohClient()
+try client.open(locator: "tcp/192.168.1.85:7447")
+
+// after
+import SwiftROS2
+let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:7447"))
+let node = try await ctx.createNode(name: "talker")
+```
+
+`.dds` transports throw `TransportError.unsupportedFeature` where CycloneDDS is not part of the build.

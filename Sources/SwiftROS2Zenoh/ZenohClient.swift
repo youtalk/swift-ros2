@@ -16,12 +16,12 @@ import SwiftROS2Transport
 #else
     /// Minimal shim so the os.log call sites compile on Linux. Logs are
     /// discarded — debug output on Linux is currently the C-layer fprintf.
-    public struct Logger {
-        public init(subsystem: String, category: String) {}
-        public func info(_ message: @autoclosure () -> String) {}
-        public func error(_ message: @autoclosure () -> String) {}
-        public func debug(_ message: @autoclosure () -> String) {}
-        public func warning(_ message: @autoclosure () -> String) {}
+    package struct Logger {
+        package init(subsystem: String, category: String) {}
+        package func info(_ message: @autoclosure () -> String) {}
+        package func error(_ message: @autoclosure () -> String) {}
+        package func debug(_ message: @autoclosure () -> String) {}
+        package func warning(_ message: @autoclosure () -> String) {}
     }
 #endif
 
@@ -154,7 +154,7 @@ class LivelinessToken {
 /// `put` / `subscribe` across multiple threads. Callers must serialize these calls themselves
 /// (e.g., via `ZenohTransportSession` or an actor). The internal `resourceLock` only protects
 /// the tracked-resource arrays, not the `session` pointer itself.
-public class ZenohClient: ZenohClientProtocol {
+package class ZenohClient: ZenohClientProtocol {
     private let log = Logger(subsystem: "com.youtalk.swift-ros2", category: "Zenoh")
 
     private var session: OpaquePointer?
@@ -169,24 +169,8 @@ public class ZenohClient: ZenohClientProtocol {
         return session
     }
 
-    /// Non-deprecated construction seam for in-package callers: the wire
-    /// path stays the automatic fallback wherever the RCL backend is not
-    /// available (`makeDefaultSession`) and remains exercised by tests as
-    /// the golden-byte oracle — those uses are not themselves deprecated.
-    package init(wireFallback: ()) {
-        // Empty init - call open() to connect
-    }
-
-    /// Initializes the Zenoh client (session not yet opened)
-    ///
-    /// Stays a designated initializer (not a convenience delegate) so any
-    /// existing external subclass keeps a designated init to chain to —
-    /// the 1.x API freeze covers subclassers of this non-final class.
-    @available(
-        *, deprecated,
-        message: "The pure-Swift wire path is deprecated; use the RCL backend. Removed in 2.0.0."
-    )
-    public init() {
+    /// Initializes the client; call `open` / `createSession` to connect.
+    package init() {
         // Empty init - call open() to connect
     }
 
@@ -195,7 +179,7 @@ public class ZenohClient: ZenohClientProtocol {
     /// Opens a Zenoh session
     /// - Parameter locator: Connection string (e.g., "tcp/127.0.0.1:7447")
     /// - Throws: ZenohError if the session cannot be opened
-    public func open(locator: String) throws {
+    package func open(locator: String) throws {
         guard session == nil else {
             throw ZenohError.sessionCreationFailed("Session already open")
         }
@@ -223,7 +207,7 @@ public class ZenohClient: ZenohClientProtocol {
 
     /// Closes the Zenoh session and cleans up all resources
     /// - Throws: ZenohError if the session cannot be closed
-    public func close() throws {
+    package func close() throws {
         guard let sess = session else {
             throw ZenohError.sessionCloseFailed("Session not open")
         }
@@ -281,7 +265,7 @@ public class ZenohClient: ZenohClientProtocol {
     /// Gets the Zenoh session ID as a hex string
     /// - Returns: The session ID (32 hex characters)
     /// - Throws: ZenohError if the session is not open or if getting the ID fails
-    public func getSessionId() throws -> String {
+    package func getSessionId() throws -> String {
         guard let sess = session else {
             throw ZenohError.internalError("Session not open")
         }
@@ -300,7 +284,7 @@ public class ZenohClient: ZenohClientProtocol {
     /// This performs a lightweight health check to detect stale sessions
     /// after sleep/wake cycles.
     /// - Returns: true if session is healthy, false if stale or not connected
-    public func isSessionHealthy() -> Bool {
+    package func isSessionHealthy() -> Bool {
         guard let sess = session else {
             return false
         }
@@ -355,7 +339,7 @@ public class ZenohClient: ZenohClientProtocol {
     ///   - payload: The data to publish
     ///   - attachment: Optional attachment data (for ROS 2 metadata)
     /// - Throws: ZenohError if the put operation fails
-    public func put(keyExpr: String, payload: Data, attachment: Data?) throws {
+    package func put(keyExpr: String, payload: Data, attachment: Data?) throws {
         guard let sess = session else {
             throw ZenohError.putFailed("Session not open")
         }
@@ -667,7 +651,7 @@ final class QueryHandleImpl: ZenohQueryHandle, @unchecked Sendable {
 }
 
 /// Represents a declared queryable handle. Mirrors `ZenohSubscriber`.
-public final class ZenohQueryable: ZenohQueryableHandle {
+package final class ZenohQueryable: ZenohQueryableHandle {
     private var handle: OpaquePointer?
     private weak var session: ZenohClient?
     private var contextBox: Unmanaged<QueryableContext>?
@@ -682,7 +666,7 @@ public final class ZenohQueryable: ZenohQueryableHandle {
         self.contextBox = contextBox
     }
 
-    public func close() throws {
+    package func close() throws {
         guard let h = handle else {
             throw ZenohError.internalError("Queryable already closed")
         }

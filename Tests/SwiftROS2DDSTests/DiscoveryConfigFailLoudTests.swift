@@ -12,7 +12,7 @@ import XCTest
 /// bridge now surfaces the rejection.
 final class DiscoveryConfigFailLoudTests: XCTestCase {
     func testUnusableDiscoveryConfigSurfacesAsError() async throws {
-        let session = DDSTransportSession(client: DDSClient(wireFallback: ()))
+        let session = DDSTransportSession(client: DDSClient())
         // An interface name no NIC can have: CycloneDDS rejects the config at
         // domain creation. Domain 42 keeps this off the domains other tests
         // touch — the bridge only applies a config on first create per domain.

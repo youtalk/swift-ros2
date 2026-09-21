@@ -142,14 +142,14 @@ extension ZenohTransportSession {
 // MARK: - Zenoh Transport Service Server
 
 final class ZenohTransportServiceServerImpl: TransportService, @unchecked Sendable {
-    public let name: String
+    package let name: String
     private let keyExpr: String
     private let handler: @Sendable (Data) async throws -> Data
     private var queryable: (any ZenohQueryableHandle)?
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         return !closed && queryable != nil
@@ -186,7 +186,7 @@ final class ZenohTransportServiceServerImpl: TransportService, @unchecked Sendab
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()
@@ -208,7 +208,7 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
     private let codec: ZenohWireCodec
     private let gid: [UInt8]
     private let keyExpr: String
-    public let name: String
+    package let name: String
 
     private let seqLock = NSLock()
     private var nextSeq: Int64 = 0
@@ -216,7 +216,7 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         return !closed
@@ -241,7 +241,7 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
     /// first reply (success or error reply both count — both prove the
     /// queryable exists). Throws `connectionTimeout` if no reply arrives
     /// before `timeout` elapses.
-    public func waitForService(timeout: Duration) async throws {
+    package func waitForService(timeout: Duration) async throws {
         lock.lock()
         let isClosed = closed
         lock.unlock()
@@ -300,7 +300,7 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
         }
     }
 
-    public func call(requestCDR: Data, timeout: Duration) async throws -> Data {
+    package func call(requestCDR: Data, timeout: Duration) async throws -> Data {
         lock.lock()
         if closed {
             lock.unlock()
@@ -362,7 +362,7 @@ final class ZenohTransportServiceClientImpl: TransportClient, @unchecked Sendabl
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

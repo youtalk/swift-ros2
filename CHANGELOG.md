@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - TBD
+
+2.0.0 removes the wire clients from the public API; the wire runtime remains the internal
+fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.
+
+### Removed
+
+- **Library products** `SwiftROS2Zenoh` and `SwiftROS2DDS`. Depend on `SwiftROS2` instead.
+- **Public types** `ZenohClient`, `ZenohQueryable`, `DDSClient`, `ZenohTransportSession`, `DDSTransportSession` and `RMWRequestId` (now `package`). Use `ROS2Context` — see the "1.x → 2.0" section of `MIGRATION.md`.
+
+### Changed
+
+- **The wire runtime is now an internal fallback.** `ROS2Context` still resolves `.zenoh(locator:)` / `.dds(...)` to the pure-Swift wire path wherever the RCL backend is not available; it is no longer reachable directly.
+
 ## [1.4.0] - 2026-09-21
 
 The last 1.x minor and the bridge to 2.0.0. Tag `1.3.0` was cut before the

@@ -13,13 +13,13 @@ import SwiftROS2CDR
 ///
 /// The `int8[16]` array has 1-byte alignment, so the 8-byte
 /// `sequence_number` lands on offset 16 with no padding.
-public struct RMWRequestId: Sendable, Equatable {
-    public let writerGuid: [UInt8]  // 16 bytes
-    public let sequenceNumber: Int64
+package struct RMWRequestId: Sendable, Equatable {
+    package let writerGuid: [UInt8]  // 16 bytes
+    package let sequenceNumber: Int64
 
-    public static let cdrByteCount: Int = 24
+    package static let cdrByteCount: Int = 24
 
-    public init(writerGuid: [UInt8], sequenceNumber: Int64) {
+    package init(writerGuid: [UInt8], sequenceNumber: Int64) {
         precondition(writerGuid.count == 16, "writerGuid must be exactly 16 bytes")
         self.writerGuid = writerGuid
         self.sequenceNumber = sequenceNumber
@@ -28,7 +28,7 @@ public struct RMWRequestId: Sendable, Equatable {
     /// Encode the 24-byte prefix into an existing encoder. Must be called
     /// immediately after `writeEncapsulationHeader()` and before the user
     /// struct's CDR contents.
-    public func encode(into encoder: CDREncoder) {
+    package func encode(into encoder: CDREncoder) {
         for byte in writerGuid {
             encoder.writeUInt8(byte)
         }
@@ -37,7 +37,7 @@ public struct RMWRequestId: Sendable, Equatable {
 
     /// Decode the 24-byte prefix from a decoder positioned at the byte
     /// immediately following the encapsulation header.
-    public init(from decoder: CDRDecoder) throws {
+    package init(from decoder: CDRDecoder) throws {
         var guid = [UInt8](repeating: 0, count: 16)
         for i in 0..<16 {
             guid[i] = try decoder.readUInt8()

@@ -77,11 +77,11 @@ extension DDSTransportSession {
 final class DDSTransportSubscriberImpl: TransportSubscriber, @unchecked Sendable {
     private let client: any DDSClientProtocol
     private var reader: (any DDSReaderHandle)?
-    public let topic: String
+    package let topic: String
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -94,7 +94,7 @@ final class DDSTransportSubscriberImpl: TransportSubscriber, @unchecked Sendable
         self.topic = topic
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

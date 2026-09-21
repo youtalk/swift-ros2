@@ -189,12 +189,12 @@ final class DDSTransportServiceServerImpl: TransportService, @unchecked Sendable
     private var replyWriter: (any DDSWriterHandle)?
     private var requestReader: (any DDSReaderHandle)?
     private let replyTopic: String
-    public let name: String
+    package let name: String
     private let handler: @Sendable (Data) async throws -> Data
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -263,7 +263,7 @@ final class DDSTransportServiceServerImpl: TransportService, @unchecked Sendable
         return closed ? nil : replyWriter
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()
@@ -292,7 +292,7 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
     private var requestWriter: (any DDSWriterHandle)?
     private var replyReader: (any DDSReaderHandle)?
     private let requestTopic: String
-    public let name: String
+    package let name: String
     private let writerGuid: [UInt8]
     private let pending = ClientPendingTable()
     private let seqLock = NSLock()
@@ -300,7 +300,7 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -327,7 +327,7 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
         lock.unlock()
     }
 
-    public func waitForService(timeout: Duration) async throws {
+    package func waitForService(timeout: Duration) async throws {
         let deadline = ContinuousClock.now.advanced(by: timeout)
         while ContinuousClock.now < deadline {
             lock.lock()
@@ -342,7 +342,7 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
         throw TransportError.requestTimeout(timeout)
     }
 
-    public func call(requestCDR: Data, timeout: Duration) async throws -> Data {
+    package func call(requestCDR: Data, timeout: Duration) async throws -> Data {
         guard requestCDR.count >= 4 else {
             throw TransportError.invalidConfiguration("requestCDR missing 4-byte CDR encapsulation header")
         }
@@ -426,7 +426,7 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

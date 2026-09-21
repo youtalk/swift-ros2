@@ -51,11 +51,11 @@ extension ZenohTransportSession {
 
 private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unchecked Sendable {
     private let handle: any ZenohSubscriberHandle
-    public let topic: String
+    package let topic: String
     private var _isActive = true
     private let lock = NSLock()
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         return _isActive
@@ -66,7 +66,7 @@ private final class ZenohTransportSubscriberWrapper: TransportSubscriber, @unche
         self.topic = topic
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         _isActive = false
         lock.unlock()

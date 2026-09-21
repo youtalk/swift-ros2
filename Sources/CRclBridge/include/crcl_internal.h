@@ -12,6 +12,7 @@
 
 #include <rcl/publisher.h>
 #include <rcl/rcl.h>
+#include <rcutils/allocator.h>
 #include <rmw/types.h>  // rmw_request_id_t (request-id blob pack helpers)
 
 #ifdef __cplusplus
@@ -50,6 +51,11 @@ void crcl__set_error(const char *msg);
 /// Capture the current rcutils error stack into the thread-local error buffer
 /// and reset it (used after a failing rcl/rmw call).
 void crcl__capture_rcl_error(void);
+
+/// Zero-filling allocator for rmw_serialized_message OUTPUT buffers (#162).
+/// Buffers initialized with it must be released through the message's own
+/// allocator (rmw_serialized_message_fini) — never with plain free().
+rcutils_allocator_t crcl__zeroing_allocator(void);
 
 #ifdef __cplusplus
 }

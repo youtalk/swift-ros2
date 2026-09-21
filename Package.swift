@@ -16,10 +16,11 @@ import PackageDescription
 // `-I<dir>/include` and `-L<dir>/lib` to CDDSBridge so `#include
 // <dds/dds.h>` and `-lddsc` resolve. Without `CYCLONEDDS_DIR` the
 // Windows build keeps the existing Zenoh-only carve-out. Android does
-// not ship DDS at all — the entire DDS path (cCycloneDDS, CDDSBridge,
-// SwiftROS2DDS, the SwiftROS2 umbrella, and the DDS/umbrella tests) is
-// compiled out via the runtime `if canBuildDDS` gate around the
-// targets/products additions further down.
+// not ship DDS at all — the DDS family (cCycloneDDS, CDDSBridge,
+// SwiftROS2DDS, and the DDS tests) is compiled out via the runtime
+// `if canBuildDDS` gate around the targets/products additions further
+// down. The SwiftROS2 umbrella itself builds on every platform — its
+// dependency on SwiftROS2DDS is conditional on `canBuildDDS` instead.
 //
 // Cross-compilation target detection. Plain `#if os(...)` at manifest
 // scope reflects the HOST, which breaks when cross-compiling from
@@ -60,13 +61,13 @@ let isWindowsBuild = targetOS == "windows"
 let isAndroidBuild = targetOS == "android"
 
 // Windows DDS opt-in. When `CYCLONEDDS_DIR` is set on a Windows build,
-// the manifest pulls in the full DDS path (CCycloneDDS / CDDSBridge /
-// SwiftROS2DDS / SwiftROS2 umbrella / examples / DDS tests) and wires
-// `-I<dir>/include` + `-L<dir>/lib` into CDDSBridge so `#include
-// <dds/dds.h>` and the `-lddsc` link emitted by the CCycloneDDS
-// modulemap both resolve against the vcpkg-installed CycloneDDS tree.
-// When unset, the Windows arm stays Zenoh-only — same shape as 0.5.0
-// through 0.7.0.
+// the manifest pulls in the DDS family (CCycloneDDS / CDDSBridge /
+// SwiftROS2DDS / DDS tests) and wires `-I<dir>/include` + `-L<dir>/lib`
+// into CDDSBridge so `#include <dds/dds.h>` and the `-lddsc` link
+// emitted by the CCycloneDDS modulemap both resolve against the
+// vcpkg-installed CycloneDDS tree. When unset, the Windows arm's
+// SwiftROS2 umbrella stays Zenoh-only (its DDS dependency drops out) —
+// same shape as 0.5.0 through 0.7.0.
 let windowsCycloneDDSDir: String? = {
     guard isWindowsBuild else { return nil }
     guard let raw = Context.environment["CYCLONEDDS_DIR"] else { return nil }
@@ -528,13 +529,12 @@ if !dropZenohWire {
     ])
 }
 
-// DDS path + the SwiftROS2 umbrella + examples + umbrella-level tests.
-// These are only included on platforms where CycloneDDS is consumable
-// (see `canBuildDDS` above): Apple via binary xcframework, Linux via
+// DDS family — CCycloneDDS, CDDSBridge, SwiftROS2DDS, and the DDS tests.
+// Only included on platforms where CycloneDDS is consumable (see
+// `canBuildDDS` above): Apple via binary xcframework, Linux via
 // pkg-config, Windows via vcpkg + `CYCLONEDDS_DIR`. Android does not
-// ship DDS — `import SwiftROS2Zenoh` is the supported entry point
-// there. Windows builds without `CYCLONEDDS_DIR` set keep the same
-// Zenoh-only shape as 0.5.0 through 0.7.0.
+// ship DDS. Where this is absent, the SwiftROS2 umbrella below drops
+// its SwiftROS2DDS dependency and `.dds` fails loudly at runtime.
 if canBuildDDS {
     let cCycloneDDS: Target = {
         if isLinuxBuild {
@@ -592,10 +592,7 @@ if canBuildDDS {
         ddsBridgeLinkerSettings.append(.linkedLibrary("ddsc"))
     }
 
-    products.append(contentsOf: [
-        .library(name: "SwiftROS2", targets: ["SwiftROS2"]),
-        .library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]),
-    ])
+    products.append(.library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]))
 
     targets.append(contentsOf: [
         cCycloneDDS,
@@ -616,107 +613,117 @@ if canBuildDDS {
             path: "Sources/SwiftROS2DDS"
         ),
 
-        // Public API umbrella: Context, Node, Publisher, Subscription
-    ])
-
-    var swiftROS2Deps: [Target.Dependency] = [
-        "SwiftROS2Messages", "SwiftROS2Transport", "SwiftROS2Wire", "SwiftROS2DDS",
-    ]
-    if !dropZenohWire {
-        swiftROS2Deps.append("SwiftROS2Zenoh")
-    }
-    var swiftROS2SwiftSettings: [SwiftSetting] = []
-    if enableRcl {
-        swiftROS2Deps.append("SwiftROS2RCL")
-        swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL"))
-        if rclRmwVariant == "zenoh" {
-            swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
-        }
-    }
-
-    var swiftROS2TestsSwiftSettings: [SwiftSetting] = []
-    if enableRcl {
-        swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
-        if rclRmwVariant == "zenoh" {
-            swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
-        }
-    }
-
-    var integrationDeps: [Target.Dependency] = [
-        "SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport",
-    ]
-    var integrationSwiftSettings: [SwiftSetting] = []
-    if enableRcl {
-        integrationDeps.append("SwiftROS2RCL")
-        integrationSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
-    }
-
-    targets.append(contentsOf: [
-        .target(
-            name: "SwiftROS2",
-            dependencies: swiftROS2Deps,
-            path: "Sources/SwiftROS2",
-            swiftSettings: swiftROS2SwiftSettings
-        ),
-
-        // Example executables — minimal std_msgs/String talker + listener
-        // demos in the shape of demo_nodes_cpp. Transport (zenoh or dds) is
-        // picked by the first CLI argument so one binary covers both.
-        .executableTarget(
-            name: "talker",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/Talker"
-        ),
-        .executableTarget(
-            name: "listener",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/Listener"
-        ),
-        .executableTarget(
-            name: "srv-server",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/SrvServer"
-        ),
-        .executableTarget(
-            name: "srv-client",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/SrvClient"
-        ),
-        .executableTarget(
-            name: "action-server",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/ActionServer"
-        ),
-        .executableTarget(
-            name: "action-client",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/ActionClient"
-        ),
-        .executableTarget(
-            name: "parameter-demo",
-            dependencies: ["SwiftROS2"],
-            path: "Sources/Examples/ParameterDemo"
-        ),
-
-        .testTarget(
-            name: "SwiftROS2Tests",
-            dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2CDR"],
-            path: "Tests/SwiftROS2Tests",
-            swiftSettings: swiftROS2TestsSwiftSettings
-        ),
         .testTarget(
             name: "SwiftROS2DDSTests",
             dependencies: ["SwiftROS2DDS", "SwiftROS2Transport", "CDDSBridge"],
             path: "Tests/SwiftROS2DDSTests"
         ),
-        .testTarget(
-            name: "SwiftROS2IntegrationTests",
-            dependencies: integrationDeps,
-            path: "Tests/SwiftROS2IntegrationTests",
-            swiftSettings: integrationSwiftSettings
-        ),
     ])
 }
+
+// SwiftROS2 umbrella + examples + umbrella-level tests — every platform.
+// Backends are conditional dependencies: SwiftROS2DDS where CycloneDDS is
+// consumable (`canBuildDDS`), SwiftROS2Zenoh unless the zenoh-rmw RCL variant
+// carved the wire family out (`dropZenohWire`). Context.swift mirrors both
+// with `#if canImport(...)`. Android and DDS-less Windows therefore get a
+// Zenoh-only umbrella; `.dds` throws `unsupportedFeature` there.
+products.append(.library(name: "SwiftROS2", targets: ["SwiftROS2"]))
+
+var swiftROS2Deps: [Target.Dependency] = [
+    "SwiftROS2Messages", "SwiftROS2Transport", "SwiftROS2Wire",
+]
+if canBuildDDS {
+    swiftROS2Deps.append("SwiftROS2DDS")
+}
+if !dropZenohWire {
+    swiftROS2Deps.append("SwiftROS2Zenoh")
+}
+var swiftROS2SwiftSettings: [SwiftSetting] = []
+if enableRcl {
+    swiftROS2Deps.append("SwiftROS2RCL")
+    swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+    if rclRmwVariant == "zenoh" {
+        swiftROS2SwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
+    }
+}
+
+var swiftROS2TestsSwiftSettings: [SwiftSetting] = []
+if enableRcl {
+    swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+    if rclRmwVariant == "zenoh" {
+        swiftROS2TestsSwiftSettings.append(.define("SWIFT_ROS2_RCL_RMW_ZENOH"))
+    }
+}
+
+var integrationDeps: [Target.Dependency] = [
+    "SwiftROS2", "SwiftROS2Messages", "SwiftROS2Transport",
+]
+var integrationSwiftSettings: [SwiftSetting] = []
+if enableRcl {
+    integrationDeps.append("SwiftROS2RCL")
+    integrationSwiftSettings.append(.define("SWIFT_ROS2_RCL"))
+}
+
+targets.append(contentsOf: [
+    .target(
+        name: "SwiftROS2",
+        dependencies: swiftROS2Deps,
+        path: "Sources/SwiftROS2",
+        swiftSettings: swiftROS2SwiftSettings
+    ),
+
+    // Example executables — minimal std_msgs/String talker + listener
+    // demos in the shape of demo_nodes_cpp. Transport (zenoh or dds) is
+    // picked by the first CLI argument so one binary covers both.
+    .executableTarget(
+        name: "talker",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/Talker"
+    ),
+    .executableTarget(
+        name: "listener",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/Listener"
+    ),
+    .executableTarget(
+        name: "srv-server",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/SrvServer"
+    ),
+    .executableTarget(
+        name: "srv-client",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/SrvClient"
+    ),
+    .executableTarget(
+        name: "action-server",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/ActionServer"
+    ),
+    .executableTarget(
+        name: "action-client",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/ActionClient"
+    ),
+    .executableTarget(
+        name: "parameter-demo",
+        dependencies: ["SwiftROS2"],
+        path: "Sources/Examples/ParameterDemo"
+    ),
+
+    .testTarget(
+        name: "SwiftROS2Tests",
+        dependencies: ["SwiftROS2", "SwiftROS2Messages", "SwiftROS2CDR"],
+        path: "Tests/SwiftROS2Tests",
+        swiftSettings: swiftROS2TestsSwiftSettings
+    ),
+    .testTarget(
+        name: "SwiftROS2IntegrationTests",
+        dependencies: integrationDeps,
+        path: "Tests/SwiftROS2IntegrationTests",
+        swiftSettings: integrationSwiftSettings
+    ),
+])
 
 // Native-rcl backend family, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple +
 // Linux; see the `enableRcl` block comment near the top of this manifest).

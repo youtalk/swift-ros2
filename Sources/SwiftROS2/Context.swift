@@ -2,9 +2,15 @@
 // ROS 2 Context: entry point for the swift-ros2 library
 
 import Foundation
-import SwiftROS2DDS
 import SwiftROS2Transport
 import SwiftROS2Wire
+
+// Absent where CycloneDDS is not consumable (Android; Windows without
+// CYCLONEDDS_DIR): the manifest drops the DDS family there and `.dds`
+// fails loudly in `makeDefaultSession`.
+#if canImport(SwiftROS2DDS)
+    import SwiftROS2DDS
+#endif
 
 // Absent when the zenoh-rmw RCL variant is selected (SWIFT_ROS2_RCL_RMW=zenoh):
 // zenoh-pico and the variant's bundled zenoh-c export the same zenoh C API and
@@ -203,8 +209,12 @@ extension ROS2Context {
             #if os(Linux) && SWIFT_ROS2_RCL
                 // Linux RCL: .dds resolves to rcl + rmw_cyclonedds_cpp (runtime rmw).
                 return RclTransportSession(client: RclClient())
-            #else
+            #elseif canImport(SwiftROS2DDS)
                 return DDSTransportSession(client: DDSClient(wireFallback: ()))
+            #else
+                throw TransportError.unsupportedFeature(
+                    "DDS is not available on this platform (no CycloneDDS in this build) "
+                        + "— use .zenoh(locator:)")
             #endif
         case .rcl:
             #if SWIFT_ROS2_RCL_RMW_ZENOH

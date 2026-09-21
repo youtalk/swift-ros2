@@ -5,8 +5,9 @@
 // - rq/<service>Request (client → server)
 // - rr/<service>Reply   (server → client)
 //
-// The wire payload on each topic is `[CDR header (4) | RMWRequestId (24) | user CDR body]`.
-// The 24-byte sample-identity prefix (`writer_guid`, `sequence_number`) is what
+// The wire payload on each topic is `[CDR header (4) | RMWRequestId (16) | user CDR body]`.
+// The 16-byte request header (`guid`, `seq`) is rmw_cyclonedds_cpp's
+// `cdds_request_header_t`; the server echoes it verbatim, which is what
 // correlates a reply to the original request.
 
 import Foundation
@@ -116,7 +117,9 @@ extension DDSTransportSession {
             userData: requestUserData
         )
 
-        let writerGuid = GIDManager().getOrCreateGid()
+        // 8 random bytes: rmw_cyclonedds_cpp echoes `guid` verbatim and we only
+        // use it to recognise our own replies.
+        let writerGuid = Array(GIDManager().getOrCreateGid().prefix(RMWRequestId.guidByteCount))
         let serviceClient = DDSTransportServiceClientImpl(
             client: client,
             requestWriter: requestWriter,

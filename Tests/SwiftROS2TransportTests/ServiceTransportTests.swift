@@ -25,7 +25,7 @@ final class DDSServiceTransportTests: XCTestCase {
             }
         )
 
-        let id = RMWRequestId(writerGuid: Array(repeating: 0xAB, count: 16), sequenceNumber: 7)
+        let id = RMWRequestId(writerGuid: Array(repeating: 0xAB, count: 8), sequenceNumber: 7)
         let userCDR = Data([0x00, 0x01, 0x00, 0x00, 0xDE])
         let wire = SampleIdentityPrefix.encode(requestId: id, userCDR: userCDR)
 
@@ -69,9 +69,11 @@ final class DDSServiceTransportTests: XCTestCase {
 
         let writtenWire = try await client.awaitWrite(topic: "rq/echoRequest", timeout: .seconds(5))
         let bytes = try XCTUnwrap(writtenWire)
+        // [header (4) | guid (8) | seq (8) | body] — rmw_cyclonedds_cpp's cdds_request_header_t.
+        XCTAssertEqual(bytes.count, 4 + 16 + 1)
         let (id, parsedReq) = try SampleIdentityPrefix.decode(wirePayload: bytes)
         XCTAssertEqual(parsedReq, userRequest)
-        XCTAssertEqual(id.writerGuid.count, 16)
+        XCTAssertEqual(id.writerGuid.count, 8)
         XCTAssertEqual(id.sequenceNumber, 1)
 
         let userReply = Data([0x00, 0x01, 0x00, 0x00, 0xEE])

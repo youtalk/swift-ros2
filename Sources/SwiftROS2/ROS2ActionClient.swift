@@ -206,10 +206,11 @@ public final class ROS2ActionClient<A: ROS2Action>: @unchecked Sendable, ActionC
 
     // MARK: - CDR helpers
 
-    /// The transport layer's `feedback` and `getResult.resultCDR` payloads are
-    /// the bare body — they don't carry a CDR encapsulation header. The
-    /// `CDRDecoder(data:)` constructor requires the 4-byte header. Prepend it
-    /// if the payload doesn't already start with `00 01 00 00`.
+    /// `CDRDecoder(data:)` requires the 4-byte encapsulation header. Every
+    /// transport already hands over goal / feedback / result payloads with
+    /// exactly one leading header (`ActionFrameDecoder.decode*` restores it
+    /// unconditionally), so for them this is a no-op; it only prepends the
+    /// header for a payload that doesn't start with `00 01 00 00`.
     static func prependHeaderIfMissing(_ data: Data) -> Data {
         if data.count >= 4 {
             let base = data.startIndex

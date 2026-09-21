@@ -21,6 +21,10 @@ fallback where RCL is not available and is retired per platform in 2.x minors, n
 
 - **The wire runtime is now an internal fallback.** `ROS2Context` still resolves `.zenoh(locator:)` / `.dds(...)` to the pure-Swift wire path wherever the RCL backend is not available; it is no longer reachable directly.
 
+### Fixed
+
+- DDS services and actions interoperate with `rmw_cyclonedds_cpp` (16-byte request header; single encapsulation header in action frames, DDS and Zenoh) — diagnosis by @daisukes (#115).
+
 ## [1.4.0] - 2026-09-21
 
 The last 1.x minor and the bridge to 2.0.0. Tag `1.3.0` was cut before the

@@ -4,6 +4,9 @@
 // rmw_cyclonedds_cpp materializes a single ROS 2 action under <ns>/<name>/_action/
 // as 3 service pairs (send_goal, cancel_goal, get_result) plus 2 topics
 // (feedback, status). Reuses the existing rq/rr/rt primitives — no new C-bridge.
+// The service pairs carry the same 16-byte `RMWRequestId` (rmw_cyclonedds_cpp's
+// `cdds_request_header_t`) as plain services; goal / feedback / result frames
+// carry a single CDR encapsulation header (see `ActionFrameDecoder`).
 
 import Foundation
 import SwiftROS2Wire
@@ -240,7 +243,9 @@ extension DDSTransportSession {
             qosCfg: cfg, userData: codec.userDataString(typeHash: roleTypeHashes.getResultRequest)
         )
 
-        let writerGuid = GIDManager().getOrCreateGid()
+        // 8 random bytes: rmw_cyclonedds_cpp echoes `guid` verbatim and we only
+        // use it to recognise our own replies.
+        let writerGuid = Array(GIDManager().getOrCreateGid().prefix(RMWRequestId.guidByteCount))
         let cli = DDSTransportActionClientImpl(
             client: client,
             name: name,

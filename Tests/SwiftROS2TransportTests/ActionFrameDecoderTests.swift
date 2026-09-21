@@ -12,11 +12,61 @@ final class ActionFrameDecoderTests: XCTestCase {
     private let goalId16 = [UInt8](repeating: 0xAB, count: 16)
 
     func testEncodeDecodeSendGoalRequestRoundTrip() throws {
-        let goalCDR = Data([0xDE, 0xAD, 0xBE, 0xEF])  // user-encoded Goal payload
+        // User-encoded Goal payload as the umbrella hands it over (with header).
+        let goalCDR = cdrHeader + Data([0xDE, 0xAD, 0xBE, 0xEF])
         let frame = ActionFrameDecoder.encodeSendGoalRequest(goalId: goalId16, goalCDR: goalCDR)
         let (parsedId, parsedGoal) = try ActionFrameDecoder.decodeSendGoalRequest(from: frame)
         XCTAssertEqual(parsedId, goalId16)
         XCTAssertEqual(parsedGoal, goalCDR)
+    }
+
+    func testSendGoalRequestCarriesASingleEncapsulationHeader() throws {
+        // Fibonacci goal { int32 order = 5 } as the umbrella encodes it (with header).
+        let userGoal = Data([0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00])
+        let goalId = [UInt8](repeating: 0xAB, count: 16)
+        let frame = ActionFrameDecoder.encodeSendGoalRequest(goalId: goalId, goalCDR: userGoal)
+        // [header | uuid[16] | order] — a real rmw server reads order = 5, not 256.
+        XCTAssertEqual(Array(frame), [0x00, 0x01, 0x00, 0x00] + goalId + [0x05, 0x00, 0x00, 0x00])
+    }
+
+    func testDecodeRestoresHeaderEvenWhenBodyLooksLikeOne() throws {
+        // A bare body whose first int32 is 256 (00 01 00 00) must survive.
+        let goalId = [UInt8](repeating: 0x01, count: 16)
+        let wire = Data([0x00, 0x01, 0x00, 0x00] + goalId + [0x00, 0x01, 0x00, 0x00])
+        let (_, goalCDR) = try ActionFrameDecoder.decodeSendGoalRequest(from: wire)
+        XCTAssertEqual(Array(goalCDR), [0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00])
+    }
+
+    func testFeedbackAndResultFramesAreHeaderless() throws {
+        let body = Data([0x00, 0x01, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00])
+        let goalId = [UInt8](repeating: 0x02, count: 16)
+        XCTAssertEqual(
+            Array(ActionFrameDecoder.encodeFeedbackMessage(goalId: goalId, feedbackCDR: body)),
+            [0x00, 0x01, 0x00, 0x00] + goalId + [0x02, 0x00, 0x00, 0x00])
+        XCTAssertEqual(
+            Array(ActionFrameDecoder.encodeGetResultResponse(status: 4, resultCDR: body)),
+            [0x00, 0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00])
+    }
+
+    func testDecodedFeedbackAndResultCarryExactlyOneHeader() throws {
+        // Frames as a real rmw peer emits them: bare bodies at the splice offset.
+        let goalId = [UInt8](repeating: 0x03, count: 16)
+        let fbWire = Data([0x00, 0x01, 0x00, 0x00] + goalId + [0x07, 0x00, 0x00, 0x00])
+        let (_, fb) = try ActionFrameDecoder.decodeFeedbackMessage(from: fbWire)
+        XCTAssertEqual(Array(fb), [0x00, 0x01, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00])
+
+        let resultWire = Data([0x00, 0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00])
+        let (status, result) = try ActionFrameDecoder.decodeGetResultResponse(from: resultWire)
+        XCTAssertEqual(status, 4)
+        XCTAssertEqual(Array(result), [0x00, 0x01, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00])
+    }
+
+    func testStripInnerEncapsulationHeader() {
+        XCTAssertEqual(
+            Array(ActionFrameDecoder.stripInnerEncapsulationHeader(cdrHeader + Data([0x05]))), [0x05])
+        // Bare / short payloads pass through untouched.
+        XCTAssertEqual(Array(ActionFrameDecoder.stripInnerEncapsulationHeader(Data([0x05]))), [0x05])
+        XCTAssertEqual(ActionFrameDecoder.stripInnerEncapsulationHeader(Data()), Data())
     }
 
     func testDecodeSendGoalRequestTooShortThrows() {
@@ -61,7 +111,7 @@ final class ActionFrameDecoderTests: XCTestCase {
     }
 
     func testEncodeDecodeFeedbackMessageRoundTrip() throws {
-        let userCDR = Data([0x77, 0x88])
+        let userCDR = cdrHeader + Data([0x77, 0x88])  // umbrella-encoded (with header)
         let frame = ActionFrameDecoder.encodeFeedbackMessage(
             goalId: goalId16, feedbackCDR: userCDR
         )

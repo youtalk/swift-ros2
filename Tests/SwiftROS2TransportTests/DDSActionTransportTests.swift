@@ -49,8 +49,10 @@ final class DDSActionTransportTests: XCTestCase {
 
         let acceptedExpect = expectation(description: "onSendGoal called")
         let handlers = TransportActionServerHandlers(
-            onSendGoal: { goalId, _ in
+            onSendGoal: { goalId, goalCDR in
                 XCTAssertEqual(goalId.count, 16)
+                // The bare wire body reaches the umbrella behind exactly one header.
+                XCTAssertEqual(Array(goalCDR), [0x00, 0x01, 0x00, 0x00, 0x11, 0x22])
                 acceptedExpect.fulfill()
                 return (true, 100, 200)
             },
@@ -67,17 +69,12 @@ final class DDSActionTransportTests: XCTestCase {
         )
         let server = serverProto as! DDSTransportActionServerImpl
 
-        // Drive a request through the mock send_goal request reader.
+        // Drive a request through the mock send_goal request reader, shaped as
+        // rmw_cyclonedds_cpp emits it: [header | guid (8) | seq (8) | uuid[16] | bare goal].
         let goalId = [UInt8](repeating: 0xAA, count: 16)
-        let inboundFrame = ActionFrameDecoder.encodeSendGoalRequest(
-            goalId: goalId,
-            goalCDR: Data([0x11, 0x22])
-        )
-        let prefixed = SampleIdentityPrefix.encode(
-            requestId: RMWRequestId(
-                writerGuid: [UInt8](repeating: 0xCC, count: 16), sequenceNumber: 1),
-            userCDR: inboundFrame
-        )
+        let prefixed = Data(
+            [0x00, 0x01, 0x00, 0x00] + [UInt8](repeating: 0xCC, count: 8)
+                + [0x01, 0, 0, 0, 0, 0, 0, 0] + goalId + [0x11, 0x22])
         mock.deliverRequestSample(topic: server.sendGoalRequestTopic, data: prefixed)
 
         await fulfillment(of: [acceptedExpect], timeout: 1)
@@ -88,6 +85,10 @@ final class DDSActionTransportTests: XCTestCase {
         try await waitForWrite(mock: mock, topic: server.sendGoalReplyTopic, timeout: 1.0)
         let writes = mock.writesByTopic[server.sendGoalReplyTopic] ?? []
         XCTAssertEqual(writes.count, 1)
+        // The reply echoes the 16-byte request header verbatim.
+        XCTAssertEqual(
+            Array(writes[0].prefix(20)),
+            [0x00, 0x01, 0x00, 0x00] + [UInt8](repeating: 0xCC, count: 8) + [0x01, 0, 0, 0, 0, 0, 0, 0])
         let (_, decodedReply) = try SampleIdentityPrefix.decode(wirePayload: writes[0])
         let resp = try ActionFrameDecoder.decodeSendGoalResponse(from: decodedReply)
         XCTAssertTrue(resp.accepted)
@@ -126,7 +127,7 @@ final class DDSActionTransportTests: XCTestCase {
 
         let prefixed = SampleIdentityPrefix.encode(
             requestId: RMWRequestId(
-                writerGuid: [UInt8](repeating: 0xCC, count: 16), sequenceNumber: 2),
+                writerGuid: [UInt8](repeating: 0xCC, count: 8), sequenceNumber: 2),
             userCDR: Data([0x00, 0x01, 0x00, 0x00, 0x42])  // arbitrary cancel payload
         )
         mock.deliverRequestSample(topic: server.cancelGoalRequestTopic, data: prefixed)
@@ -158,13 +159,16 @@ final class DDSActionTransportTests: XCTestCase {
         )
         let server = serverProto as! DDSTransportActionServerImpl
         let goalId = [UInt8](repeating: 0xAA, count: 16)
-        try server.publishFeedback(goalId: goalId, feedbackCDR: Data([0x77]))
+        // The umbrella hands over feedback with its own encapsulation header.
+        try server.publishFeedback(goalId: goalId, feedbackCDR: Data([0x00, 0x01, 0x00, 0x00, 0x77]))
 
         let writes = mock.writesByTopic[server.feedbackTopic] ?? []
         XCTAssertEqual(writes.count, 1)
+        // Exactly one header on the wire: [header | uuid[16] | bare feedback].
+        XCTAssertEqual(Array(writes[0]), [0x00, 0x01, 0x00, 0x00] + goalId + [0x77])
         let (parsedId, parsedFB) = try ActionFrameDecoder.decodeFeedbackMessage(from: writes[0])
         XCTAssertEqual(parsedId, goalId)
-        XCTAssertEqual(parsedFB, Data([0x77]))
+        XCTAssertEqual(parsedFB, Data([0x00, 0x01, 0x00, 0x00, 0x77]))
     }
 
     func testServerPublishStatusArrayEmitsToStatusTopic() async throws {
@@ -211,7 +215,7 @@ final class DDSActionTransportTests: XCTestCase {
         let client = clientProto as! DDSTransportActionClientImpl
 
         let goalId = [UInt8](repeating: 0xAA, count: 16)
-        let goalCDR = Data([0x33, 0x44])
+        let goalCDR = Data([0x00, 0x01, 0x00, 0x00, 0x33, 0x44])  // umbrella-encoded (with header)
 
         // Pre-stage the mock to reply success on send_goal request.
         mock.serviceReplyHandler = { requestTopic, prefixedRequestCDR in
@@ -232,10 +236,18 @@ final class DDSActionTransportTests: XCTestCase {
         XCTAssertTrue(ack.accepted)
         XCTAssertEqual(ack.stampSec, 99)
 
-        // Drive a feedback sample for that goal.
-        let fbFrame = ActionFrameDecoder.encodeFeedbackMessage(
-            goalId: goalId, feedbackCDR: Data([0x77])
-        )
+        // The request went out as [header | guid (8) | seq (8) | uuid[16] | bare goal] —
+        // rmw_cyclonedds_cpp's 16-byte request header and no inner encapsulation header.
+        let requestWrites = mock.writesByTopic[client.names.sendGoalRequestTopic] ?? []
+        XCTAssertEqual(requestWrites.count, 1)
+        let requestWire = Array(requestWrites[0])
+        XCTAssertEqual(requestWire.count, 4 + 16 + 16 + 2)
+        XCTAssertEqual(Array(requestWire.prefix(4)), [0x00, 0x01, 0x00, 0x00])
+        XCTAssertEqual(Array(requestWire[20..<36]), goalId)
+        XCTAssertEqual(Array(requestWire.suffix(2)), [0x33, 0x44])
+
+        // Drive a feedback sample for that goal, shaped as a real rmw peer emits it.
+        let fbFrame = Data([0x00, 0x01, 0x00, 0x00] + goalId + [0x77])
         mock.deliverSubscriberSample(topic: client.feedbackTopic, data: fbFrame)
 
         var receivedFB: Data?
@@ -243,7 +255,7 @@ final class DDSActionTransportTests: XCTestCase {
             receivedFB = frame
             break
         }
-        XCTAssertEqual(receivedFB, Data([0x77]))
+        XCTAssertEqual(receivedFB, Data([0x00, 0x01, 0x00, 0x00, 0x77]))
     }
 
     func testClientSendGoalRejectedSurfacesAcceptedFalse() async throws {
@@ -304,7 +316,7 @@ final class DDSActionTransportTests: XCTestCase {
             timeout: .seconds(2)
         )
         XCTAssertEqual(ack.status, 4)
-        XCTAssertEqual(ack.resultCDR, Data([0xAA, 0xBB]))
+        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0xAA, 0xBB]))
     }
 
     /// Regression test for a crash: `ActionGoalHandle.result(timeout: nil)`
@@ -493,7 +505,7 @@ final class DDSActionTransportTests: XCTestCase {
             guard topic.hasSuffix("cancel_goalRequest") else { return nil }
             let (rid, _) =
                 (try? SampleIdentityPrefix.decode(wirePayload: prefixed))
-                ?? (RMWRequestId(writerGuid: [], sequenceNumber: 0), Data())
+                ?? (RMWRequestId(writerGuid: [UInt8](repeating: 0, count: 8), sequenceNumber: 0), Data())
             // [header (4) | code (1) | pad (3) | count (u32) | { uuid[16] | sec | nsec }]
             var resp = Data([0x00, 0x01, 0x00, 0x00])
             resp.append(0)  // returnCode = 0

@@ -5,13 +5,14 @@ import Foundation
 
 /// Encode / decode the DDS service sample-identity prefix.
 ///
-/// Wire layout: `[CDR header (4) | RMWRequestId (24) | user struct body]`.
+/// Wire layout: `[CDR header (4) | RMWRequestId (16) | user struct body]` —
+/// the request header is `rmw_cyclonedds_cpp`'s `cdds_request_header_t`.
 /// The user CDR passed in already carries its own 4-byte encapsulation header
 /// at offset 0 — the encoder strips it once and writes the single header at
 /// the start of the wire payload.
 enum SampleIdentityPrefix {
     static let cdrHeader = Data([0x00, 0x01, 0x00, 0x00])
-    static let prefixedHeaderCount = cdrHeader.count + RMWRequestId.cdrByteCount  // 28
+    static let prefixedHeaderCount = cdrHeader.count + RMWRequestId.cdrByteCount  // 20
 
     enum DecodeError: Error, Equatable {
         case payloadTooShort(Int)
@@ -37,7 +38,7 @@ enum SampleIdentityPrefix {
             throw DecodeError.missingEncapsulationHeader
         }
         let guidStart = wirePayload.startIndex.advanced(by: 4)
-        let seqStart = guidStart.advanced(by: 16)
+        let seqStart = guidStart.advanced(by: RMWRequestId.guidByteCount)
         let bodyStart = seqStart.advanced(by: 8)
         let guid = Array(wirePayload[guidStart..<seqStart])
         let seq = wirePayload[seqStart..<bodyStart].withUnsafeBytes {

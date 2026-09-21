@@ -6,6 +6,7 @@ final class RclTransportSessionActionTests: XCTestCase {
     private let fibonacci = "example_interfaces/action/Fibonacci"
     private let requestId: [UInt8] = Array(0..<24)
     private let goalIdA: [UInt8] = Array(1...16)
+    private let cdrHeader: [UInt8] = [0x00, 0x01, 0x00, 0x00]  // XCDR v1 little-endian
     private let goalIdB: [UInt8] = Array(17...32)
     private let noHashes = ActionRoleTypeHashes(
         sendGoalRequest: nil, sendGoalResponse: nil, cancelGoalRequest: nil,
@@ -124,23 +125,30 @@ final class RclTransportSessionActionTests: XCTestCase {
     func testActionServerGoalAcceptFeedbackResultLifecycle() async throws {
         let client = MockRclClient()
         let s = try await openSession(client)
-        let resultBody = Data([0x2A, 0x00, 0x00, 0x00])
+        // The umbrella hands the result over with its own encapsulation header.
+        let resultBody = Data(cdrHeader + [0x2A, 0x00, 0x00, 0x00])
+        let receivedGoal = Box<Data?>(nil)
         let server = try s.createActionServer(
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default,
             handlers: makeHandlers(
-                onSendGoal: { _, _ in (true, 7, 9) },
+                onSendGoal: { _, goalCDR in
+                    receivedGoal.value = goalCDR
+                    return (true, 7, 9)
+                },
                 onGetResult: { _ in GetResultAck(status: 4, resultCDR: resultBody) }
             ))
         let mockServer = client.actionServersCreated[0]
 
         // Goal request → accepted response with the handler's stamp; the goal
         // must be registered with rcl_action before the response goes out.
-        let goalFrame = ActionFrameDecoder.encodeSendGoalRequest(
-            goalId: goalIdA, goalCDR: Data([0xAA, 0xBB]))
+        // rmw_serialize hands over the goal frame with the body bare at the splice offset.
+        let goalFrame = Data(cdrHeader + goalIdA + [0xAA, 0xBB])
         mockServer.fireGoalRequest(goalFrame, requestId: requestId)
         let responded = await waitUntil { mockServer.goalResponsesSent.count == 1 }
         XCTAssertTrue(responded, "goal response was not sent within the timeout")
+        // The umbrella receives the goal behind exactly one header.
+        XCTAssertEqual(receivedGoal.value.map { Array($0) }, cdrHeader + [0xAA, 0xBB])
         XCTAssertEqual(mockServer.goalResponsesSent.first?.requestId, requestId)
         let resp = try ActionFrameDecoder.decodeSendGoalResponse(
             from: mockServer.goalResponsesSent[0].data)
@@ -154,11 +162,10 @@ final class RclTransportSessionActionTests: XCTestCase {
 
         // Feedback rides the wire-path FeedbackMessage frame.
         let feedbackImpl = try XCTUnwrap(server as? PublishesActionFeedback)
-        let fbCDR = Data([0x01, 0x02])
+        let fbCDR = Data(cdrHeader + [0x01, 0x02])  // umbrella-encoded (with header)
         try feedbackImpl.publishFeedback(goalId: goalIdA, feedbackCDR: fbCDR)
-        XCTAssertEqual(
-            mockServer.feedbackPublished,
-            [ActionFrameDecoder.encodeFeedbackMessage(goalId: goalIdA, feedbackCDR: fbCDR)])
+        // rmw_deserialize must see [header | uuid[16] | bare feedback] — no inner header.
+        XCTAssertEqual(mockServer.feedbackPublished, [Data(cdrHeader + goalIdA + [0x01, 0x02])])
 
         // Executing snapshot → one EXECUTE event mirrored into rcl, then a
         // status publish from rcl's own tracking.
@@ -183,6 +190,10 @@ final class RclTransportSessionActionTests: XCTestCase {
         let resultSent = await waitUntil { mockServer.resultResponsesSent.count == 1 }
         XCTAssertTrue(resultSent, "result response was not sent within the timeout")
         XCTAssertEqual(mockServer.resultResponsesSent.first?.requestId, requestId)
+        // [header | status | pad (3) | bare result] — no inner header.
+        XCTAssertEqual(
+            Array(mockServer.resultResponsesSent[0].data),
+            cdrHeader + [0x04, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00])
         let result = try ActionFrameDecoder.decodeGetResultResponse(
             from: mockServer.resultResponsesSent[0].data)
         XCTAssertEqual(result.status, 4)
@@ -550,9 +561,8 @@ final class RclTransportSessionActionTests: XCTestCase {
         XCTAssertTrue(ack.accepted)
 
         let mockClient = client.actionClientsCreated[0]
-        let fbCDR = Data([0x05, 0x06])
-        mockClient.fireFeedback(
-            ActionFrameDecoder.encodeFeedbackMessage(goalId: goalIdA, feedbackCDR: fbCDR))
+        // rmw_serialize hands over the feedback frame with the body bare.
+        mockClient.fireFeedback(Data(cdrHeader + goalIdA + [0x05, 0x06]))
         // A feedback frame for an unrelated goal must not reach this stream.
         mockClient.fireFeedback(
             ActionFrameDecoder.encodeFeedbackMessage(goalId: goalIdB, feedbackCDR: Data([0xFF])))
@@ -566,7 +576,8 @@ final class RclTransportSessionActionTests: XCTestCase {
 
         var feedbackFrames: [Data] = []
         for await frame in ack.feedback { feedbackFrames.append(frame) }
-        XCTAssertEqual(feedbackFrames, [fbCDR])
+        // The umbrella receives the feedback behind exactly one header.
+        XCTAssertEqual(feedbackFrames, [Data(cdrHeader + [0x05, 0x06])])
         var statuses: [Int8] = []
         for await update in ack.status { statuses.append(update.status) }
         XCTAssertEqual(statuses, [2, 4])
@@ -578,7 +589,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let actionClient = try s.createActionClient(
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default)
-        let resultBody = Data([0x07])
+        let resultBody = Data(cdrHeader + [0x07])  // as the umbrella decodes it
         let goalId = goalIdA
         async let ackAsync = actionClient.getResult(goalId: goalId, timeout: .seconds(2))
         let mockClient = client.actionClientsCreated[0]
@@ -590,7 +601,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let seq = mockClient.resultRequestsSent[0].seq
         mockClient.fireResultResponse(
             sequenceNumber: seq,
-            data: ActionFrameDecoder.encodeGetResultResponse(status: 4, resultCDR: resultBody))
+            data: Data(cdrHeader + [0x04, 0x00, 0x00, 0x00, 0x07]))  // bare result body
         let ack = try await ackAsync
         XCTAssertEqual(ack.status, 4)
         XCTAssertEqual(ack.resultCDR, resultBody)

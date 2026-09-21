@@ -337,3 +337,9 @@ let ctx = try await ROS2Context(transport: .zenoh(locator: locator)); await ctx.
 
 **Replace raw puts / wire-level subscribers** with `node.createPublisher` /
 `node.createSubscription`. The CDR and wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public.
+
+**Action wire format.** 1.x spliced a second CDR encapsulation header into action goal /
+feedback / result frames. Two swift-ros2 peers cancelled it out; real ROS 2 nodes read it
+as data. 2.0 emits the upstream layout, so **actions between a 1.x and a 2.0 swift-ros2
+peer do not interoperate** — upgrade both sides. DDS service requests now carry
+`rmw_cyclonedds_cpp`'s 16-byte request header.

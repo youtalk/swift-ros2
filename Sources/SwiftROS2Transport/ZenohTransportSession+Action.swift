@@ -4,9 +4,9 @@
 // Mirrors the DDS action transport (Phase 4) but layered on Zenoh's native
 // queryable / get / put / subscribe primitives. Reuses `ActionFrameDecoder`
 // from Phase 4 for frame layouts — Zenoh and DDS share the synthesized
-// wrapper CDR shapes (DDS additionally prefixes a 24-byte `RMWRequestId`
-// for the request/reply paths; Zenoh skips that since the queryable handles
-// correlation natively).
+// wrapper CDR shapes, each with a single CDR encapsulation header (DDS
+// additionally prefixes a 16-byte `RMWRequestId` for the request/reply paths;
+// Zenoh skips that since the queryable handles correlation natively).
 //
 // Server side declares 3 queryables (`send_goal` / `cancel_goal` /
 // `get_result`), 2 publishers (`feedback` / `status`), and one `SA`

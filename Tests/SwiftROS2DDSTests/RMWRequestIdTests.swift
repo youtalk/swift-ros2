@@ -1,5 +1,6 @@
 // RMWRequestIdTests.swift
-// Round-trip + golden-byte tests for the DDS sample-identity prefix.
+// Round-trip + golden-byte tests for the DDS service request header
+// (rmw_cyclonedds_cpp `cdds_request_header_t`).
 
 import SwiftROS2CDR
 import SwiftROS2Transport
@@ -9,10 +10,7 @@ final class RMWRequestIdTests: XCTestCase {
 
     func testRoundTrip() throws {
         let original = RMWRequestId(
-            writerGuid: [
-                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-            ],
+            writerGuid: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
             sequenceNumber: 0x1122_3344_5566_7788
         )
 
@@ -26,34 +24,27 @@ final class RMWRequestIdTests: XCTestCase {
         XCTAssertEqual(decoded, original)
     }
 
-    func testGoldenBytesLittleEndianSequence() throws {
-        let request = RMWRequestId(
-            writerGuid: Array(repeating: 0xAA, count: 16),
-            sequenceNumber: 0x0102_0304_0506_0708
-        )
-
+    func testGoldenBytesMatchCycloneDDSRequestHeader() throws {
+        // rmw_cyclonedds_cpp: cdds_request_header_t { uint64_t guid; int64_t seq; }
+        let id = RMWRequestId(
+            writerGuid: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08], sequenceNumber: 0x0A)
+        // `encode(into:)` runs right after the encapsulation header (CDREncoder
+        // aligns relative to the end of that header), exactly as on the wire.
         let encoder = CDREncoder()
         encoder.writeEncapsulationHeader()
-        request.encode(into: encoder)
-        let bytes = Array(encoder.getData())
-
-        // 4-byte encap header (XCDR v1 LE).
-        XCTAssertEqual(Array(bytes.prefix(4)), [0x00, 0x01, 0x00, 0x00])
-
-        // 16 bytes of guid.
-        XCTAssertEqual(Array(bytes[4..<20]), Array(repeating: 0xAA, count: 16))
-
-        // 8 bytes sequence number, little-endian.
+        id.encode(into: encoder)
         XCTAssertEqual(
-            Array(bytes[20..<28]),
-            [0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
-        )
+            Array(encoder.getData()),
+            [0x00, 0x01, 0x00, 0x00]
+                + [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0A, 0, 0, 0, 0, 0, 0, 0])
+    }
 
-        XCTAssertEqual(bytes.count, RMWRequestId.cdrByteCount + 4)
+    func testWireWidthIs16Bytes() {
+        XCTAssertEqual(RMWRequestId.cdrByteCount, 16)
     }
 
     func testZeroValuedRoundTrip() throws {
-        let zero = RMWRequestId(writerGuid: Array(repeating: 0, count: 16), sequenceNumber: 0)
+        let zero = RMWRequestId(writerGuid: Array(repeating: 0, count: 8), sequenceNumber: 0)
         let encoder = CDREncoder()
         encoder.writeEncapsulationHeader()
         zero.encode(into: encoder)

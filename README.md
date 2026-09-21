@@ -57,7 +57,7 @@ Declare typed parameters (`node.declareParameter` + on-set veto callbacks; inter
 
 Two backends sit behind one backend-agnostic umbrella API. `.zenoh(locator:)` / `.dds(...)` resolve automatically:
 
-- **Native RCL backend** (recommended, default where available) — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. As of **1.3.0** it is available on **Apple** (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw baked per build variant, **on by default**) and **Linux** (system ROS 2 install via `ROS2_RCL_PREFIX`, rmw chosen at runtime from the transport type).
+- **Native RCL backend** (recommended, default where available) — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. As of **1.3.0** it is available on **Apple** (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw baked per build variant; opt-in in 1.3.0, **on by default from 1.4.0**, opt out with `SWIFT_ROS2_DISABLE_RCL=1`) and **Linux** (system ROS 2 install via `ROS2_RCL_PREFIX`, rmw chosen at runtime from the transport type).
 - **Pure-Swift wire path** (`zenoh-pico` / CycloneDDS, no `rcl`) — the original all-platforms backend. It remains the automatic fallback where RCL isn't available yet (Android; visionOS zenoh; Windows) and the golden-byte oracle for the CDR / wire codecs.
 
 **Direct construction of the wire clients is deprecated and removed from the public API in 2.0.0** — first shipping in tag **1.4.0** (tag 1.3.0 predates the annotation):

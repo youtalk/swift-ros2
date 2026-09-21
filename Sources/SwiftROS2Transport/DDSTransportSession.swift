@@ -67,7 +67,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
 
         let discoveryConfig = DDSBridgeDiscoveryConfig(
             mode: discoveryMode,
-            unicastPeers: config.ddsUnicastPeers.map { $0.address },
+            unicastPeers: config.ddsUnicastPeers.map { $0.discoveryAddress },
             networkInterface: config.ddsNetworkInterface
         )
 

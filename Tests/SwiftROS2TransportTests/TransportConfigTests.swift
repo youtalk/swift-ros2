@@ -32,6 +32,25 @@ final class TransportConfigTests: XCTestCase {
         XCTAssertEqual(peer.locator, "udp/192.168.1.10:7400")
     }
 
+    // The `<Peer address="..."/>` form CycloneDDS consumes MUST carry the port.
+    // Without one, add_addresses_to_addrset_1() patches in the *participant*
+    // unicast discovery port (7400 + 250*domain + 10) and then probes indices
+    // 1...MaxAutoParticipantIndex (7412, 7414, ... 7426 on domain 0) — ports
+    // nothing listens on when the remote runs the default ParticipantIndex
+    // ("none", so its unicast ports are ephemeral). Issue #176.
+    func testDDSPeerDiscoveryAddressCarriesPort() {
+        XCTAssertEqual(DDSPeer(address: "192.168.1.10", port: 7400).discoveryAddress, "192.168.1.10:7400")
+        XCTAssertEqual(DDSPeer.peer(address: "10.0.0.1", domainId: 1).discoveryAddress, "10.0.0.1:7650")
+    }
+
+    // A bare IPv6 address must be bracketed or CycloneDDS reads the trailing
+    // ":7400" as part of the address (ddsi_ipaddr_from_string only honors a
+    // port when the address is bracketed), silently targeting a different host.
+    func testDDSPeerDiscoveryAddressBracketsIPv6() {
+        XCTAssertEqual(DDSPeer(address: "fe80::1", port: 7400).discoveryAddress, "[fe80::1]:7400")
+        XCTAssertEqual(DDSPeer(address: "[fe80::1]", port: 7400).discoveryAddress, "[fe80::1]:7400")
+    }
+
     func testDDSPeerDiscoveryPortFormula() {
         XCTAssertEqual(DDSPeer.discoveryPort(forDomain: 0), 7400)
         XCTAssertEqual(DDSPeer.discoveryPort(forDomain: 1), 7650)

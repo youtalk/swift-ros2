@@ -808,7 +808,7 @@ if enableRcl {
             path: "Sources/CRclBridge",
             sources: [
                 "rcl_bridge.c", "rcl_subscription.c", "rcl_service.c", "rcl_client.c",
-                "rcl_action_server.c", "rcl_action_client.c", "Generated",
+                "rcl_action_server.c", "rcl_action_client.c", "crcl_zeroing_allocator.c", "Generated",
             ],
             publicHeadersPath: "include",
             // On Linux the rcl / rmw / rosidl headers CRclBridge `#include`s

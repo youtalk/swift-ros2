@@ -70,7 +70,7 @@ int crcl_serialize_nav_sat_fix(
         fini_nav_sat_fix(&msg);
         return -1;  // crcl__set_error already called
     }
-    rcutils_allocator_t alloc = rcutils_get_default_allocator();
+    rcutils_allocator_t alloc = crcl__zeroing_allocator();
     rmw_serialized_message_t ser = rmw_get_zero_initialized_serialized_message();
     rmw_ret_t rc = rmw_serialized_message_init(&ser, 0u, &alloc);
     if (rc != RMW_RET_OK) {

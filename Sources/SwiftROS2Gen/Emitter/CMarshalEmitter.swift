@@ -75,7 +75,7 @@ public enum CMarshalEmitter {
         lines.append("        fini_\(snake)(&msg);")
         lines.append("        return -1;  // crcl__set_error already called")
         lines.append("    }")
-        lines.append("    rcutils_allocator_t alloc = rcutils_get_default_allocator();")
+        lines.append("    rcutils_allocator_t alloc = crcl__zeroing_allocator();")
         lines.append(
             "    rmw_serialized_message_t ser = rmw_get_zero_initialized_serialized_message();")
         lines.append("    rmw_ret_t rc = rmw_serialized_message_init(&ser, 0u, &alloc);")

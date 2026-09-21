@@ -68,7 +68,7 @@ static void *crcl__sub_thread_main(void *arg) {
         // rcl_take_serialized_message grows it as needed.
         while (!atomic_load(&s->stop)) {
             rcl_serialized_message_t msg = rmw_get_zero_initialized_serialized_message();
-            rcutils_allocator_t alloc = rcutils_get_default_allocator();
+            rcutils_allocator_t alloc = crcl__zeroing_allocator();
             if (rmw_serialized_message_init(&msg, 0, &alloc) != RMW_RET_OK) {
                 rcl_reset_error();
                 break;

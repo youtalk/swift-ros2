@@ -7,12 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-21
+
+The last 1.x minor and the bridge to 2.0.0. Tag `1.3.0` was cut before the
+soft-deprecation and the RCL-default-on pin merged, so **1.4.0 is the first tagged
+release that actually carries them.**
+
 ### Added
+
+- **`SwiftROS2` umbrella on Android and DDS-less Windows** (Zenoh-only). `.dds` transports throw `TransportError.unsupportedFeature` where CycloneDDS is not part of the build (#179).
+- **RCL backend on by default on Apple** with per-variant prebuilt xcframeworks (`CRos2Jazzy`, `CRos2JazzyZenoh`); opt out with `SWIFT_ROS2_DISABLE_RCL=1` (#174).
+
+### Deprecated
+
+- **Direct construction of the wire clients** — `ZenohClient()` / `DDSClient()`. They leave the public API in 2.0.0; the wire runtime remains the internal fallback behind `ROS2Context` (#173).
 
 ### Fixed
 
-- **Unicast DDS discovery now reaches the configured port.** `DDSTransportSession` and `RclTransportSession` passed only `DDSPeer.address` into the CycloneDDS `<Peer address="..."/>` list, dropping `DDSPeer.port`. Without a port CycloneDDS patches in the *participant* unicast discovery port (`7400 + 250 * domain + 10`) and probes participant indices up to `MaxAutoParticipantIndex` — 7410, 7412, … 7426 on domain 0 — none of which a remote running the default `ParticipantIndex` ("none", ephemeral unicast ports) listens on. SPDP went to dead ports, discovery never completed, and nothing was reported: the failure looked exactly like a firewall or AP-isolation problem. Both call sites now emit the new `DDSPeer.discoveryAddress` (`host:port`, IPv6 bracketed), so SPDP lands on the port the caller configured. Thanks to @peichunhuang-1 for the diagnosis (#176).
-- **A discovery config CycloneDDS rejects now fails the session instead of degrading silently.** `dds_bridge_create_session` ignored a failed `dds_create_domain` and went on to `dds_create_participant`, which creates an *implicit* domain on the default configuration — multicast SPDP, no `<Peers>` — so the session reported itself connected while discovering nothing, the same "looks like a firewall" symptom as #176. The rejection is now surfaced as `DDSError.sessionCreationFailed`. "Domain already exists" (`DDS_RETCODE_PRECONDITION_NOT_MET`) stays tolerated: that is the documented process-lifetime limitation, where the config of the first session on a domain wins (#176).
+- **Unicast DDS discovery now reaches the configured port.** `DDSTransportSession` and `RclTransportSession` passed only `DDSPeer.address` into the CycloneDDS `<Peer address="..."/>` list, dropping `DDSPeer.port`. Without a port CycloneDDS patches in the *participant* unicast discovery port (`7400 + 250 * domain + 10`) and probes participant indices up to `MaxAutoParticipantIndex` — 7410, 7412, … 7426 on domain 0 — none of which a remote running the default `ParticipantIndex` ("none", ephemeral unicast ports) listens on. SPDP went to dead ports, discovery never completed, and nothing was reported: the failure looked exactly like a firewall or AP-isolation problem. Both call sites now emit the new `DDSPeer.discoveryAddress` (`host:port`, IPv6 bracketed), so SPDP lands on the port the caller configured. Thanks to @peichunhuang-1 for the diagnosis (#176, #177).
+- **A discovery config CycloneDDS rejects now fails the session instead of degrading silently.** `dds_bridge_create_session` ignored a failed `dds_create_domain` and went on to `dds_create_participant`, which creates an *implicit* domain on the default configuration — multicast SPDP, no `<Peers>` — so the session reported itself connected while discovering nothing, the same "looks like a firewall" symptom as #176. The rejection is now surfaced as `DDSError.sessionCreationFailed`. "Domain already exists" (`DDS_RETCODE_PRECONDITION_NOT_MET`) stays tolerated: that is the documented process-lifetime limitation, where the config of the first session on a domain wins (#176, #177).
+- rmw-serialized buffers no longer carry uninitialized CDR alignment padding (#162, #180).
+- Zenoh sessions that only subscribe or serve are no longer dropped by `rmw_zenohd` 10 s after opening, and the process no longer dies of SIGPIPE afterwards: the vendored zenoh-pico now paces KEEP_ALIVE on the lowest of both leases (upstream eclipse-zenoh/zenoh-pico#953) while still expiring the router on the lease it advertised, actually sets `SO_NOSIGPIPE` on Apple, and no longer wakes at 1 kHz in `z_sleep_ms` (#116, #181). On Apple this takes effect with the xcframeworks pinned after this tag.
+
+## [1.3.0] - 2026-07-13
+
+### Added
+
+- **Native RCL backend everywhere it can reach**: Apple Zenoh-RCL (`rcl` + `rmw_zenoh_cpp`) alongside the existing DDS variant, and Linux via a system ROS 2 install with the rmw chosen at runtime from the transport type. Opt-in via `SWIFT_ROS2_ENABLE_RCL=1` on every platform, including Apple — the Apple-default-on flip lands post-tag, first reaching a tag in 1.4.0 (#119–#164).
+- Parity matrix with latency / correctness / resource axes for both rmws (#159, #161, #166).
+
+### Fixed
+
+- Health pass from the multi-agent review: publisher topic-uniqueness, refcounted env slots, `TFMessage` sequence cap, empty-struct sentinel byte, four C-bridge memory bugs (#172).
 
 ## [1.2.0] - 2026-06-06
 

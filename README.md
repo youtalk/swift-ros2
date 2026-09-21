@@ -53,20 +53,20 @@ let resp = try await cli.call(.init(), timeout: .seconds(5))
 
 Declare typed parameters (`node.declareParameter` + on-set veto callbacks; interoperates with `ros2 param list/set` and `/parameter_events`) and typed actions (`node.createActionServer` / `createActionClient` with goal handles and feedback `AsyncStream`). End-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift run talker zenoh`, `swift run listener dds`, `swift run parameter-demo zenoh` — live under [`Sources/Examples/README.md`](Sources/Examples/README.md).
 
-## Backends: RCL (1.3.0+) and the wire path (deprecated, removed in 2.0.0)
+## Backends: RCL (1.3.0+) and the wire path (client construction deprecated, removed from the public API in 2.0.0)
 
 Two backends sit behind one backend-agnostic umbrella API. `.zenoh(locator:)` / `.dds(...)` resolve automatically:
 
-- **Native RCL backend** (recommended, default where available) — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. As of **1.3.0** it is available on **Apple** (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw baked per build variant, **on by default**) and **Linux** (system ROS 2 install via `ROS2_RCL_PREFIX`, rmw chosen at runtime from the transport type).
+- **Native RCL backend** (recommended, default where available) — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. As of **1.3.0** it is available on **Apple** (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw baked per build variant; opt-in in 1.3.0, **on by default from 1.4.0**, opt out with `SWIFT_ROS2_DISABLE_RCL=1`) and **Linux** (system ROS 2 install via `ROS2_RCL_PREFIX`, rmw chosen at runtime from the transport type).
 - **Pure-Swift wire path** (`zenoh-pico` / CycloneDDS, no `rcl`) — the original all-platforms backend. It remains the automatic fallback where RCL isn't available yet (Android; visionOS zenoh; Windows) and the golden-byte oracle for the CDR / wire codecs.
 
-**The wire path is deprecated as of 1.3.0 and will be removed in 2.0.0.** Only *direct construction* of the wire clients is deprecated:
+**Direct construction of the wire clients is deprecated and removed from the public API in 2.0.0** — first shipping in tag **1.4.0** (tag 1.3.0 predates the annotation):
 
 ```swift
 import SwiftROS2Zenoh
-let client = ZenohClient()   // ⚠️ deprecated, removed in 2.0.0
+let client = ZenohClient()   // ⚠️ deprecated, removed from the public API in 2.0.0
 import SwiftROS2DDS
-let dds = DDSClient()        // ⚠️ deprecated, removed in 2.0.0
+let dds = DDSClient()        // ⚠️ deprecated, removed from the public API in 2.0.0
 ```
 
 The umbrella API is **unchanged and not deprecated** — most consumers need no change:
@@ -75,7 +75,7 @@ The umbrella API is **unchanged and not deprecated** — most consumers need no 
 let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:7447"))
 ```
 
-If you only build `ZenohClient` / `DDSClient` to hand to `ROS2Context`, drop the explicit construction. If you use them standalone (raw key-expression puts, wire-level subscribers), plan the move to the umbrella API before 2.0.0 — the wire *runtime* path is removed there, while the CDR / wire codecs survive as golden-byte fixtures. Full recipes in [`MIGRATION.md`](MIGRATION.md).
+If you only build `ZenohClient` / `DDSClient` to hand to `ROS2Context`, drop the explicit construction. If you use them standalone (raw key-expression puts, wire-level subscribers), plan the move to the umbrella API before 2.0.0 — 2.0.0 removes the wire clients from the public API; the wire runtime remains the internal fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking. The CDR / wire codecs survive as golden-byte fixtures either way. Full recipes in [`MIGRATION.md`](MIGRATION.md).
 
 > **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link) — `ZenohClient` doesn't exist there at all. On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin); RCL is preferred at runtime. **Windows RCL is deferred** — no official Jazzy Windows binary ships `rmw_zenoh_cpp` and swift-ros2's RCL layer is Jazzy-pinned; re-gates on an official Jazzy binary or Kilted support. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
 
@@ -216,7 +216,8 @@ Each release has a [GitHub release](https://github.com/youtalk/swift-ros2/releas
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **1.3.0**  | 2026-07-13 | **RCL everywhere; wire path deprecated.** Native `rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp` backend on Apple (default-on, per-variant xcframeworks) and Linux (system ROS 2). Direct `ZenohClient()` / `DDSClient()` construction is deprecated — **removed in 2.0.0**. Purely additive otherwise (#151–#174). |
+| **1.4.0**  | 2026-09-21 | **Bridge to 2.0.** Umbrella API on Android / DDS-less Windows; first tag carrying RCL-default-on + the wire-client deprecation; fixes #116, #162, #176. |
+| 1.3.0      | 2026-07-13 | **RCL everywhere it can reach.** Native `rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp` backend, opt-in via `SWIFT_ROS2_ENABLE_RCL=1`, on Apple (prebuilt xcframeworks) and Linux (system ROS 2 install). Parity matrix across latency / correctness / resource axes for both rmws. Purely additive (#119–#172). |
 | 1.2.0      | 2026-06-06 | **Source-timestamp publish overload** — additive `publish(_:timestamp:sequenceNumber:)` (#117). |
 | 1.1.0      | 2026-05-06 | **Parameter API** — typed declares, the six `rcl_interfaces` services, `/parameter_events`, `ROS2ParameterClient` (#102–#107). |
 | 1.0.0      | 2026-05-05 | **API stability promise (1.x SemVer freeze)** — plumbing types pulled out of the public surface; end-user types unchanged. |

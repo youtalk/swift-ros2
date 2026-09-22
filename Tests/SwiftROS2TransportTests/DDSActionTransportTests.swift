@@ -307,6 +307,55 @@ final class DDSActionTransportTests: XCTestCase {
         XCTAssertEqual(ack.resultCDR, Data([0xAA, 0xBB]))
     }
 
+    /// Regression test for a crash: `ActionGoalHandle.result(timeout: nil)`
+    /// substitutes `.seconds(Int.max)` for "no timeout" and threads it down
+    /// to `getResult(goalId:timeout:)`. The DDS wire timeout race used to
+    /// hand that value straight to `Task.sleep(for:)`, which converts
+    /// `Duration` to nanoseconds internally and traps on overflow ("Not
+    /// enough bits to represent the passed value") long before any reply
+    /// could arrive. The reply here is delivered from a separate `Task`
+    /// after a short delay, so this also proves `getResult` genuinely waits
+    /// for it rather than returning early.
+    func testClientGetResultWithHugeTimeoutDoesNotTrapAndWaitsForDelayedReply() async throws {
+        let mock = MockDDSClient()
+        let session = DDSTransportSession(client: mock)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+        defer { try? session.close() }
+
+        let clientProto = try session.createActionClient(
+            name: "/fibonacci",
+            actionTypeName: "example_interfaces/action/Fibonacci",
+            roleTypeHashes: defaultHashes(),
+            qos: .default
+        )
+        let client = clientProto as! DDSTransportActionClientImpl
+        let replyTopic = client.names.getResultReplyTopic
+
+        mock.serviceReplyHandler = { topic, prefixed in
+            guard topic.hasSuffix("get_resultRequest") else { return nil }
+            guard let (rid, _) = try? SampleIdentityPrefix.decode(wirePayload: prefixed) else {
+                return nil
+            }
+            Task {
+                try? await Task.sleep(for: .milliseconds(200))
+                let response = ActionFrameDecoder.encodeGetResultResponse(
+                    status: 4, resultCDR: Data([0xAA, 0xBB])
+                )
+                let replyWire = SampleIdentityPrefix.encode(requestId: rid, userCDR: response)
+                mock.deliver(toTopic: replyTopic, data: replyWire, timestamp: 0)
+            }
+            // No immediate reply — the delayed Task above delivers it.
+            return nil
+        }
+
+        let ack = try await client.getResult(
+            goalId: [UInt8](repeating: 0xAA, count: 16),
+            timeout: .seconds(Int.max)
+        )
+        XCTAssertEqual(ack.status, 4)
+        XCTAssertEqual(ack.resultCDR, Data([0xAA, 0xBB]))
+    }
+
     func testClientStatusFiltersByGoalId() async throws {
         let mock = MockDDSClient()
         let session = DDSTransportSession(client: mock)

@@ -298,6 +298,12 @@ func rclAwaitCorrelatedReply(
                     table.resolve(seq: seq, with: .failure(TransportError.requestCancelled))
                     return
                 }
+                // A caller-supplied timeout large enough to overflow
+                // `Task.sleep`'s internal nanosecond conversion (e.g.
+                // `.seconds(Int.max)`, used as "no timeout") must not be
+                // handed to `Task.sleep` — skip starting the timeout task
+                // entirely and wait indefinitely instead.
+                guard isSafeSleepDuration(timeout) else { return }
                 state.setTimeoutTask(
                     Task { [table] in
                         // If the sleep is cancelled (reply arrived first),

@@ -373,14 +373,20 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
         // we exit *without* resolving the pending entry — otherwise we race
         // with the reply / cancel paths and may surface `requestTimeout`
         // instead of the actual outcome.
-        let timeoutTask = Task { [pendingTable] in
-            do {
-                try await Task.sleep(for: timeout)
-            } catch {
-                return
-            }
-            await pendingTable.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
-        }
+        // A caller-supplied timeout large enough to overflow `Task.sleep`'s
+        // internal nanosecond conversion (e.g. `.seconds(Int.max)`, used as
+        // "no timeout") must not be handed to `Task.sleep` — skip starting
+        // the timeout task entirely and wait indefinitely instead.
+        let timeoutTask: Task<Void, Never>? =
+            isSafeSleepDuration(timeout)
+            ? Task { [pendingTable] in
+                do {
+                    try await Task.sleep(for: timeout)
+                } catch {
+                    return
+                }
+                await pendingTable.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
+            } : nil
 
         return try await withTaskCancellationHandler {
             do {
@@ -395,14 +401,14 @@ final class DDSTransportServiceClientImpl: TransportClient, @unchecked Sendable 
                         }
                     }
                 }
-                timeoutTask.cancel()
+                timeoutTask?.cancel()
                 return body
             } catch {
-                timeoutTask.cancel()
+                timeoutTask?.cancel()
                 throw error
             }
         } onCancel: {
-            timeoutTask.cancel()
+            timeoutTask?.cancel()
             Task { [pendingTable] in
                 await pendingTable.cancel(seq: seq)
             }

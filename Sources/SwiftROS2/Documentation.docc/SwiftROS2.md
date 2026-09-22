@@ -12,20 +12,27 @@ and Android (arm64-v8a, x86_64). One public API fronts two backends:
   no `rcl`/`rclcpp` dependency. Speaks **Zenoh** (interoperates with
   `rmw_zenoh_cpp`, ships on every supported platform) and **DDS**
   (interoperates with `rmw_cyclonedds_cpp` on Apple platforms, Linux, and
-  Windows; Android still pending). Since 2.0.0 it is an internal fallback,
-  used wherever the RCL backend is not available and reached only through
-  ``ROS2Context`` — its clients are not public API.
-- **RCL backend** — the real `rcl` + rmw stack, opt-in at build time via
-  `SWIFT_ROS2_ENABLE_RCL=1`. On Apple platforms the rmw is baked into a
-  prebuilt xcframework per build variant (`SWIFT_ROS2_RCL_RMW`); on Linux the
-  library links the system ROS 2 install and selects the rmw at runtime from
-  the transport type — `.zenoh` runs `rmw_zenoh_cpp`, `.dds` / `.rcl` run
-  `rmw_cyclonedds_cpp`. The rmw choice is process-global on Linux, so one
-  process serves one rmw at a time. Not available on Windows or Android.
+  Windows; Android still pending). 2.0.0 removes the wire clients from the
+  public API; the wire runtime remains the internal fallback where RCL is not
+  available and is retired per platform in 2.x minors, non-breaking. It is
+  reached only through ``ROS2Context``.
+- **RCL backend** — the real `rcl` + rmw stack. On Apple platforms it is in
+  the build graph by default (since 1.4.0; opt out with
+  `SWIFT_ROS2_DISABLE_RCL=1`), with the rmw baked into a prebuilt xcframework
+  per build variant (`SWIFT_ROS2_RCL_RMW`). On Linux it is opt-in via
+  `SWIFT_ROS2_ENABLE_RCL=1`: the library links the system ROS 2 install and
+  selects the rmw at runtime from the transport type — `.zenoh` runs
+  `rmw_zenoh_cpp`, `.dds` / `.rcl` run `rmw_cyclonedds_cpp`. The rmw choice is
+  process-global on Linux, so one process serves one rmw at a time. Not
+  available on Windows or Android.
 
-The backend is selected per context through `TransportConfig` — the node,
-publisher, subscription, service, action, and parameter APIs below are
-identical on both.
+The backend is selected per context from the `TransportConfig` type and the
+build graph. On the default Apple graph `.zenoh` and `.dds` run on the wire
+path and only `.rcl` reaches RCL; the zenoh-rmw variant
+(`SWIFT_ROS2_RCL_RMW=zenoh`) serves `.zenoh` with `rcl` + `rmw_zenoh_cpp`
+instead (and rejects `.rcl`); Linux RCL builds serve all three with RCL. The
+node, publisher, subscription, service, action, and parameter APIs below are
+identical on both backends.
 
 ## Topics
 

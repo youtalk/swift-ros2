@@ -7,10 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - TBD
+## [2.0.0] - 2026-09-22
 
-2.0.0 removes the wire clients from the public API; the wire runtime remains the internal
-fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.
+2.0.0 removes the wire clients from the public API; the wire runtime remains the internal fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.
 
 ### Removed
 
@@ -19,12 +18,13 @@ fallback where RCL is not available and is retired per platform in 2.x minors, n
 
 ### Changed
 
-- **The wire runtime is now an internal fallback.** `ROS2Context` still resolves `.zenoh(locator:)` / `.dds(...)` to the pure-Swift wire path wherever the RCL backend is not available; it is no longer reachable directly.
-- **Wire-transport action frames and DDS service request headers now use the upstream layout** (single CDR encapsulation header; 16-byte DDS request header instead of 24 bytes). **A 1.x peer on a wire transport does not interoperate with a 2.0 peer for actions (DDS and Zenoh) or DDS services** — upgrade both sides. 1.x peers on the RCL backend (e.g. `.rcl`) are unaffected; topics and Zenoh services are unchanged. See the "1.x → 2.0" section of `MIGRATION.md` (#115).
+- **The wire runtime is now an internal fallback, reachable only through `ROS2Context`.** Routing is unchanged from 1.4.0 and decided by the build graph. `.zenoh(locator:)` runs on the wire path everywhere except the Apple zenoh-rmw variant (`SWIFT_ROS2_RCL_RMW=zenoh`) and Linux with `SWIFT_ROS2_ENABLE_RCL=1`, where it runs on `rcl` + `rmw_zenoh_cpp`. `.ddsMulticast` / `.ddsUnicast` run on the wire path wherever CycloneDDS is built (every Apple graph, Linux without RCL, Windows with `CYCLONEDDS_DIR`), on `rcl` + `rmw_cyclonedds_cpp` on Linux RCL builds, and throw on Android and DDS-less Windows. `.rcl` / `.rclUnicast` run on `rcl` + `rmw_cyclonedds_cpp` on the default Apple graph and Linux RCL builds, and throw `TransportError.unsupportedFeature` elsewhere. Full table in the README's "Backends" section.
+- **Wire-transport action frames and DDS service request headers now use the upstream layout** (single CDR encapsulation header; 16-byte DDS request header instead of 24 bytes). **A 1.x peer on a wire transport does not interoperate with a 2.0 peer for actions (DDS and Zenoh) or DDS services** — including the DDS-wire parameter services, which are DDS services — upgrade both sides. 1.x peers on the RCL backend (e.g. `.rcl`) are unaffected; topics and Zenoh services are unchanged. See the "1.x → 2.0" section of `MIGRATION.md` (#115).
 
 ### Fixed
 
-- DDS services and actions interoperate with `rmw_cyclonedds_cpp` (16-byte request header; single encapsulation header in action frames, DDS and Zenoh) — diagnosis by @daisukes (#115).
+- DDS services and actions interoperate with `rmw_cyclonedds_cpp` (16-byte request header; single encapsulation header in action frames, DDS and Zenoh) — diagnosis by @daisukes. Because the parameter services are DDS services on the DDS wire path, `ros2 param` against a DDS-wire node now interoperates too (#115).
+- **`ActionGoalHandle.result()` / `result(timeout: nil)` no longer trap.** A missing or unrepresentably large timeout (e.g. `.seconds(Int.max)`) was handed to `Task.sleep`, whose nanosecond conversion trapped with "Not enough bits to represent the passed value" on the DDS wire and RCL transports; such timeouts now wait for the reply instead. The DDS service `call` timeout race had the same trap and is fixed the same way (#190).
 
 ## [1.4.0] - 2026-09-21
 
@@ -53,6 +53,7 @@ release that actually carries them.**
 ### Added
 
 - **Native RCL backend everywhere it can reach**: Apple Zenoh-RCL (`rcl` + `rmw_zenoh_cpp`) alongside the existing DDS variant, and Linux via a system ROS 2 install with the rmw chosen at runtime from the transport type. Opt-in via `SWIFT_ROS2_ENABLE_RCL=1` on every platform, including Apple — the Apple-default-on flip lands post-tag, first reaching a tag in 1.4.0 (#119–#164).
+- **`TransportType.rcl`** plus the `TransportConfig.rcl(domainId:)` / `rclUnicast(peers:domainId:interface:)` factories (#120, #140). **Source-breaking for exhaustive `switch` statements over `TransportType`** — they need a `.rcl` case. `TransportType.allCases` includes `.rcl` on every build graph, including those where `ROS2Context` throws `TransportError.unsupportedFeature` for it.
 - Parity matrix with latency / correctness / resource axes for both rmws (#159, #161, #166).
 
 ### Fixed

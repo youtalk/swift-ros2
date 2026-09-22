@@ -365,7 +365,8 @@ final class DDSActionTransportTests: XCTestCase {
             timeout: .seconds(Int.max)
         )
         XCTAssertEqual(ack.status, 4)
-        XCTAssertEqual(ack.resultCDR, Data([0xAA, 0xBB]))
+        // decode* restores exactly one encapsulation header (#115).
+        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0xAA, 0xBB]))
     }
 
     func testClientStatusFiltersByGoalId() async throws {

@@ -83,6 +83,48 @@ final class DDSServiceTransportTests: XCTestCase {
         try svc.close()
     }
 
+    /// Defensive regression test: `call(requestCDR:timeout:)` races the
+    /// reply against `Task.sleep(for: timeout)`. A caller-supplied timeout
+    /// large enough to overflow that conversion (e.g. `.seconds(Int.max)`,
+    /// the same "no timeout" stand-in `ActionGoalHandle.result(timeout:
+    /// nil)` uses for the action path) must not trap the process; it should
+    /// be treated as "wait forever" instead. The reply is delivered from a
+    /// separate task after a short delay to prove the call genuinely waits.
+    func testClientWithHugeTimeoutDoesNotTrapAndWaitsForDelayedReply() async throws {
+        let client = MockDDSClient()
+        let session = DDSTransportSession(client: client)
+        try await session.open(config: .ddsMulticast(domainId: 0))
+
+        let svc = try session.createServiceClient(
+            name: "/echo",
+            serviceTypeName: "std_srvs/srv/Trigger",
+            requestTypeHash: nil,
+            responseTypeHash: nil,
+            qos: .sensorData
+        )
+
+        client.markPublicationsMatched(topic: "rq/echoRequest")
+
+        let userRequest = Data([0x00, 0x01, 0x00, 0x00, 0xDE])
+        async let response: Data = svc.call(requestCDR: userRequest, timeout: .seconds(Int.max))
+
+        let writtenWire = try await client.awaitWrite(topic: "rq/echoRequest", timeout: .seconds(5))
+        let bytes = try XCTUnwrap(writtenWire)
+        let (id, parsedReq) = try SampleIdentityPrefix.decode(wirePayload: bytes)
+        XCTAssertEqual(parsedReq, userRequest)
+
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            let userReply = Data([0x00, 0x01, 0x00, 0x00, 0xEE])
+            let replyWire = SampleIdentityPrefix.encode(requestId: id, userCDR: userReply)
+            try? await client.deliverToReader(topic: "rr/echoReply", wire: replyWire, timestamp: 0)
+        }
+
+        let body = try await response
+        XCTAssertEqual(body, Data([0x00, 0x01, 0x00, 0x00, 0xEE]))
+        try svc.close()
+    }
+
     func testClientTimesOut() async throws {
         let client = MockDDSClient()
         let session = DDSTransportSession(client: client)

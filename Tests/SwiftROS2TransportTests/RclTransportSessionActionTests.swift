@@ -596,6 +596,40 @@ final class RclTransportSessionActionTests: XCTestCase {
         XCTAssertEqual(ack.resultCDR, resultBody)
     }
 
+    /// Regression test for a crash: `ActionGoalHandle.result(timeout: nil)`
+    /// substitutes `.seconds(Int.max)` for "no timeout" and threads it down
+    /// to `getResult(goalId:timeout:)`. `rclAwaitCorrelatedReply`'s timeout
+    /// race used to hand that value straight to `Task.sleep(for:)`, which
+    /// converts `Duration` to nanoseconds internally and traps on overflow
+    /// ("Not enough bits to represent the passed value") long before any
+    /// reply could arrive. The response here is fired from a separate task
+    /// after the request is observed sent (and a short extra delay), so this
+    /// also proves `getResult` genuinely waits for it rather than returning
+    /// early.
+    func testClientGetResultWithHugeTimeoutDoesNotTrapAndWaitsForDelayedReply() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        let actionClient = try s.createActionClient(
+            name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
+            qos: .default)
+        let resultBody = Data([0x07])
+        let goalId = goalIdA
+        async let ackAsync = actionClient.getResult(goalId: goalId, timeout: .seconds(Int.max))
+        let mockClient = client.actionClientsCreated[0]
+        let sent = await waitUntil { mockClient.resultRequestsSent.count == 1 }
+        XCTAssertTrue(sent, "result request was not sent within the timeout")
+        let seq = mockClient.resultRequestsSent[0].seq
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            mockClient.fireResultResponse(
+                sequenceNumber: seq,
+                data: ActionFrameDecoder.encodeGetResultResponse(status: 4, resultCDR: resultBody))
+        }
+        let ack = try await ackAsync
+        XCTAssertEqual(ack.status, 4)
+        XCTAssertEqual(ack.resultCDR, resultBody)
+    }
+
     func testClientCancelGoalRoundTrip() async throws {
         let client = MockRclClient()
         let s = try await openSession(client)

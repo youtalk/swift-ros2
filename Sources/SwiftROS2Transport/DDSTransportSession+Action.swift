@@ -944,14 +944,20 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
         timeout: Duration,
         send: @escaping () throws -> Void
     ) async throws -> Data {
-        let timeoutTask = Task { [table] in
-            do {
-                try await Task.sleep(for: timeout)
-            } catch {
-                return
-            }
-            await table.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
-        }
+        // A caller-supplied timeout large enough to overflow `Task.sleep`'s
+        // internal nanosecond conversion (e.g. `.seconds(Int.max)`, used as
+        // "no timeout") must not be handed to `Task.sleep` — skip starting
+        // the timeout task entirely and wait indefinitely instead.
+        let timeoutTask: Task<Void, Never>? =
+            isSafeSleepDuration(timeout)
+            ? Task { [table] in
+                do {
+                    try await Task.sleep(for: timeout)
+                } catch {
+                    return
+                }
+                await table.resolve(seq: seq, with: .failure(TransportError.requestTimeout(timeout)))
+            } : nil
         return try await withTaskCancellationHandler {
             do {
                 let body = try await table.insert(seq: seq) { _ in
@@ -963,14 +969,14 @@ final class DDSTransportActionClientImpl: TransportActionClient, @unchecked Send
                         }
                     }
                 }
-                timeoutTask.cancel()
+                timeoutTask?.cancel()
                 return body
             } catch {
-                timeoutTask.cancel()
+                timeoutTask?.cancel()
                 throw error
             }
         } onCancel: {
-            timeoutTask.cancel()
+            timeoutTask?.cancel()
             Task { [table] in
                 await table.cancel(seq: seq)
             }

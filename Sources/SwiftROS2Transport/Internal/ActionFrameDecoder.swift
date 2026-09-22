@@ -17,20 +17,51 @@ enum ActionFrameDecoderError: Error {
 
 /// CDR helpers for the synthesized action wrapper frames.
 ///
-/// Frames in/out of this enum carry the 4-byte XCDR encapsulation header
-/// (`00 01 00 00`). The transport calls `decode*` on incoming wire payloads
-/// and `encode*` on outgoing wire payloads.
+/// Frames in/out of this enum carry exactly one 4-byte XCDR encapsulation
+/// header (`00 01 00 00`), at offset 0 — the upstream `rosidl` layout that
+/// real rmw peers (`rmw_cyclonedds_cpp`, `rmw_zenoh_cpp`, and `rmw_serialize`
+/// on the `.rcl` transport) read. The transport calls `decode*` on incoming
+/// wire payloads and `encode*` on outgoing wire payloads.
+///
+/// User payloads (goal / feedback / result) cross this boundary in the
+/// umbrella's shape: `encode*` accepts them with or without a leading header
+/// and splices only the bare body into the frame; `decode*` always returns
+/// them with a leading header so `CDRDecoder` can read them.
 enum ActionFrameDecoder {
     static let cdrHeader = Data([0x00, 0x01, 0x00, 0x00])
+
+    /// The umbrella encodes every outbound user payload with a leading XCDR v1
+    /// encapsulation header. Frames are consumed by real rmw peers, which expect
+    /// the bare body at the splice offset (a Fibonacci goal would otherwise decode
+    /// `order = 256`). Strip it before splicing.
+    ///
+    /// Precondition: `payload` is either umbrella-encoded (leading `00 01 00 00`)
+    /// or bare. A *bare* payload whose first int32 happens to be 256 LE would be
+    /// wrongly stripped — every caller today passes umbrella-encoded payloads.
+    static func stripInnerEncapsulationHeader(_ payload: Data) -> Data {
+        guard payload.count >= 4, payload.prefix(4) == cdrHeader else { return payload }
+        return Data(payload.dropFirst(4))
+    }
+
+    /// Inbound bodies are always bare on the wire; hand the umbrella a payload
+    /// `CDRDecoder` can read. Unconditional, so a body that merely *starts with*
+    /// `00 01 00 00` (int32 256) is not mistaken for a header.
+    private static func withHeader(_ body: Data) -> Data {
+        var out = cdrHeader
+        out.append(body)
+        return out
+    }
 
     /// Status array entry — one per goal currently tracked server-side.
     typealias StatusEntry = (uuid: [UInt8], stampSec: Int32, stampNanosec: UInt32, status: Int8)
 
     // MARK: - SendGoal request
 
-    /// Wire shape: `[header (4) | uuid[16] | <user goal CDR>]`.
+    /// Wire shape: `[header (4) | uuid[16] | <bare user goal body>]`.
+    /// `goalCDR` may carry the umbrella's encapsulation header; it is stripped.
     static func encodeSendGoalRequest(goalId: [UInt8], goalCDR: Data) -> Data {
         precondition(goalId.count == 16, "goalId must be 16 bytes")
+        let goalCDR = stripInnerEncapsulationHeader(goalCDR)
         var out = Data(capacity: 4 + 16 + goalCDR.count)
         out.append(cdrHeader)
         out.append(contentsOf: goalId)
@@ -38,11 +69,12 @@ enum ActionFrameDecoder {
         return out
     }
 
+    /// Returns the goal body with a leading encapsulation header.
     static func decodeSendGoalRequest(from data: Data) throws -> (goalId: [UInt8], goalCDR: Data) {
         guard data.count >= 4 + 16 else { throw ActionFrameDecoderError.payloadTooShort }
         let goalId = Array(data[(data.startIndex + 4)..<(data.startIndex + 4 + 16)])
         let body = data.suffix(from: data.startIndex + 4 + 16)
-        return (goalId, Data(body))
+        return (goalId, withHeader(Data(body)))
     }
 
     // MARK: - SendGoal response
@@ -94,10 +126,9 @@ enum ActionFrameDecoder {
 
     // MARK: - GetResult response
 
-    /// Wire shape: `[header (4) | status (i8) | pad (3) | <user result CDR>]`.
-    /// Note the user CDR here is the bare result body — it does NOT carry its
-    /// own encapsulation header; that header was consumed when the umbrella
-    /// API encoded just the body fields.
+    /// Wire shape: `[header (4) | status (i8) | pad (3) | <bare user result body>]`.
+    /// The result body on the wire does NOT carry its own encapsulation header:
+    /// `resultCDR` may carry the umbrella's header, and it is stripped here.
     ///
     /// Splice constraint: this frame pins the Result body to CDR offset 4.
     /// Real rosidl CDR pads `status` to offset 8 when the Result's first
@@ -106,6 +137,7 @@ enum ActionFrameDecoder {
     /// path. The generator rejects those actions at registry-generation time
     /// — see `CActionRegistryEmitter.resultSpliceViolation` in SwiftROS2Gen.
     static func encodeGetResultResponse(status: Int8, resultCDR: Data) -> Data {
+        let resultCDR = stripInnerEncapsulationHeader(resultCDR)
         var out = Data(capacity: 4 + 1 + 3 + resultCDR.count)
         out.append(cdrHeader)
         let s = UInt8(bitPattern: status)
@@ -115,19 +147,22 @@ enum ActionFrameDecoder {
         return out
     }
 
+    /// Returns the result body with a leading encapsulation header.
     static func decodeGetResultResponse(from data: Data) throws -> (status: Int8, resultCDR: Data) {
         guard data.count >= 4 + 1 + 3 else { throw ActionFrameDecoderError.payloadTooShort }
         let base = data.startIndex
         let status = Int8(bitPattern: data[base + 4])
         let body = data.suffix(from: base + 4 + 1 + 3)
-        return (status, Data(body))
+        return (status, withHeader(Data(body)))
     }
 
     // MARK: - FeedbackMessage
 
-    /// Wire shape: `[header (4) | uuid[16] | <user feedback CDR>]`.
+    /// Wire shape: `[header (4) | uuid[16] | <bare user feedback body>]`.
+    /// `feedbackCDR` may carry the umbrella's encapsulation header; it is stripped.
     static func encodeFeedbackMessage(goalId: [UInt8], feedbackCDR: Data) -> Data {
         precondition(goalId.count == 16, "goalId must be 16 bytes")
+        let feedbackCDR = stripInnerEncapsulationHeader(feedbackCDR)
         var out = Data(capacity: 4 + 16 + feedbackCDR.count)
         out.append(cdrHeader)
         out.append(contentsOf: goalId)
@@ -135,13 +170,14 @@ enum ActionFrameDecoder {
         return out
     }
 
+    /// Returns the feedback body with a leading encapsulation header.
     static func decodeFeedbackMessage(from data: Data) throws -> (
         goalId: [UInt8], feedbackCDR: Data
     ) {
         guard data.count >= 4 + 16 else { throw ActionFrameDecoderError.payloadTooShort }
         let goalId = Array(data[(data.startIndex + 4)..<(data.startIndex + 4 + 16)])
         let body = data.suffix(from: data.startIndex + 4 + 16)
-        return (goalId, Data(body))
+        return (goalId, withHeader(Data(body)))
     }
 
     // MARK: - GoalStatusArray

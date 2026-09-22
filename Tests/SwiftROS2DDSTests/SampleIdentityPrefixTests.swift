@@ -1,5 +1,6 @@
 // SampleIdentityPrefixTests.swift
-// Encode / decode of the 24-byte sample-identity prefix used by DDS services.
+// Encode / decode of the 16-byte request-header prefix used by DDS services
+// (rmw_cyclonedds_cpp `cdds_request_header_t`).
 
 import Foundation
 import XCTest
@@ -8,22 +9,18 @@ import XCTest
 
 final class SampleIdentityPrefixTests: XCTestCase {
     func testEncodeProducesHeaderPlusPrefixPlusBody() {
-        let id = RMWRequestId(
-            writerGuid: Array(repeating: 0xAB, count: 16),
-            sequenceNumber: 42
-        )
-        let userCDR = Data([0x00, 0x01, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF])
-        let wire = SampleIdentityPrefix.encode(requestId: id, userCDR: userCDR)
-        XCTAssertEqual(wire.count, 32)
-        XCTAssertEqual(wire.prefix(4), Data([0x00, 0x01, 0x00, 0x00]))
-        XCTAssertEqual(wire.subdata(in: 4..<20), Data(repeating: 0xAB, count: 16))
-        XCTAssertEqual(wire.subdata(in: 20..<28), Data([42, 0, 0, 0, 0, 0, 0, 0]))
-        XCTAssertEqual(wire.suffix(4), Data([0xDE, 0xAD, 0xBE, 0xEF]))
+        let id = RMWRequestId(writerGuid: [UInt8](1...8), sequenceNumber: 7)
+        let wire = SampleIdentityPrefix.encode(
+            requestId: id, userCDR: Data([0x00, 0x01, 0x00, 0x00, 0xAA, 0xBB]))
+        XCTAssertEqual(
+            Array(wire),
+            [0x00, 0x01, 0x00, 0x00] + [UInt8](1...8) + [7, 0, 0, 0, 0, 0, 0, 0] + [0xAA, 0xBB])
+        XCTAssertEqual(SampleIdentityPrefix.prefixedHeaderCount, 20)
     }
 
     func testRoundTrip() throws {
         let id = RMWRequestId(
-            writerGuid: (0..<16).map { UInt8($0) },
+            writerGuid: (0..<8).map { UInt8($0) },
             sequenceNumber: 99
         )
         let userCDR = Data([0x00, 0x01, 0x00, 0x00, 0x01, 0x02, 0x03])
@@ -34,12 +31,21 @@ final class SampleIdentityPrefixTests: XCTestCase {
     }
 
     func testDecodeRejectsTooShortPayload() {
-        XCTAssertThrowsError(try SampleIdentityPrefix.decode(wirePayload: Data(count: 27)))
+        XCTAssertThrowsError(try SampleIdentityPrefix.decode(wirePayload: Data(count: 19)))
+    }
+
+    func testDecodeAcceptsMinimalRequestHeader() throws {
+        // [header (4) | guid (8) | seq (8)] with an empty user body is the
+        // shortest payload the decoder must accept.
+        let wire = Data([0x00, 0x01, 0x00, 0x00] + [UInt8](1...8) + [3, 0, 0, 0, 0, 0, 0, 0])
+        let (parsedId, parsedUserCDR) = try SampleIdentityPrefix.decode(wirePayload: wire)
+        XCTAssertEqual(parsedId, RMWRequestId(writerGuid: [UInt8](1...8), sequenceNumber: 3))
+        XCTAssertEqual(Array(parsedUserCDR), [0x00, 0x01, 0x00, 0x00])
     }
 
     func testDecodeRejectsMissingHeader() {
         var data = Data([0xFF, 0xFF, 0xFF, 0xFF])
-        data.append(Data(count: 24))
+        data.append(Data(count: 16))
         XCTAssertThrowsError(try SampleIdentityPrefix.decode(wirePayload: data))
     }
 }

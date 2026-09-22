@@ -52,8 +52,10 @@ final class ZenohActionTransportTests: XCTestCase {
             roleTypeHashes: defaultHashes(),
             qos: .default,
             handlers: TransportActionServerHandlers(
-                onSendGoal: { goalId, _ in
+                onSendGoal: { goalId, goalCDR in
                     XCTAssertEqual(goalId.count, 16)
+                    // The bare wire body reaches the umbrella behind exactly one header.
+                    XCTAssertEqual(Array(goalCDR), [0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00])
                     acceptedExpect.fulfill()
                     return (true, 7, 11)
                 },
@@ -64,7 +66,8 @@ final class ZenohActionTransportTests: XCTestCase {
         XCTAssertTrue(server.isActive)
 
         let goalId = [UInt8](repeating: 0xAA, count: 16)
-        let frame = ActionFrameDecoder.encodeSendGoalRequest(goalId: goalId, goalCDR: Data())
+        // Shaped as rmw_zenoh_cpp emits it: [header | uuid[16] | bare goal (order = 5)].
+        let frame = Data([0x00, 0x01, 0x00, 0x00] + goalId + [0x05, 0x00, 0x00, 0x00])
         let key = (server as! ZenohTransportActionServerImpl).sendGoalKeyExpr
         let replies = try await mock.deliverQuery(keyExpr: key, payload: frame)
 
@@ -95,12 +98,15 @@ final class ZenohActionTransportTests: XCTestCase {
         )
         let goalId = [UInt8](repeating: 0xAA, count: 16)
         let impl = server as! ZenohTransportActionServerImpl
-        try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0x77]))
+        // The umbrella hands over feedback with its own encapsulation header.
+        try impl.publishFeedback(goalId: goalId, feedbackCDR: Data([0x00, 0x01, 0x00, 0x00, 0x77]))
         let writes = mock.putsByKey[impl.feedbackKeyExpr] ?? []
         XCTAssertEqual(writes.count, 1)
+        // Exactly one header on the wire: [header | uuid[16] | bare feedback].
+        XCTAssertEqual(Array(writes[0].payload), [0x00, 0x01, 0x00, 0x00] + goalId + [0x77])
         let (parsedId, fb) = try ActionFrameDecoder.decodeFeedbackMessage(from: writes[0].payload)
         XCTAssertEqual(parsedId, goalId)
-        XCTAssertEqual(fb, Data([0x77]))
+        XCTAssertEqual(fb, Data([0x00, 0x01, 0x00, 0x00, 0x77]))
     }
 
     func testServerDeclaresLivelinessToken() async throws {
@@ -138,9 +144,12 @@ final class ZenohActionTransportTests: XCTestCase {
 
         let goalId = [UInt8](repeating: 0xAA, count: 16)
 
-        // Mock get(): when called on send_goal key, reply with accepted=true.
-        mock.getReplyHandler = { keyExpr, _ in
+        // Mock get(): when called on send_goal key, capture the request and
+        // reply with accepted=true.
+        let sentGoalFrame = Box<Data?>(nil)
+        mock.getReplyHandler = { keyExpr, payload in
             guard keyExpr.contains("/_action/send_goal/") else { return nil }
+            sentGoalFrame.value = payload
             return ActionFrameDecoder.encodeSendGoalResponse(
                 accepted: true, stampSec: 99, stampNanosec: 0
             )
@@ -148,17 +157,19 @@ final class ZenohActionTransportTests: XCTestCase {
 
         let ack = try await client.sendGoal(
             goalId: goalId,
-            goalCDR: Data(),
+            goalCDR: Data([0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00]),  // umbrella-encoded
             acceptanceTimeout: .seconds(2)
         )
         XCTAssertTrue(ack.accepted)
         XCTAssertEqual(ack.stampSec, 99)
+        // No inner encapsulation header: a real rmw server reads order = 5, not 256.
+        XCTAssertEqual(
+            sentGoalFrame.value.map { Array($0) },
+            [0x00, 0x01, 0x00, 0x00] + goalId + [0x05, 0x00, 0x00, 0x00])
 
-        // Drive a feedback subscriber sample.
+        // Drive a feedback subscriber sample, shaped as a real rmw peer emits it.
         let feedbackKey = (client as! ZenohTransportActionClientImpl).feedbackKeyExpr
-        let frame = ActionFrameDecoder.encodeFeedbackMessage(
-            goalId: goalId, feedbackCDR: Data([0x77])
-        )
+        let frame = Data([0x00, 0x01, 0x00, 0x00] + goalId + [0x77])
         mock.deliverSubscriberSample(keyExpr: feedbackKey, payload: frame, attachment: nil)
 
         var received: Data?
@@ -166,7 +177,7 @@ final class ZenohActionTransportTests: XCTestCase {
             received = fb
             break
         }
-        XCTAssertEqual(received, Data([0x77]))
+        XCTAssertEqual(received, Data([0x00, 0x01, 0x00, 0x00, 0x77]))
     }
 
     func testClientGetResultBlocksUntilReply() async throws {
@@ -192,7 +203,7 @@ final class ZenohActionTransportTests: XCTestCase {
             timeout: .seconds(2)
         )
         XCTAssertEqual(ack.status, 4)
-        XCTAssertEqual(ack.resultCDR, Data([0xAA, 0xBB]))
+        XCTAssertEqual(ack.resultCDR, Data([0x00, 0x01, 0x00, 0x00, 0xAA, 0xBB]))
     }
 
     func testClientStatusFiltersByGoalId() async throws {

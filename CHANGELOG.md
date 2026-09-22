@@ -20,6 +20,11 @@ fallback where RCL is not available and is retired per platform in 2.x minors, n
 ### Changed
 
 - **The wire runtime is now an internal fallback.** `ROS2Context` still resolves `.zenoh(locator:)` / `.dds(...)` to the pure-Swift wire path wherever the RCL backend is not available; it is no longer reachable directly.
+- **Wire-transport action frames and DDS service request headers now use the upstream layout** (single CDR encapsulation header; 16-byte DDS request header instead of 24 bytes). **A 1.x peer on a wire transport does not interoperate with a 2.0 peer for actions (DDS and Zenoh) or DDS services** — upgrade both sides. 1.x peers on the RCL backend (e.g. `.rcl`) are unaffected; topics and Zenoh services are unchanged. See the "1.x → 2.0" section of `MIGRATION.md` (#115).
+
+### Fixed
+
+- DDS services and actions interoperate with `rmw_cyclonedds_cpp` (16-byte request header; single encapsulation header in action frames, DDS and Zenoh) — diagnosis by @daisukes (#115).
 
 ## [1.4.0] - 2026-09-21
 

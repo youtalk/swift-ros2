@@ -623,7 +623,7 @@ final class RclTransportSessionActionTests: XCTestCase {
         let actionClient = try s.createActionClient(
             name: "/fibonacci", actionTypeName: fibonacci, roleTypeHashes: noHashes,
             qos: .default)
-        let resultBody = Data([0x07])
+        let resultBody = Data(cdrHeader + [0x07])  // umbrella-shaped: one encapsulation header (#115)
         let goalId = goalIdA
         async let ackAsync = actionClient.getResult(goalId: goalId, timeout: .seconds(Int.max))
         let mockClient = client.actionClientsCreated[0]

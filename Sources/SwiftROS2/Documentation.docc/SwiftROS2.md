@@ -12,7 +12,9 @@ and Android (arm64-v8a, x86_64). One public API fronts two backends:
   no `rcl`/`rclcpp` dependency. Speaks **Zenoh** (interoperates with
   `rmw_zenoh_cpp`, ships on every supported platform) and **DDS**
   (interoperates with `rmw_cyclonedds_cpp` on Apple platforms, Linux, and
-  Windows; Android still pending).
+  Windows; Android still pending). Since 2.0.0 it is an internal fallback,
+  used wherever the RCL backend is not available and reached only through
+  ``ROS2Context`` — its clients are not public API.
 - **RCL backend** — the real `rcl` + rmw stack, opt-in at build time via
   `SWIFT_ROS2_ENABLE_RCL=1`. On Apple platforms the rmw is baked into a
   prebuilt xcframework per build variant (`SWIFT_ROS2_RCL_RMW`); on Linux the

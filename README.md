@@ -10,7 +10,7 @@
 [![SPI Swift compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/youtalk/swift-ros2)
 [![SPI platform compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/youtalk/swift-ros2)
 
-Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics over **Zenoh** or **DDS** on every consumer device OS that runs Swift — no `rcl` cross-compile, no bridge. A single `.package(url:)` on Apple, `apt install ros-<distro>-cyclonedds` on Linux, a vanilla `swift build` on Windows / Android. The API is Swift-native (`async`/`await`, `AsyncStream`, `Sendable`) and round-trip compatible with `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`.
+Native Swift client library for ROS 2. Publish and subscribe to ROS 2 topics over **Zenoh** or **DDS** on every consumer device OS that runs Swift — no `rcl` cross-compile for you, no bridge. A single `.package(url:)` on Apple, `apt install ros-<distro>-cyclonedds` on Linux, a vanilla `swift build` on Windows / Android. The API is Swift-native (`async`/`await`, `AsyncStream`, `Sendable`) and round-trip compatible with `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`.
 
 Shipping on the SemVer-stable **1.x** line (latest tag in the release badge). Extracted from [Conduit, powered by ROS](https://apps.apple.com/app/id6757171237) — used cumulatively by **10,000+ ROS developers** and a former **#4** in the App Store's Developer Tools category.
 
@@ -53,35 +53,28 @@ let resp = try await cli.call(.init(), timeout: .seconds(5))
 
 Declare typed parameters (`node.declareParameter` + on-set veto callbacks; interoperates with `ros2 param list/set` and `/parameter_events`) and typed actions (`node.createActionServer` / `createActionClient` with goal handles and feedback `AsyncStream`). End-to-end `talker` / `listener` demos modeled on `demo_nodes_cpp` — `swift run talker zenoh`, `swift run listener dds`, `swift run parameter-demo zenoh` — live under [`Sources/Examples/README.md`](Sources/Examples/README.md).
 
-## Backends: RCL (1.3.0+) and the wire path (client construction deprecated, removed from the public API in 2.0.0)
+## Backends: RCL, with an internal wire fallback
 
 Two backends sit behind one backend-agnostic umbrella API. `.zenoh(locator:)` / `.dds(...)` resolve automatically:
 
 - **Native RCL backend** (recommended, default where available) — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. As of **1.3.0** it is available on **Apple** (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw baked per build variant; opt-in in 1.3.0, **on by default from 1.4.0**, opt out with `SWIFT_ROS2_DISABLE_RCL=1`) and **Linux** (system ROS 2 install via `ROS2_RCL_PREFIX`, rmw chosen at runtime from the transport type).
-- **Pure-Swift wire path** (`zenoh-pico` / CycloneDDS, no `rcl`) — the original all-platforms backend. It remains the automatic fallback where RCL isn't available yet (Android; visionOS zenoh; Windows) and the golden-byte oracle for the CDR / wire codecs.
+- **Internal wire fallback** (pure-Swift over `zenoh-pico` / CycloneDDS, no `rcl`) — the original all-platforms backend, an implementation detail since 2.0.0. It remains the automatic fallback where RCL isn't available yet (Android; visionOS zenoh; Windows) and the golden-byte oracle for the CDR / wire codecs.
 
-**Direct construction of the wire clients is deprecated and removed from the public API in 2.0.0** — first shipping in tag **1.4.0** (tag 1.3.0 predates the annotation):
+**2.0.0 removes the wire clients from the public API; the wire runtime remains the internal fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.** `ZenohClient` / `DDSClient` and the `SwiftROS2Zenoh` / `SwiftROS2DDS` products are gone — use `ROS2Context`.
 
-```swift
-import SwiftROS2Zenoh
-let client = ZenohClient()   // ⚠️ deprecated, removed from the public API in 2.0.0
-import SwiftROS2DDS
-let dds = DDSClient()        // ⚠️ deprecated, removed from the public API in 2.0.0
-```
-
-The umbrella API is **unchanged and not deprecated** — most consumers need no change:
+The umbrella API is **unchanged** — most consumers need no change:
 
 ```swift
 let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:7447"))
 ```
 
-If you only build `ZenohClient` / `DDSClient` to hand to `ROS2Context`, drop the explicit construction. If you use them standalone (raw key-expression puts, wire-level subscribers), plan the move to the umbrella API before 2.0.0 — 2.0.0 removes the wire clients from the public API; the wire runtime remains the internal fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking. The CDR / wire codecs survive as golden-byte fixtures either way. Full recipes in [`MIGRATION.md`](MIGRATION.md).
+Code that built the 1.x wire clients only to hand them to `ROS2Context` drops the explicit construction; standalone uses (raw key-expression puts, wire-level subscribers) move to `node.createPublisher` / `node.createSubscription`. The CDR and wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public. Full recipes in [`MIGRATION.md`](MIGRATION.md).
 
-> **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link) — `ZenohClient` doesn't exist there at all. On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin); RCL is preferred at runtime. **Windows RCL is deferred** — no official Jazzy Windows binary ships `rmw_zenoh_cpp` and swift-ros2's RCL layer is Jazzy-pinned; re-gates on an official Jazzy binary or Kilted support. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
+> **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link), so `.zenoh(locator:)` resolves to `rcl` + `rmw_zenoh_cpp` there. On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin); RCL is preferred at runtime. **Windows RCL is deferred** — no official Jazzy Windows binary ships `rmw_zenoh_cpp` and swift-ros2's RCL layer is Jazzy-pinned; re-gates on an official Jazzy binary or Kilted support. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
 
 ## API stability
 
-1.0.0 inaugurated the [SemVer](https://semver.org/spec/v2.0.0.html) 1.x line: no minor or patch release breaks the public API — breaking changes require a 2.0 bump. The frozen surface covers `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, the concrete `ZenohClient` / `DDSClient`, and every `ROS2Message` / `ROS2ServiceType` / `ROS2Action` type. See [`MIGRATION.md`](MIGRATION.md) for the internal-plumbing demotions made at the 1.0 cut and the 2.0 wire-removal plan.
+2.0.0 opens the 2.x line of the [SemVer](https://semver.org/spec/v2.0.0.html) contract that 1.0.0 inaugurated: no minor or patch release breaks the public API — breaking changes require a major bump. The frozen surface covers `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, and every `ROS2Message` / `ROS2ServiceType` / `ROS2Action` type. Retiring the internal wire fallback per platform in 2.x minors is non-breaking. See [`MIGRATION.md`](MIGRATION.md) for the 1.x → 2.0 wire-client removal and the internal-plumbing demotions made at the 1.0 cut.
 
 ## Features
 
@@ -124,7 +117,7 @@ targets: [
 ]
 ```
 
-`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links `SwiftROS2Zenoh` + `SwiftROS2DDS`; add those to your target dependencies only to name `ZenohClient` / `DDSClient` directly. (The URL pin lags one PR behind each tag — pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
+`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin lags one PR behind each tag — pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
 
 ### Linux
 
@@ -174,13 +167,13 @@ import SwiftROS2          // public API — re-exports CDR / Messages / Transpor
     ├── SwiftROS2Messages   — ROS2Message protocols + 23 built-in types
     └── SwiftROS2Transport  — TransportSession / TransportConfig / EntityManager / GIDManager
 
-// Depended on by SwiftROS2 (so the high-level API works after `import SwiftROS2`),
-// but NOT @_exported — import explicitly to reach ZenohClient / DDSClient.
-import SwiftROS2Zenoh      — ZenohClient (zenoh-pico FFI through CZenohBridge)
-import SwiftROS2DDS        — DDSClient (CycloneDDS FFI through CDDSBridge)
+// Internal wire fallback — linked by SwiftROS2 where the build carries it, not
+// products since 2.0.0 (nothing to import; reached through ROS2Context).
+SwiftROS2Zenoh             — zenoh-pico wire client (FFI through CZenohBridge)
+SwiftROS2DDS               — CycloneDDS wire client (FFI through CDDSBridge)
 ```
 
-`CZenohPico` / `CCycloneDDS` are link-only C targets — consumed at the C level by `CZenohBridge` / `CDDSBridge` and **never `import`ed from Swift** (a CI lint guards against it). Reach the C bridges via `import SwiftROS2Zenoh` / `import SwiftROS2DDS`.
+`CZenohPico` / `CCycloneDDS` are link-only C targets — consumed at the C level by `CZenohBridge` / `CDDSBridge` and **never `import`ed from Swift** (a CI lint guards against it). Inside the package, the C bridges are reached only through the internal `SwiftROS2Zenoh` / `SwiftROS2DDS` targets.
 
 ### Built-in message types
 
@@ -216,7 +209,8 @@ Each release has a [GitHub release](https://github.com/youtalk/swift-ros2/releas
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **1.4.0**  | 2026-09-21 | **Bridge to 2.0.** Umbrella API on Android / DDS-less Windows; first tag carrying RCL-default-on + the wire-client deprecation; fixes #116, #162, #176. |
+| **2.0.0**  | TBD        | **Wire clients leave the public API.** `ZenohClient` / `DDSClient` and their products removed; DDS service/action interop with `rmw_cyclonedds_cpp` fixed (#115). Wire runtime stays as the internal fallback. |
+| 1.4.0      | 2026-09-21 | **Bridge to 2.0.** Umbrella API on Android / DDS-less Windows; first tag carrying RCL-default-on + the wire-client deprecation; fixes #116, #162, #176. |
 | 1.3.0      | 2026-07-13 | **RCL everywhere it can reach.** Native `rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp` backend, opt-in via `SWIFT_ROS2_ENABLE_RCL=1`, on Apple (prebuilt xcframeworks) and Linux (system ROS 2 install). Parity matrix across latency / correctness / resource axes for both rmws. Purely additive (#119–#172). |
 | 1.2.0      | 2026-06-06 | **Source-timestamp publish overload** — additive `publish(_:timestamp:sequenceNumber:)` (#117). |
 | 1.1.0      | 2026-05-06 | **Parameter API** — typed declares, the six `rcl_interfaces` services, `/parameter_events`, `ROS2ParameterClient` (#102–#107). |

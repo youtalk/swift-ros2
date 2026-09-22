@@ -21,7 +21,14 @@ OUTPUT_FILE=$(mktemp)
 trap 'rm -f "$OUTPUT_FILE"' EXIT
 
 set +e
-swift package diagnose-api-breaking-changes "$BASELINE" 2>&1 | tee "$OUTPUT_FILE"
+# Digest only the surviving library products. 2.0.0 removed the
+# SwiftROS2Zenoh / SwiftROS2DDS products (the wire clients became `package`);
+# without an explicit product list the digester aborts looking for their
+# baseline ABI files instead of reporting breakages.
+swift package diagnose-api-breaking-changes "$BASELINE" \
+    --products SwiftROS2 --products SwiftROS2CDR --products SwiftROS2Messages \
+    --products SwiftROS2Wire --products SwiftROS2Transport --products SwiftROS2Gen \
+    2>&1 | tee "$OUTPUT_FILE"
 EXIT=${PIPESTATUS[0]}
 set -e
 

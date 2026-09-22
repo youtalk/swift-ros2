@@ -194,7 +194,7 @@ extension ROS2Context {
                 return RclTransportSession(client: RclClient())
             #elseif canImport(SwiftROS2Zenoh)
                 // Wire path (zenoh-pico) — every build except the zenoh-rmw variant.
-                return ZenohTransportSession(client: ZenohClient(wireFallback: ()))
+                return ZenohTransportSession(client: ZenohClient())
             #elseif SWIFT_ROS2_RCL_RMW_ZENOH
                 // zenoh-pico is carved out (symbol collision with the variant's
                 // zenoh-c); `.zenoh` resolves to rcl + rmw_zenoh_cpp instead. The
@@ -210,7 +210,7 @@ extension ROS2Context {
                 // Linux RCL: .dds resolves to rcl + rmw_cyclonedds_cpp (runtime rmw).
                 return RclTransportSession(client: RclClient())
             #elseif canImport(SwiftROS2DDS)
-                return DDSTransportSession(client: DDSClient(wireFallback: ()))
+                return DDSTransportSession(client: DDSClient())
             #else
                 throw TransportError.unsupportedFeature(
                     "DDS is not available on this platform (no CycloneDDS in this build) "

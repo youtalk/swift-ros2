@@ -4,25 +4,16 @@ import XCTest
 
 final class DDSClientSmokeTests: XCTestCase {
     func testAvailabilityFlag() {
-        let client = DDSClient(wireFallback: ())
+        let client = DDSClient()
         XCTAssertTrue(client.isAvailable)
     }
 
     func testInitializationDoesNotCrash() {
-        _ = DDSClient(wireFallback: ())
-    }
-
-    // The deprecated public initializer must keep constructing a working
-    // client through 1.x — the annotation is a migration signal, not a
-    // behavior change. The test method carries the same deprecation so the
-    // pinned usage compiles without a warning.
-    @available(*, deprecated)
-    func testDeprecatedPublicInitStillConstructs() {
-        XCTAssertTrue(DDSClient().isAvailable)
+        _ = DDSClient()
     }
 
     func testWriteWithForeignHandleThrows() throws {
-        let client = DDSClient(wireFallback: ())
+        let client = DDSClient()
         let foreign = ForeignWriterHandle()
         XCTAssertThrowsError(
             try client.writeRawCDR(
@@ -41,7 +32,7 @@ final class DDSClientSmokeTests: XCTestCase {
     }
 
     func testDestroyReaderWithForeignHandleIsNoOp() {
-        let client = DDSClient(wireFallback: ())
+        let client = DDSClient()
         let foreign = ForeignReaderHandle()
         // destroyReader is non-throwing; the client must silently no-op on a
         // handle it didn't create rather than force-cast into its private box.
@@ -49,7 +40,7 @@ final class DDSClientSmokeTests: XCTestCase {
     }
 
     func testCreateReaderWithoutSessionThrows() throws {
-        let client = DDSClient(wireFallback: ())
+        let client = DDSClient()
         XCTAssertThrowsError(
             try client.createRawReader(
                 topicName: "rt/test",

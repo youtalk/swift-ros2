@@ -13,7 +13,7 @@ import SwiftROS2Wire
 ///
 /// The client protocol is injected at construction time, allowing the
 /// consuming app (e.g., Conduit) to provide its own C bridge wrapper.
-public final class ZenohTransportSession: TransportSession, @unchecked Sendable {
+package final class ZenohTransportSession: TransportSession, @unchecked Sendable {
     let client: any ZenohClientProtocol
     var config: TransportConfig?
     var publishers: [String: ZenohTransportPublisher] = [:]
@@ -26,15 +26,15 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
     let gidManager: GIDManager
 
     /// Detected or configured wire mode (set after open)
-    public private(set) var resolvedWireMode: ROS2Distro?
+    package private(set) var resolvedWireMode: ROS2Distro?
 
-    public var transportType: TransportType { .zenoh }
+    package var transportType: TransportType { .zenoh }
 
-    public var isConnected: Bool {
+    package var isConnected: Bool {
         client.isSessionHealthy()
     }
 
-    public var sessionId: String {
+    package var sessionId: String {
         (try? client.getSessionId()) ?? "unknown"
     }
 
@@ -53,7 +53,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         self.gidManager = gidManager ?? GIDManager()
     }
 
-    public func open(config: TransportConfig) async throws {
+    package func open(config: TransportConfig) async throws {
         guard config.type == .zenoh else {
             throw TransportError.invalidConfiguration("Expected Zenoh configuration, got \(config.type)")
         }
@@ -85,7 +85,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         }
     }
 
-    public func close() throws {
+    package func close() throws {
         let pubs = takeAllPublishers()
         for pub in pubs {
             try? pub.close()
@@ -120,7 +120,7 @@ public final class ZenohTransportSession: TransportSession, @unchecked Sendable 
         config = nil
     }
 
-    public func checkHealth() -> Bool {
+    package func checkHealth() -> Bool {
         client.isSessionHealthy()
     }
 

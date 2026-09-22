@@ -13,6 +13,7 @@
 | 1.0.x | 1.1.0 | **None.** Parameter API (`ROS2Node.declareParameter` / `setParameter` / `setOnSetParametersCallback` / six standard parameter services / `/parameter_events` publisher / `ROS2ParameterClient`) is purely additive. |
 | 1.1.x | 1.2.0 | **None.** The `ROS2Publisher.publish(_:timestamp:sequenceNumber:)` source-timestamp overload is purely additive — the existing `publish(_:)` is unchanged (it now delegates to the overload with the same wall-clock timestamp + monotonic sequence). |
 | 1.3.x | 1.4.0 | **None.** Additive: umbrella on Android/DDS-less Windows; RCL default-on and the wire-client deprecation warnings first reach tagged consumers here. |
+| 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API; action wire format changed (see below). |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -316,3 +317,23 @@ let node = try await ctx.createNode(name: "talker")
 ```
 
 `.dds` transports throw `TransportError.unsupportedFeature` where CycloneDDS is not part of the build.
+
+## 1.x → 2.0 — the wire clients leave the public API
+
+2.0.0 removes the wire clients from the public API; the wire runtime remains the internal
+fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.
+
+**Removed:** products `SwiftROS2Zenoh`, `SwiftROS2DDS`; public types `ZenohClient`,
+`ZenohQueryable`, `DDSClient`, `ZenohTransportSession`, `DDSTransportSession`, `RMWRequestId`.
+
+**Replace a connectivity probe**
+
+```swift
+// 1.x
+let client = ZenohClient(); try client.open(locator: locator); try client.close()
+// 2.0
+let ctx = try await ROS2Context(transport: .zenoh(locator: locator)); await ctx.shutdown()
+```
+
+**Replace raw puts / wire-level subscribers** with `node.createPublisher` /
+`node.createSubscription`. The CDR and wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public.

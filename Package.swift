@@ -484,7 +484,6 @@ var targets: [Target] = [
 // zenoh-pico wire family — every platform EXCEPT the zenoh-rmw RCL variant
 // (symbol collision with zenoh-c; see `dropZenohWire` above).
 if !dropZenohWire {
-    products.append(.library(name: "SwiftROS2Zenoh", targets: ["SwiftROS2Zenoh"]))
     targets.append(contentsOf: [
         // Native C FFI for zenoh-pico. Apple platforms receive the pre-built
         // xcframework; Linux, Windows, and Android compile from source using
@@ -514,6 +513,7 @@ if !dropZenohWire {
             ]
         ),
 
+        // Internal wire fallback — not a product since 2.0.0.
         // Swift-facing Zenoh module — hosts ZenohClient, the default
         // implementation of ZenohClientProtocol defined in SwiftROS2Transport.
         .target(
@@ -592,8 +592,6 @@ if canBuildDDS {
         ddsBridgeLinkerSettings.append(.linkedLibrary("ddsc"))
     }
 
-    products.append(.library(name: "SwiftROS2DDS", targets: ["SwiftROS2DDS"]))
-
     targets.append(contentsOf: [
         cCycloneDDS,
 
@@ -607,6 +605,7 @@ if canBuildDDS {
             linkerSettings: ddsBridgeLinkerSettings
         ),
 
+        // Internal wire fallback — not a product since 2.0.0.
         .target(
             name: "SwiftROS2DDS",
             dependencies: ["CDDSBridge", "SwiftROS2Transport", "SwiftROS2Wire"],

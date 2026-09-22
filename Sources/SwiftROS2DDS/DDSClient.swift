@@ -137,24 +137,14 @@ private final class DDSReaderHandleBox: DDSReaderHandle {
 /// returns — CycloneDDS contracts that call to block until any in-flight
 /// listener callback has returned, so a racing callback thread can never
 /// dereference a freed closure context.
-public final class DDSClient: DDSClientProtocol {
+package final class DDSClient: DDSClientProtocol {
     private var session: OpaquePointer?
     private let lock = NSLock()
 
-    /// Non-deprecated construction seam for in-package callers: the wire
-    /// path stays the automatic fallback wherever the RCL backend is not
-    /// available (`makeDefaultSession`) and remains exercised by tests as
-    /// the golden-byte oracle — those uses are not themselves deprecated.
-    package init(wireFallback: ()) {}
+    /// Initializes the client; call `open` / `createSession` to connect.
+    package init() {}
 
-    /// Initializes the DDS client (session not yet created)
-    @available(
-        *, deprecated,
-        message: "The pure-Swift wire path is deprecated; use the RCL backend. Removed in 2.0.0."
-    )
-    public init() {}
-
-    public var isAvailable: Bool {
+    package var isAvailable: Bool {
         dds_bridge_is_available()
     }
 
@@ -216,7 +206,7 @@ public final class DDSClient: DDSClientProtocol {
         session = newSession
     }
 
-    public func destroySession() throws {
+    package func destroySession() throws {
         lock.lock()
         defer { lock.unlock() }
 
@@ -225,14 +215,14 @@ public final class DDSClient: DDSClientProtocol {
         session = nil
     }
 
-    public func isConnected() -> Bool {
+    package func isConnected() -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard let s = session else { return false }
         return dds_bridge_session_is_connected(s)
     }
 
-    public func getSessionId() -> String? {
+    package func getSessionId() -> String? {
         lock.lock()
         defer { lock.unlock() }
         guard let s = session else { return nil }

@@ -15,3 +15,12 @@
 # Removals of public APIs are SemVer-breaking on the 1.x line — adding an
 # entry here is a signal that a 2.0 bump is required.
 
+# 2.0.0 — wire clients removed from the public API (refactor(wire)!). Emptied again
+# once the 2.0.0 tag is the baseline.
+#
+# No entries: against 1.4.0 the digester reports no breakage for this change.
+# The SwiftROS2Zenoh / SwiftROS2DDS modules are no longer products, so the gate
+# no longer digests them, and SwiftPM's ABI digest lists `package` declarations
+# too, so the public -> package flip of ZenohTransportSession,
+# DDSTransportSession and RMWRequestId in SwiftROS2Transport is not reported.
+# This gate does not catch a public -> package demotion.

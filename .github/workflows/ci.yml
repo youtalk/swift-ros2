@@ -309,6 +309,18 @@ jobs:
                      | (.target_dependencies | index("SwiftROS2DDS")) == null' \
             || (echo "SwiftROS2 must not depend on SwiftROS2DDS on android"; exit 1)
 
+      - name: Verify wire clients are not public products
+        run: |
+          # 2.0.0: the wire runtime is an internal fallback behind ROS2Context;
+          # SwiftROS2Zenoh / SwiftROS2DDS must never come back as products.
+          for arm in apple linux windows android; do
+            echo "=== SWIFT_ROS2_TARGET_OS=$arm ==="
+            SWIFT_ROS2_TARGET_OS=$arm swift package describe --type json \
+              | jq -e '[.products[].name]
+                       | (index("SwiftROS2Zenoh") == null and index("SwiftROS2DDS") == null)' \
+              || (echo "wire client product exposed on arm=$arm"; exit 1)
+          done
+
   build-windows:
     name: Build & Test (Windows x86_64)
     needs: [lint-swift-format]

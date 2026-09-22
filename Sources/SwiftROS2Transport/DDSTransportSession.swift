@@ -13,7 +13,7 @@ import SwiftROS2Wire
 ///
 /// The client protocol is injected at construction time, allowing the
 /// consuming app (e.g., Conduit) to provide its own CycloneDDS C bridge wrapper.
-public final class DDSTransportSession: TransportSession, @unchecked Sendable {
+package final class DDSTransportSession: TransportSession, @unchecked Sendable {
     let client: any DDSClientProtocol
     private var config: TransportConfig?
     var publishers: [String: DDSTransportPublisherImpl] = [:]
@@ -26,15 +26,15 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
     private var _sessionId: String = ""
     var isOpen = false
 
-    public var transportType: TransportType { .dds }
+    package var transportType: TransportType { .dds }
 
-    public var isConnected: Bool {
+    package var isConnected: Bool {
         lock.lock()
         defer { lock.unlock() }
         return isOpen && client.isConnected()
     }
 
-    public var sessionId: String {
+    package var sessionId: String {
         lock.lock()
         defer { lock.unlock() }
         return _sessionId
@@ -46,7 +46,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
         self.client = client
     }
 
-    public func open(config: TransportConfig) async throws {
+    package func open(config: TransportConfig) async throws {
         guard config.type == .dds else {
             throw TransportError.invalidConfiguration("Expected DDS configuration, got \(config.type)")
         }
@@ -80,7 +80,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
         lock.unlock()
     }
 
-    public func close() throws {
+    package func close() throws {
         let pubs = takeAllPublishers()
         for pub in pubs {
             try? pub.close()
@@ -120,7 +120,7 @@ public final class DDSTransportSession: TransportSession, @unchecked Sendable {
         try client.destroySession()
     }
 
-    public func checkHealth() -> Bool {
+    package func checkHealth() -> Bool {
         client.isConnected()
     }
 

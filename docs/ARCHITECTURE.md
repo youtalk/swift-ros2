@@ -7,6 +7,10 @@ services, actions, and parameters) fronting **two backends**:
 1. **Wire path** — a pure-Swift XCDR v1 codec plus Zenoh / DDS wire codecs,
    speaking directly to `rmw_zenoh_cpp` (via zenoh-pico) or
    `rmw_cyclonedds_cpp` (via CycloneDDS). No `rcl`/`rclcpp` in the process.
+   Since 2.0.0 it is an internal fallback: its clients (`ZenohClient`,
+   `DDSClient`, the wire transport sessions) are `package`, and
+   `SwiftROS2Zenoh` / `SwiftROS2DDS` are targets, not products. The CDR and
+   wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public.
 2. **RCL backend** (opt-in, `SWIFT_ROS2_ENABLE_RCL=1`) — the real `rcl` + rmw
    stack, reached through the `CRclBridge` C shim. Available on Apple
    platforms and Linux; Windows and Android are wire-only.
@@ -26,8 +30,8 @@ nodes, publishers, subscriptions, services, actions, parameters — is shared.
      ├── SwiftROS2Transport   — TransportSession seam, TransportConfig,
      │    │                     EntityManager, GIDManager, RclTransportSession
      │    └── SwiftROS2Wire   — Zenoh / DDS wire codecs, ROS2Distro (no deps)
-     ├── SwiftROS2Zenoh ── CZenohBridge ── CZenohPico    (zenoh-pico FFI)
-     ├── SwiftROS2DDS   ── CDDSBridge   ── CCycloneDDS   (CycloneDDS FFI)
+     ├── SwiftROS2Zenoh ── CZenohBridge ── CZenohPico    (zenoh-pico FFI, internal)
+     ├── SwiftROS2DDS   ── CDDSBridge   ── CCycloneDDS   (CycloneDDS FFI, internal)
      └── SwiftROS2RCL   ── CRclBridge   ── CRos2Jazzy    (rcl/rmw FFI, opt-in)
 
 Tooling targets outside the runtime graph:
@@ -57,9 +61,11 @@ cross-compiles) or the host `#if os(...)` fallback:
 | Windows | source build (windows backend, Winsock + Iphlpapi) | `systemLibrary` via vcpkg (`CYCLONEDDS_DIR`; Zenoh-only when unset) | none |
 | Android | source build (Bionic, unix backend) | none | none |
 
-The `SwiftROS2` umbrella and `SwiftROS2DDS` exist only where CycloneDDS is
-consumable; Android (and Windows without `CYCLONEDDS_DIR`) callers
-`import SwiftROS2Zenoh` directly.
+The `SwiftROS2` umbrella builds on every arm. `SwiftROS2DDS` exists only
+where CycloneDDS is consumable; on Android (and Windows without
+`CYCLONEDDS_DIR`) the umbrella is Zenoh-only and `.dds` transports throw
+`TransportError.unsupportedFeature`. Consumers depend on the `SwiftROS2`
+product on every arm — the wire targets are not products.
 
 ## RCL backend provisioning
 

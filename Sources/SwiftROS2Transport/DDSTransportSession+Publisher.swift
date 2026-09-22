@@ -77,11 +77,11 @@ extension DDSTransportSession {
 final class DDSTransportPublisherImpl: TransportPublisher, @unchecked Sendable {
     private let client: any DDSClientProtocol
     private var writer: (any DDSWriterHandle)?
-    public let topic: String
+    package let topic: String
     private let lock = NSLock()
     private var closed = false
 
-    public var isActive: Bool {
+    package var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
         if closed { return false }
@@ -94,7 +94,7 @@ final class DDSTransportPublisherImpl: TransportPublisher, @unchecked Sendable {
         self.topic = topic
     }
 
-    public func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
+    package func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
         guard !data.isEmpty else {
             throw TransportError.publishFailed("Data is empty")
         }
@@ -113,7 +113,7 @@ final class DDSTransportPublisherImpl: TransportPublisher, @unchecked Sendable {
         try client.writeRawCDR(writer: w, data: data, timestamp: timestamp)
     }
 
-    public func close() throws {
+    package func close() throws {
         lock.lock()
         guard !closed else {
             lock.unlock()

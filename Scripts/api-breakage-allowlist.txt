@@ -1,26 +1,21 @@
 # API breakages intentionally introduced after the latest released tag.
 #
 # CI resolves the baseline dynamically — the highest stable semver tag in the
-# repo (e.g. `1.0.0` today, `1.1.0` once 1.1 ships) — and runs
+# repo (e.g. `2.0.0` today, `2.1.0` once 2.1 ships) — and runs
 # `swift package diagnose-api-breaking-changes` against it. That way removals
-# of APIs added on the 1.x line (e.g. a symbol introduced in 1.1.0 then
-# deleted before 1.2.0) are still caught — they would not have been if the
-# baseline stayed pinned to 1.0.0 forever.
+# of APIs added on the 2.x line (e.g. a symbol introduced in 2.1.0 then
+# deleted before 2.2.0) are still caught — they would not have been if the
+# baseline stayed pinned to 2.0.0 forever.
 #
 # Each line below is matched verbatim against a diagnostic message; comments
 # and blank lines are ignored. Append entries when intentional breakages land
 # during a release cycle; drop them again once a tag is cut whose baseline
 # already includes them.
 #
-# Removals of public APIs are SemVer-breaking on the 1.x line — adding an
-# entry here is a signal that a 2.0 bump is required.
-
-# 2.0.0 — wire clients removed from the public API (refactor(wire)!). Emptied again
-# once the 2.0.0 tag is the baseline.
+# Removals of public APIs are SemVer-breaking on the 2.x line — adding an
+# entry here is a signal that a 3.0 bump is required.
 #
-# No entries: against 1.4.0 the digester reports no breakage for this change.
-# The SwiftROS2Zenoh / SwiftROS2DDS modules are no longer products, so the gate
-# no longer digests them, and SwiftPM's ABI digest lists `package` declarations
-# too, so the public -> package flip of ZenohTransportSession,
-# DDSTransportSession and RMWRequestId in SwiftROS2Transport is not reported.
-# This gate does not catch a public -> package demotion.
+# NOTE: this gate does not catch a `public` -> `package` demotion (SwiftPM's
+# ABI digest lists `package` declarations too, so a symbol that drops from
+# `public` to `package` — while still present in the digest — is not reported
+# as a breakage).

@@ -230,8 +230,9 @@ extension ROS2Context {
                 return RclTransportSession(client: RclClient())
             #else
                 throw TransportError.unsupportedFeature(
-                    "rcl backend not built — set SWIFT_ROS2_ENABLE_RCL=1 and rebuild "
-                        + "on Apple (xcframework) or Linux (system ROS 2)")
+                    "rcl backend not built — on Apple it is built by default (unset "
+                        + "SWIFT_ROS2_DISABLE_RCL); on Linux set SWIFT_ROS2_ENABLE_RCL=1 "
+                        + "(system ROS 2); Windows and Android have no rcl backend")
             #endif
         }
     }

@@ -7,19 +7,34 @@ services, actions, and parameters) fronting **two backends**:
 1. **Wire path** — a pure-Swift XCDR v1 codec plus Zenoh / DDS wire codecs,
    speaking directly to `rmw_zenoh_cpp` (via zenoh-pico) or
    `rmw_cyclonedds_cpp` (via CycloneDDS). No `rcl`/`rclcpp` in the process.
-   Since 2.0.0 it is an internal fallback: its clients (`ZenohClient`,
+   2.0.0 removes the wire clients from the public API; the wire runtime
+   remains the internal fallback where RCL is not available and is retired
+   per platform in 2.x minors, non-breaking. Its clients (`ZenohClient`,
    `DDSClient`, the wire transport sessions) are `package`, and
    `SwiftROS2Zenoh` / `SwiftROS2DDS` are targets, not products. The CDR and
    wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public.
-2. **RCL backend** (opt-in, `SWIFT_ROS2_ENABLE_RCL=1`) — the real `rcl` + rmw
-   stack, reached through the `CRclBridge` C shim. Available on Apple
-   platforms and Linux; Windows and Android are wire-only.
+2. **RCL backend** — the real `rcl` + rmw stack, reached through the
+   `CRclBridge` C shim. On Apple it is in the build graph by default since
+   1.4.0 (opt out with `SWIFT_ROS2_DISABLE_RCL=1`); on Linux it is opt-in with
+   `SWIFT_ROS2_ENABLE_RCL=1`. Windows and Android are wire-only.
 
 `ROS2Context.makeDefaultSession(for:)` (`Sources/SwiftROS2/Context.swift`)
-maps `TransportConfig.type` to a session: `.zenoh` / `.dds` resolve to the
-wire sessions on default builds, and `.rcl` (or, on Linux RCL builds, all
-three) resolves to `RclTransportSession`. Everything above the session seam —
-nodes, publishers, subscriptions, services, actions, parameters — is shared.
+maps `TransportConfig.type` to a session, keyed on the build graph:
+
+| Build graph | `.zenoh` | `.dds` | `.rcl` / `.rclUnicast` |
+|---|---|---|---|
+| Apple, default (RCL on, `cyclonedds` rmw) | wire | wire | RCL + `rmw_cyclonedds_cpp` |
+| Apple, `SWIFT_ROS2_RCL_RMW=zenoh` | RCL + `rmw_zenoh_cpp` | wire | throws |
+| Apple, `SWIFT_ROS2_DISABLE_RCL=1` | wire | wire | throws |
+| Linux, default | wire | wire | throws |
+| Linux, `SWIFT_ROS2_ENABLE_RCL=1` | RCL + `rmw_zenoh_cpp` | RCL + `rmw_cyclonedds_cpp` | RCL + `rmw_cyclonedds_cpp` |
+| Windows | wire | wire with `CYCLONEDDS_DIR`, otherwise throws | throws |
+| Android | wire | throws | throws |
+
+"wire" is `ZenohTransportSession` / `DDSTransportSession`, "RCL" is
+`RclTransportSession`, and "throws" is `TransportError.unsupportedFeature`.
+Everything above the session seam — nodes, publishers, subscriptions,
+services, actions, parameters — is shared.
 
 ## Target graph
 
@@ -32,7 +47,7 @@ nodes, publishers, subscriptions, services, actions, parameters — is shared.
      │    └── SwiftROS2Wire   — Zenoh / DDS wire codecs, ROS2Distro (no deps)
      ├── SwiftROS2Zenoh ── CZenohBridge ── CZenohPico    (zenoh-pico FFI, internal)
      ├── SwiftROS2DDS   ── CDDSBridge   ── CCycloneDDS   (CycloneDDS FFI, internal)
-     └── SwiftROS2RCL   ── CRclBridge   ── CRos2Jazzy    (rcl/rmw FFI, opt-in)
+     └── SwiftROS2RCL   ── CRclBridge   ── CRos2Jazzy    (rcl/rmw FFI; Apple default, Linux opt-in)
 
 Tooling targets outside the runtime graph:
 
@@ -56,8 +71,8 @@ cross-compiles) or the host `#if os(...)` fallback:
 
 | Arm | zenoh-pico | CycloneDDS | RCL |
 |-----|------------|------------|-----|
-| Apple | `binaryTarget` xcframework from the pinned GitHub release | `binaryTarget` xcframework | prebuilt local xcframework (opt-in) |
-| Linux | source build of `vendor/zenoh-pico` (unix backend) | `systemLibrary` via `pkg-config` | system ROS 2 install (opt-in) |
+| Apple | `binaryTarget` xcframework from the pinned GitHub release | `binaryTarget` xcframework | `binaryTarget` xcframework from the release URL (default; `SWIFT_ROS2_DISABLE_RCL=1` opts out) |
+| Linux | source build of `vendor/zenoh-pico` (unix backend) | `systemLibrary` via `pkg-config` | system ROS 2 install (opt-in, `SWIFT_ROS2_ENABLE_RCL=1`) |
 | Windows | source build (windows backend, Winsock + Iphlpapi) | `systemLibrary` via vcpkg (`CYCLONEDDS_DIR`; Zenoh-only when unset) | none |
 | Android | source build (Bionic, unix backend) | none | none |
 
@@ -69,17 +84,22 @@ product on every arm — the wire targets are not products.
 
 ## RCL backend provisioning
 
-Gated by `SWIFT_ROS2_ENABLE_RCL=1` on Apple and Linux builds. The rmw
-selection differs per platform:
+On by default on Apple (since 1.4.0; `SWIFT_ROS2_DISABLE_RCL=1` opts out)
+and opt-in on Linux (`SWIFT_ROS2_ENABLE_RCL=1`). The rmw selection differs per
+platform:
 
-- **Apple** — `CRos2Jazzy` is a local path-based `binaryTarget` built by
-  `Scripts/build-ros2-xcframework.sh`. The rmw is **baked per build variant**,
-  selected by `SWIFT_ROS2_RCL_RMW`: `cyclonedds` (default) →
-  `build/ros2/CRos2Jazzy.xcframework`, `zenoh` →
-  `build/ros2zenoh/CRos2JazzyZenoh.xcframework`. The zenoh variant bundles
-  zenoh-c, which collides with zenoh-pico's C symbols, so that variant carves
-  the zenoh-pico wire family out of the build graph and `.zenoh` configs are
-  served by rcl + `rmw_zenoh_cpp` instead.
+- **Apple** — `CRos2Jazzy` is a URL-based `binaryTarget`: the prebuilt
+  xcframework is a release artifact (built by `Scripts/build-ros2-xcframework.sh`
+  in `release-xcframework.yml`) resolved from the pinned release URL +
+  checksum. `SWIFT_ROS2_RCL_LOCAL=1` resolves it from a local `build/ros2*/`
+  instead (CI and ROS 2 cross-build iteration). The rmw is **baked per build
+  variant**, selected by `SWIFT_ROS2_RCL_RMW`: `cyclonedds` (default) →
+  `CRos2Jazzy.xcframework`, `zenoh` → `CRos2JazzyZenoh.xcframework` (no
+  visionOS slice). The zenoh variant bundles zenoh-c, which collides with
+  zenoh-pico's C symbols, so that variant carves the zenoh-pico wire family
+  out of the build graph and `.zenoh` configs are served by rcl +
+  `rmw_zenoh_cpp` instead; `.rcl` / `.rclUnicast` throw there, since they
+  target `rmw_cyclonedds_cpp`.
 - **Linux** — `CRos2Jazzy` is a `systemLibrary` over the system ROS 2 install,
   located through `ROS2_RCL_PREFIX` (colon-separated ament prefix list,
   defaulting to `/opt/ros/${ROS_DISTRO:-jazzy}`). rcl has no pkg-config, so

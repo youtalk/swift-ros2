@@ -133,8 +133,10 @@ let ros2CTargetName = isLinuxBuild ? "CRos2Jazzy" : ros2XCFrameworkName
 // both export the standard zenoh C API, so they cannot link into one binary.
 // Selecting the zenoh rmw variant therefore carves the zenoh-pico wire family
 // (CZenohPico / CZenohBridge / SwiftROS2Zenoh + its tests) out of the build
-// graph; the umbrella's `.zenoh` transport arm compiles out via
-// `#if canImport(SwiftROS2Zenoh)` and throws unsupportedFeature at runtime.
+// graph; the umbrella's wire `.zenoh` arm compiles out via
+// `#if canImport(SwiftROS2Zenoh)`, and `.zenoh` resolves to rcl +
+// rmw_zenoh_cpp instead (the SWIFT_ROS2_RCL_RMW_ZENOH arm of
+// ROS2Context.makeDefaultSession).
 let dropZenohWire = enableRcl && rclRmwVariant == "zenoh"
 
 // Linux consumes system ROS 2 via a COLON-SEPARATED, ament-overlay-style prefix
@@ -724,8 +726,9 @@ targets.append(contentsOf: [
     ),
 ])
 
-// Native-rcl backend family, gated behind SWIFT_ROS2_ENABLE_RCL=1 (Apple +
-// Linux; see the `enableRcl` block comment near the top of this manifest).
+// Native-rcl backend family, gated by `enableRcl`: on by default on Apple
+// (SWIFT_ROS2_DISABLE_RCL=1 opts out), opt-in via SWIFT_ROS2_ENABLE_RCL=1 on
+// Linux (see the `enableRcl` block comment near the top of this manifest).
 //
 if enableRcl {
     // Apple: prebuilt merged xcframework. Linux: the system ROS 2 install

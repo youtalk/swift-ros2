@@ -10,8 +10,14 @@ import SwiftROS2Wire
 ///
 /// Choose `.zenoh` for cross-platform support (including mobile and desktop),
 /// `.dds` for direct CycloneDDS communication on Apple platforms and Linux, or
-/// `.rcl` for the native rcl backend (opt-in via `SWIFT_ROS2_ENABLE_RCL=1` on
-/// Apple platforms and Linux).
+/// `.rcl` for the native rcl backend with `rmw_cyclonedds_cpp` (built by
+/// default on Apple platforms — opt out with `SWIFT_ROS2_DISABLE_RCL=1` — and
+/// opt-in via `SWIFT_ROS2_ENABLE_RCL=1` on Linux).
+///
+/// `allCases` always includes `.rcl`, even on build graphs where
+/// `ROS2Context(transport:)` throws ``TransportError/unsupportedFeature(_:)``
+/// for it (Windows, Android, Linux without RCL, Apple with
+/// `SWIFT_ROS2_DISABLE_RCL=1` or `SWIFT_ROS2_RCL_RMW=zenoh`).
 public enum TransportType: String, Codable, CaseIterable, Sendable {
     case zenoh
     case dds
@@ -144,8 +150,10 @@ public struct TransportConfig: Sendable {
 
     /// RCL + `rmw_cyclonedds_cpp` backend.
     ///
-    /// Requires building with `SWIFT_ROS2_ENABLE_RCL=1` — on an Apple platform
-    /// (prebuilt CRos2Jazzy xcframework) or Linux (system ROS 2 install, see
+    /// Requires the RCL backend with the `rmw_cyclonedds_cpp` rmw in the build:
+    /// on by default on Apple platforms (prebuilt CRos2Jazzy xcframework; not
+    /// with `SWIFT_ROS2_DISABLE_RCL=1` or `SWIFT_ROS2_RCL_RMW=zenoh`), opt-in via
+    /// `SWIFT_ROS2_ENABLE_RCL=1` on Linux (system ROS 2 install, see
     /// `ROS2_RCL_PREFIX`). On other configurations, `ROS2Context(transport:)`
     /// throws ``TransportError/unsupportedFeature(_:)``.
     public static func rcl(domainId: Int = 0) -> TransportConfig {

@@ -9,11 +9,12 @@
 | 0.7.x | 0.8.0 | **None.** Actions are purely additive — `ROS2Action`, `ROS2ActionServer`, `ROS2ActionClient`, `ActionGoalHandle`, `ActionResult`, `ActionGoalStatus`, `ActionError` are new. `ROS2ActionTypeInfo` gained five optional hash fields with source-compatible defaults (Phase 1). |
 | 0.8.x | 0.9.0 | **None.** `swift-ros2-gen` (CLI + SwiftPM build plugin + hash-oracle CI) is purely additive — no existing public API changed. |
 | 0.9.x | 1.0.0 | **Six visibility-only changes** — plumbing types pulled out of the public surface (`TransportQoS`, `QoSPolicy`, `DDSBridge*`, `ZenohClientProtocol`/`DDSClientProtocol` + 10 related, `EntityManager`/`GIDManager` → `package`; `ZenohTransportPublisher`, `DeclaredKeyExpr`/`ZenohSubscriber`/`LivelinessToken` → `internal`). End-user APIs (`ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, all message types) are unchanged. |
-| 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API. |
+| 1.0.x | 1.x   | **None guaranteed.** Minor releases on the 1.x line will not break public API (no symbol was removed or changed; 1.3.0's new `TransportType.rcl` case does break exhaustive `switch` statements — see the 1.2.x → 1.3.0 row). |
 | 1.0.x | 1.1.0 | **None.** Parameter API (`ROS2Node.declareParameter` / `setParameter` / `setOnSetParametersCallback` / six standard parameter services / `/parameter_events` publisher / `ROS2ParameterClient`) is purely additive. |
 | 1.1.x | 1.2.0 | **None.** The `ROS2Publisher.publish(_:timestamp:sequenceNumber:)` source-timestamp overload is purely additive — the existing `publish(_:)` is unchanged (it now delegates to the overload with the same wall-clock timestamp + monotonic sequence). |
+| 1.2.x | 1.3.0 | **One, source-level:** `TransportType` gained a `.rcl` case (#120), so exhaustive `switch` statements over `TransportType` need a `.rcl` case, and `TransportType.allCases` now includes it. Everything else is additive — the RCL backend is opt-in via `SWIFT_ROS2_ENABLE_RCL=1` at this tag. |
 | 1.3.x | 1.4.0 | **None.** Additive: umbrella on Android/DDS-less Windows; RCL default-on and the wire-client deprecation warnings first reach tagged consumers here. |
-| 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API. On the pure-Swift wire transports, the action frame layout and the DDS service request header (24 → 16 bytes) changed, so 1.x wire peers do not interoperate with 2.0 for actions or DDS services; 1.x peers on the RCL backend are unaffected (see below). |
+| 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API. On the pure-Swift wire transports, the action frame layout and the DDS service request header (24 → 16 bytes) changed, so 1.x wire peers do not interoperate with 2.0 for actions or DDS services (including the DDS-wire parameter services); 1.x peers on the RCL backend are unaffected (see below). |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -191,7 +192,7 @@ Diffs each generated `RIHS01_*` against the canonical rosidl JSON inside the nam
 
 ## 1.0 → 1.x compatibility contract
 
-After 1.0, no minor or patch release on the 1.x line will break the public API. Breaking changes require a major bump (2.0).
+After 1.0, no minor or patch release on the 1.x line will break the public API. Breaking changes require a major bump (2.0). The one source-level exception on the 1.x line is 1.3.0's new `TransportType.rcl` case, which breaks exhaustive `switch` statements over `TransportType` (see "1.2 → 1.3").
 
 ---
 
@@ -243,8 +244,12 @@ No code change is required to upgrade — `Context.createNode(...)` keeps its ol
 1.3.0 completes the native RCL backend on every platform it can currently
 reach: Apple (prebuilt `CRos2Jazzy` / `CRos2JazzyZenoh` xcframeworks, one rmw
 baked per build variant) and Linux (system ROS 2 install via
-`ROS2_RCL_PREFIX`, rmw selected at runtime from the transport type). No public
-symbol changed; the release is purely additive. RCL is opt-in via
+`ROS2_RCL_PREFIX`, rmw selected at runtime from the transport type). No existing
+public symbol was removed or changed, but the release is not purely additive at the
+source level: `TransportType` gained a `.rcl` case (#120), so an exhaustive `switch`
+over `TransportType` needs a `.rcl` case, and `TransportType.allCases` includes it
+even on build graphs where `ROS2Context` throws `TransportError.unsupportedFeature`
+for it (filter it out of transport pickers there). RCL is opt-in via
 `SWIFT_ROS2_ENABLE_RCL=1` on every platform at this tag, including Apple.
 
 > **Tag note:** the wire-client deprecation below and the RCL-default-on flip
@@ -266,8 +271,8 @@ let dds = DDSClient()        // warning: deprecated, removed from the public API
 
 ### What is NOT deprecated
 
-The umbrella API — it is backend-agnostic and routes to the RCL backend where
-available, the wire path elsewhere:
+The umbrella API — it is backend-agnostic; the build graph decides which backend
+serves each transport type (see the routing table in the README's "Backends" section):
 
 ```swift
 let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:7447"))
@@ -290,8 +295,11 @@ correctness fixtures either way.
   the bundled zenoh-c), so `ZenohClient` does not exist there at all.
 - Linux RCL builds: both backends stay linked (no symbol collision — rmw is a
   dlopen'd plugin); RCL is preferred at runtime for `.zenoh` and `.dds`.
-- Android, visionOS-zenoh, Windows: the wire path remains the automatic
-  fallback until an RCL path exists for them.
+- Apple default graph (RCL on, `cyclonedds` rmw): `.zenoh` and `.dds*` still run
+  on the wire path; only `.rcl` / `.rclUnicast` reach RCL.
+- Android, Windows: the wire path remains the automatic fallback until an RCL
+  path exists for them. The zenoh-rmw variant ships no visionOS slice, so on
+  visionOS `.zenoh` stays on the wire path (default graph).
 
 ## 1.3 → 1.4 — the bridge to 2.0
 
@@ -326,6 +334,24 @@ fallback where RCL is not available and is retired per platform in 2.x minors, n
 **Removed:** products `SwiftROS2Zenoh`, `SwiftROS2DDS`; public types `ZenohClient`,
 `ZenohQueryable`, `DDSClient`, `ZenohTransportSession`, `DDSTransportSession`, `RMWRequestId`.
 
+**Upgrading from 1.2 or earlier** — 2.0.0 also carries the 1.3.0 and 1.4.0 changes (items 2–4 apply to every 1.x consumer):
+
+1. **`TransportType.rcl`** (added in 1.3.0). Exhaustive `switch` statements over
+   `TransportType` need a `.rcl` case. `TransportType.allCases` includes `.rcl` even on
+   build graphs where `ROS2Context` throws `TransportError.unsupportedFeature` for it
+   (see the routing table in the README's "Backends" section) — filter it out of
+   transport pickers there.
+2. **Drop the wire products.** Remove the `SwiftROS2Zenoh` / `SwiftROS2DDS` product
+   dependencies and replace those imports with `import SwiftROS2`. A stale
+   `import SwiftROS2Zenoh` may still compile, because SwiftPM builds the target for the
+   umbrella, but it declares no public API of its own (it only re-exports
+   `SwiftROS2Transport`, which `SwiftROS2` re-exports too) and is not a supported import.
+3. **Bump the requirement** to `from: "2.0.0"`.
+4. **RCL on Apple is on by default** (since 1.4.0): the prebuilt `CRos2Jazzy`
+   xcframework is downloaded and linked, so the binary grows. Opt out with
+   `SWIFT_ROS2_DISABLE_RCL=1`; for Xcode it must be set in the environment Xcode resolves
+   packages with (not in a scheme or build setting).
+
 **Replace a connectivity probe**
 
 ```swift
@@ -334,6 +360,11 @@ let client = ZenohClient(); try client.open(locator: locator); try client.close(
 // 2.0
 let ctx = try await ROS2Context(transport: .zenoh(locator: locator)); await ctx.shutdown()
 ```
+
+This is a reachability probe only where `.zenoh` resolves to the wire client. On the
+RCL-zenoh builds (the Apple zenoh-rmw variant and Linux with `SWIFT_ROS2_ENABLE_RCL=1`)
+context creation does not block on the router — `rmw_zenoh` continues in peer mode — so
+the probe reports success without a router.
 
 **Replace raw puts / wire-level subscribers** with `node.createPublisher` /
 `node.createSubscription`. The CDR and wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public.
@@ -344,6 +375,7 @@ Zenoh) and prefixed DDS service requests and replies with a 24-byte request iden
 1.x wire peers cancelled both out; real ROS 2 nodes read them as data. 2.0 emits the
 upstream layout — a single encapsulation header, and `rmw_cyclonedds_cpp`'s 16-byte
 request header — so **a 1.x peer on a wire transport does not interoperate with a 2.0
-peer for actions or DDS services** — upgrade both sides. A 1.x peer on the RCL backend
+peer for actions or DDS services** (the DDS-wire parameter services included) — upgrade
+both sides. A 1.x peer on the RCL backend
 (e.g. `.rcl`) already emitted the upstream layout through rmw and interoperates with 2.0
 unchanged. Topics and Zenoh services are unaffected.

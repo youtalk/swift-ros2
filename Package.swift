@@ -78,7 +78,16 @@ let windowsCycloneDDSDir: String? = {
 // Whether the current target can build the CycloneDDS-based DDS path.
 // Apple (binary xcframework) and Linux (pkg-config) always can; Windows
 // can only when `CYCLONEDDS_DIR` is set; Android never can.
-let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
+//
+// SPIKE (throwaway, Lyrical M2 spike — never merge): SWIFT_ROS2_SPIKE_NO_WIRE_DDS=1
+// drops the DDS family on Apple, as on Android. A Lyrical CRos2Jazzy.xcframework
+// carries CycloneDDS 11.0.1, the wire CCycloneDDS is 0.10.5, and linking both
+// into one binary mixes their objects (abort in rmw_create_node). With the flag,
+// Swift RCL binaries keep exactly one CycloneDDS (librclros.a's); SwiftROS2RCL
+// then drops CDDSBridge and its route-(b) fallback (see RclClient.swift).
+let spikeNoWireDDS = targetOS == "apple" && Context.environment["SWIFT_ROS2_SPIKE_NO_WIRE_DDS"] == "1"
+let canBuildDDS =
+    !spikeNoWireDDS && !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.0.0"
 
@@ -915,8 +924,9 @@ if enableRcl {
     targets.append(
         .target(
             name: "SwiftROS2RCL",
-            dependencies: [
-                "CRclBridge", "CDDSBridge", "SwiftROS2Transport", "SwiftROS2Messages", "SwiftROS2Wire",
+            // SPIKE: CDDSBridge only where the DDS family exists (see spikeNoWireDDS).
+            dependencies: ["CRclBridge"] + (canBuildDDS ? ["CDDSBridge"] : []) + [
+                "SwiftROS2Transport", "SwiftROS2Messages", "SwiftROS2Wire",
             ],
             path: "Sources/SwiftROS2RCL",
             swiftSettings: rclSwiftSettings
@@ -930,9 +940,8 @@ if enableRcl {
         .testTarget(
             name: "SwiftROS2RCLTests",
             dependencies: [
-                "SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages", "CDDSBridge",
-                "CRclBridge",
-            ],
+                "SwiftROS2", "SwiftROS2RCL", "SwiftROS2CDR", "SwiftROS2Messages",
+            ] + (canBuildDDS ? ["CDDSBridge"] : []) + ["CRclBridge"],
             path: "Tests/SwiftROS2RCLTests",
             swiftSettings: rclTestsSwiftSettings,
             linkerSettings: isLinuxBuild ? rclLinuxLinkAll : [.linkedLibrary("c++")]

@@ -110,6 +110,19 @@ IGNORE_SUBTREES=(
   # ROS 2 from C/C++/Swift only, so drop the Python generator entirely; message
   # packages then generate just the C/C++/introspection typesupports.
   ros2/rosidl_python
+  # Lyrical: rosidl_buffer_py is the pybind11 Python C-extension for the new
+  # rosidl_buffer type, pulled in by rosidl_core_runtime's export deps. It is
+  # Python-only (same reason as rosidl_python) and Lyrical's ros2.repos no
+  # longer vendors pybind11, so drop it.
+  ros2/rosidl/rosidl_buffer_py
+  # Lyrical: rcl_logging_implementation is a dlopen-based runtime selector
+  # (default rcl_logging_spdlog). rcl links rcl_logging_noop statically
+  # (RCL_LOGGING_IMPLEMENTATION in the colcon meta) and only find_packages the
+  # selector in dynamic mode, but rcl's package.xml still pulls it into the
+  # closure. Built, it lands in librclros.a next to rcl_logging_noop with the
+  # same rcl_logging_external_* symbols, and the linker resolves them to the
+  # selector (archive order) — which would dlopen spdlog at runtime. Drop it.
+  ros2/rcl_logging/rcl_logging_implementation
 )
 ignore_unbuildable() {
   local rel
@@ -120,6 +133,15 @@ ignore_unbuildable() {
     # The zenoh variant carries no CycloneDDS at all — drop the rmw and the
     # middleware so the slice build never compiles them.
     for rel in ros2/rmw_cyclonedds eclipse-cyclonedds/cyclonedds; do
+      if [[ -d "$SRC/$rel" ]]; then touch "$SRC/$rel/COLCON_IGNORE"; fi
+    done
+  fi
+  if [[ "$RMW_VARIANT" == cyclonedds ]]; then
+    # Lyrical's ros2.repos carries ros2/rmw_zenoh (Jazzy's did not), and
+    # rmw_implementation build-depends on rmw_zenoh_cpp, which drags
+    # zenoh_cpp_vendor (cargo) and rosidl_buffer_backend_registry (pluginlib)
+    # into the closure. The cyclonedds variant carries no Zenoh — drop it.
+    for rel in ros2/rmw_zenoh; do
       if [[ -d "$SRC/$rel" ]]; then touch "$SRC/$rel/COLCON_IGNORE"; fi
     done
   fi
@@ -134,7 +156,8 @@ patch_sources() {
   # Each patch below carries its own existence + already-applied guard so a
   # previously-patched file never short-circuits the later patches.
   local f="$SRC/eclipse-cyclonedds/cyclonedds/src/ddsrt/src/ifaddrs/posix/ifaddrs.c"
-  if [[ -f "$f" ]] && ! grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f"; then
+  # Lyrical's cyclonedds (11.x) already guards that branch with !TARGET_OS_IPHONE, so the stub below would redefine guess_iftype and hide <net/if_dl.h> (LLADDR) on iOS; skip it there.
+  if [[ -f "$f" ]] && ! grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f" && ! grep -q "TARGET_OS_IPHONE" "$f"; then
     local tmp; tmp="$(mktemp)"
     awk '
       /^#elif defined\(__APPLE__\) \|\| defined\(__QNXNTO__\)/ && !done {
@@ -144,6 +167,26 @@ patch_sources() {
       }
       { print }
     ' "$f" > "$tmp" && mv "$tmp" "$f"
+  fi
+
+  # Lyrical's cyclonedds (11.x) adds a BSD/Apple raw-Ethernet transport that
+  # includes <net/bpf.h>; the iOS device/simulator SDK does not ship it. Gate
+  # the Apple arm of ddsi_raweth.c on the header so iOS falls through to the
+  # file's own `#else` stub (ddsi_raweth_init returns 0, raweth unavailable);
+  # macOS/Catalyst keep the real BPF path. Absent from 0.10.x trees (the line
+  # below does not exist there), so the guard short-circuits. Idempotent.
+  local rawf="$SRC/eclipse-cyclonedds/cyclonedds/src/core/ddsi/src/ddsi_raweth.c"
+  local raw_orig='#if (defined(__linux) || defined(__FreeBSD__) || defined(__QNXNTO__) || defined(__APPLE__)) && !LWIP_SOCKET'
+  if [[ -f "$rawf" ]] && ! grep -q "SWIFT_ROS2_IOS_NO_BPF" "$rawf" && grep -qxF "$raw_orig" "$rawf"; then
+    local tmp3; tmp3="$(mktemp)"
+    awk -v orig="$raw_orig" '
+      $0 == orig && !done {
+        print "#if (defined(__linux) || defined(__FreeBSD__) || defined(__QNXNTO__) || (defined(__APPLE__) && __has_include(<net/bpf.h>))) && !LWIP_SOCKET /* SWIFT_ROS2_IOS_NO_BPF */"
+        done = 1
+        next
+      }
+      { print }
+    ' "$rawf" > "$tmp3" && mv "$tmp3" "$rawf"
   fi
 
   # rcl exports rcl_logging_interface but not the concrete logging
@@ -167,6 +210,49 @@ patch_sources() {
       }
     ' "$rcl_cmake" > "$tmp2" && mv "$tmp2" "$rcl_cmake"
   fi
+
+  # Lyrical rcutils (7.1.x) initializes a C11 atomic with a braced scalar
+  # initializer, which Apple clang 21 (Xcode 27) rejects as "illegal
+  # initializer type 'atomic_int_least64_t'" in every -std mode. Upstream
+  # rolling already switched non-MSVC builds to a plain scalar initializer;
+  # apply the same one-line fix. Idempotent.
+  local fi_c="$SRC/ros2/rcutils/src/testing/fault_injection.c"
+  if [[ -f "$fi_c" ]] && grep -q '^static atomic_int_least64_t g_rcutils_fault_injection_count = {-1};$' "$fi_c"; then
+    sed -i '' 's/^static atomic_int_least64_t g_rcutils_fault_injection_count = {-1};$/static atomic_int_least64_t g_rcutils_fault_injection_count = -1;  \/\* SWIFT_ROS2_ATOMIC_INIT \*\//' "$fi_c"
+  fi
+
+  # Lyrical rcl 10.4.4 (rcl_yaml_param_parser) makes strtod locale-independent
+  # with C11 call_once from <threads.h>, which Apple SDKs do not ship ("fatal
+  # error: 'threads.h' file not found"). The rcl `lyrical` branch (post-10.4.4)
+  # and rolling already carry an Apple branch that maps call_once onto
+  # pthread_once and pulls newlocale/uselocale from <xlocale.h>; apply the
+  # same change. Idempotent.
+  local yaml_c="$SRC/ros2/rcl/rcl_yaml_param_parser/src/parse.c"
+  if [[ -f "$yaml_c" ]] && grep -q '^#include <threads.h>$' "$yaml_c" \
+      && ! grep -q "SWIFT_ROS2_APPLE_CALL_ONCE" "$yaml_c"; then
+    perl -0pi -e '
+      s{#include <locale.h>\n}{#include <locale.h>\n#ifdef __APPLE__  /* SWIFT_ROS2_APPLE_CALL_ONCE */\n#include <xlocale.h>\n#endif\n};
+      s{#include <windows.h>\n#else\n#include <threads.h>\n}{#include <windows.h>\n#elif defined(__APPLE__)\n#include <pthread.h>\ntypedef pthread_once_t once_flag;\n#define ONCE_FLAG_INIT PTHREAD_ONCE_INIT\n#define call_once(flag, func) pthread_once((flag), (func))\n#else\n#include <threads.h>\n};
+    ' "$yaml_c"
+  fi
+
+  # Lyrical adds rosidl_buffer, a C++ runtime library that rosidl_runtime_c
+  # (sequence __fini -> rosidl_buffer_uint8_destroy) and every generated
+  # introspection typesupport with a uint8[] field
+  # (rosidl_buffer_uint8_throw_if_not_cpu) now call into. Its CMakeLists
+  # hard-codes add_library(... SHARED), so the slice build installs a .dylib
+  # that merge_slice (static archives only) skips, leaving both symbols
+  # undefined at app link time. Build it static when BUILD_SHARED_LIBS is
+  # explicitly OFF (the slice builds); keep SHARED otherwise — the host tools
+  # build links it into the shared, C-linked librosidl_runtime_c, where a
+  # static C++ archive would leave the libc++ symbols unresolved. Idempotent.
+  local rb_cmake="$SRC/ros2/rosidl/rosidl_buffer/CMakeLists.txt"
+  if [[ -f "$rb_cmake" ]] && ! grep -q "SWIFT_ROS2_STATIC_ROSIDL_BUFFER" "$rb_cmake" \
+      && grep -q '^add_library(${PROJECT_NAME} SHARED$' "$rb_cmake"; then
+    perl -0pi -e '
+      s{\nadd_library\(\$\{PROJECT_NAME\} SHARED\n}{\n# SWIFT_ROS2_STATIC_ROSIDL_BUFFER\nif(DEFINED BUILD_SHARED_LIBS AND NOT BUILD_SHARED_LIBS)\n  set(_swift_ros2_rosidl_buffer_type STATIC)\nelse()\n  set(_swift_ros2_rosidl_buffer_type SHARED)\nendif()\nadd_library(\$\{PROJECT_NAME\} \$\{_swift_ros2_rosidl_buffer_type\}\n};
+    ' "$rb_cmake"
+  fi
 }
 
 mkdir -p "$BUILD"
@@ -180,17 +266,24 @@ mkdir -p "$BUILD"
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 setup_venv() {
-  [[ -d "$VENV" ]] && return 0
-  python3.11 -m venv "$VENV"
+  if [[ ! -d "$VENV" ]]; then
+    python3.11 -m venv "$VENV"
+    # shellcheck disable=SC1091
+    source "$VENV/bin/activate"
+    pip install -r "$ROOT/Scripts/ros2/requirements.txt"
+  fi
+  # Always activate: import_sources runs `vcs import`, and vcstool comes from
+  # the venv (requirements.txt). With a pre-existing venv (the zenoh variant
+  # reuses the cyclonedds tree's) the early return used to leave PATH on
+  # whatever `vcs` the host has (here a Homebrew one with a dead interpreter).
   # shellcheck disable=SC1091
   source "$VENV/bin/activate"
-  pip install -r "$ROOT/Scripts/ros2/requirements.txt"
 }
 
 import_sources() {
   if [[ ! -d "$SRC/ros2/rcl" ]]; then
     mkdir -p "$SRC"
-    git clone --depth 1 --branch release-jazzy-20250430 https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
+    git clone --depth 1 --branch release-lyrical-20260807 https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
     # The vcs import covers every repo in the jazzy ros2.repos set — including
     # ros2/geometry2, which carries tf2_msgs — so a fresh workspace needs no
     # extra step for the tf2_msgs package.
@@ -198,6 +291,25 @@ import_sources() {
   fi
   import_zenoh_sources
   import_extra_msg_sources
+  import_libyaml_source
+}
+
+# Lyrical's libyaml_vendor no longer builds libyaml — it only ships a
+# Findyaml.cmake that looks for a system libyaml (CONFIG, then pkg-config).
+# Cross builds then silently pick up the host's Homebrew libyaml headers via
+# pkg-config and leave yaml_* undefined in librclros.a. Clone libyaml 0.2.5
+# (the version Jazzy's libyaml_vendor built) into the source tree instead:
+# colcon builds it as a plain CMake package named `yaml`, which rcl and
+# rcl_yaml_param_parser <depend> on, so it joins the --packages-up-to closure,
+# Findyaml's CONFIG lookup finds it ahead of pkg-config, and its
+# install/lib/libyaml.a is merged like any other package archive.
+LIBYAML_PIN=2c891fc7a770e8ba2fec34fc6b545c672beb37e6  # tag 0.2.5
+
+import_libyaml_source() {
+  local dest="$SRC/yaml/libyaml"
+  [[ -d "$dest" ]] && return 0
+  git clone https://github.com/yaml/libyaml.git "$dest"
+  git -C "$dest" checkout "$LIBYAML_PIN"
 }
 
 # Conduit-critical message repos that are NOT in the jazzy ros2.repos set —
@@ -210,9 +322,9 @@ import_sources() {
 # audio_common `ros2` branch (the ROS 2 development branch, released into
 # jazzy) — audio_common_msgs 3.x.
 AUDIO_COMMON_PIN=db2770b0ad703c474039914937974c764dc94351
-# point_cloud_transport_plugins `jazzy` branch — point_cloud_interfaces
+# point_cloud_transport_plugins `lyrical` branch — point_cloud_interfaces
 # (CompressedPointCloud2, the type Conduit publishes for Draco LiDAR).
-PCT_PLUGINS_PIN=1e4490c796e2de271fe5159431638fe1b5e2ffc4
+PCT_PLUGINS_PIN=5e55a9491f86ba064a97570a1d961258cde6799f
 
 import_msg_only_repo() {  # $1=url $2=branch $3=pin $4=dest $5=package-to-keep
   local url="$1" branch="$2" pin="$3" dest="$4" keep="$5"
@@ -234,7 +346,7 @@ import_extra_msg_sources() {
   import_msg_only_repo https://github.com/ros-drivers/audio_common.git \
     ros2 "$AUDIO_COMMON_PIN" "$SRC/ros-drivers/audio_common" audio_common_msgs
   import_msg_only_repo https://github.com/ros-perception/point_cloud_transport_plugins.git \
-    jazzy "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
+    lyrical "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
 }
 
 # rmw_zenoh jazzy pin (0.2.9 line) — the commit the no-SHM patch set under

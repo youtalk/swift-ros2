@@ -80,7 +80,7 @@ let windowsCycloneDDSDir: String? = {
 // can only when `CYCLONEDDS_DIR` is set; Android never can.
 let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.0.0"
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.1.0"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
 // CRos2Jazzy(.Zenoh) xcframework resolves from the release URL, selected by
@@ -295,7 +295,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "8adf57050d2ebebcde7342cc6d4314e91f5e6e37b74bcf8c91495a645b2548ea"
+            checksum: "adee6aae0b4ce27a6f423d6075ccff235d2bc2874c27fd076ddcd5f211bb6152"
         )
     }
 }()
@@ -558,7 +558,7 @@ if canBuildDDS {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "e5c261a0a92e23819e623675c5c4504ef27aade7acc2e3fa612363b226abc4b5"
+                checksum: "b12c817b8d2a597c111c2fa4992907155635878711581aaf7413acd401499a8a"
             )
         }
     }()
@@ -757,14 +757,14 @@ if enableRcl {
             .binaryTarget(
                 name: "CRos2JazzyZenoh",
                 url: "\(releaseBaseURL)/CRos2JazzyZenoh.xcframework.zip",
-                checksum: "009b8f0fbc25c4be5462aa3d034c0e50962056d15d19fb3872b9b5fad241a0be"
+                checksum: "e82243f91330e2bc87f32bb37251735ed1c0710d128fad73fc04704210647ac8"
             ))
     } else {
         targets.append(
             .binaryTarget(
                 name: "CRos2Jazzy",
                 url: "\(releaseBaseURL)/CRos2Jazzy.xcframework.zip",
-                checksum: "8a9f8e73f1fb0f471b0228c9c52476f0dd73303afa4990a2941347b7bd9ff39f"
+                checksum: "0a0298224dad998892ed5e46498e8583d69e23f7a0118369d5283ca211b11625"
             ))
     }
     // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++, so every target

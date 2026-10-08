@@ -1,8 +1,21 @@
 diff --git a/rmw_zenoh_cpp/CMakeLists.txt b/rmw_zenoh_cpp/CMakeLists.txt
-index 80f3751..8f914a2 100644
+index a3bee63..1f556d9 100644
 --- a/rmw_zenoh_cpp/CMakeLists.txt
 +++ b/rmw_zenoh_cpp/CMakeLists.txt
-@@ -24,7 +24,10 @@ find_package(rmw REQUIRED)
+@@ -16,7 +16,11 @@ find_package(ament_cmake REQUIRED)
+ 
+ find_package(ament_index_cpp REQUIRED)
+ find_package(fastcdr CONFIG REQUIRED)
+-find_package(nlohmann_json REQUIRED)
++# nlohmann_json is only used by the rmw_zenoh_cpp_test_fixture library, which
++# is skipped when cross-compiling (see below); do not require it there.
++if(NOT CMAKE_CROSSCOMPILING)
++  find_package(nlohmann_json REQUIRED)
++endif()
+ find_package(rcpputils REQUIRED)
+ find_package(rcutils REQUIRED)
+ find_package(rosidl_buffer_backend_registry REQUIRED)
+@@ -27,7 +31,10 @@ find_package(rmw_test_fixture REQUIRED)
  find_package(tracetools REQUIRED)
  find_package(zenoh_cpp_vendor REQUIRED)
  
@@ -11,11 +24,55 @@ index 80f3751..8f914a2 100644
 +# library can be built as a static archive for platforms that disallow
 +# runtime-loaded shared libraries (e.g. iOS / Mac Catalyst).
 +add_library(rmw_zenoh_cpp
+   src/detail/buffer_backend_loader.cpp
    src/detail/attachment_helpers.cpp
    src/detail/cdr.cpp
-   src/detail/event.cpp
-@@ -87,6 +90,22 @@ target_compile_definitions(rmw_zenoh_cpp
+@@ -97,26 +104,49 @@ target_compile_definitions(rmw_zenoh_cpp
+     RMW_VERSION_PATCH=${rmw_VERSION_PATCH}
  )
+ 
+-add_library(rmw_zenoh_cpp_test_fixture SHARED
+-  src/detail/logging.cpp
+-  src/detail/zenoh_config.cpp
+-  src/rmw_test_fixture.cpp
+-)
+-
+-target_compile_definitions(rmw_zenoh_cpp_test_fixture PRIVATE
+-  RMW_TEST_FIXTURE_BUILDING_DLL
+-)
+-
+-target_link_libraries(rmw_zenoh_cpp_test_fixture
+-  PRIVATE
+-    ament_index_cpp::ament_index_cpp
+-    nlohmann_json::nlohmann_json
+-    rcpputils::rcpputils
+-    rmw_test_fixture::rmw_test_fixture
+-    zenohcxx::zenohc
+-)
++# The rmw_zenoh_cpp_test_fixture library is a test-isolation plugin that
++# rmw_test_fixture_implementation dlopens on the host; it is a hard-coded
++# SHARED library and needs nlohmann_json. Skip it when cross-compiling
++# (e.g. for iOS / Mac Catalyst), like the rmw_zenohd router below.
++if(NOT CMAKE_CROSSCOMPILING)
++  add_library(rmw_zenoh_cpp_test_fixture SHARED
++    src/detail/logging.cpp
++    src/detail/zenoh_config.cpp
++    src/rmw_test_fixture.cpp
++  )
++
++  target_compile_definitions(rmw_zenoh_cpp_test_fixture PRIVATE
++    RMW_TEST_FIXTURE_BUILDING_DLL
++  )
++
++  target_link_libraries(rmw_zenoh_cpp_test_fixture
++    PRIVATE
++      ament_index_cpp::ament_index_cpp
++      nlohmann_json::nlohmann_json
++      rcpputils::rcpputils
++      rmw_test_fixture::rmw_test_fixture
++      zenohcxx::zenohc
++  )
++endif()
  
  ament_export_targets(export_rmw_zenoh_cpp)
 +# Static-build addition: with BUILD_SHARED_LIBS=OFF the PRIVATE link
@@ -28,6 +85,7 @@ index 80f3751..8f914a2 100644
 +  fastcdr
 +  rcpputils
 +  rcutils
++  rosidl_buffer_backend_registry
 +  rosidl_typesupport_fastrtps_c
 +  rosidl_typesupport_fastrtps_cpp
 +  rmw
@@ -36,8 +94,33 @@ index 80f3751..8f914a2 100644
 +)
  
  register_rmw_implementation(
-   "c:rosidl_typesupport_c:rosidl_typesupport_fastrtps_c:rosidl_typesupport_introspection_c"
-@@ -124,27 +143,32 @@ install(
+   "c:rosidl_typesupport_fastrtps_c:rosidl_typesupport_introspection_c"
+@@ -137,13 +167,23 @@ if(BUILD_TESTING)
+ endif()
+ 
+ install(
+-  TARGETS rmw_zenoh_cpp rmw_zenoh_cpp_test_fixture
++  TARGETS rmw_zenoh_cpp
+   EXPORT export_rmw_zenoh_cpp
+   ARCHIVE DESTINATION lib
+   LIBRARY DESTINATION lib
+   RUNTIME DESTINATION bin
+ )
+ 
++if(TARGET rmw_zenoh_cpp_test_fixture)
++  install(
++    TARGETS rmw_zenoh_cpp_test_fixture
++    EXPORT export_rmw_zenoh_cpp
++    ARCHIVE DESTINATION lib
++    LIBRARY DESTINATION lib
++    RUNTIME DESTINATION bin
++  )
++endif()
++
+ install(
+   DIRECTORY config
+   DESTINATION share/${PROJECT_NAME}
+@@ -154,27 +194,32 @@ install(
    DESTINATION include
  )
  

@@ -1006,6 +1006,12 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
                 try fm.createDirectory(at: configDir, withIntermediateDirectories: true)
                 // Empty marker file — its presence is what ament_index resolves.
                 try Data().write(to: markerDir.appendingPathComponent("rmw_zenoh_cpp"))
+                // rmw_zenoh_cpp >= 0.10 (Lyrical) builds a pluginlib
+                // ClassLoader for the `rosidl_buffer_backend` package
+                // (rosidl_buffer_backend_registry) at every rmw init; without
+                // this marker the lookup throws and rmw logs an ERROR. The
+                // marker declares no plugins, so nothing is dlopened.
+                try Data().write(to: markerDir.appendingPathComponent("rosidl_buffer_backend"))
                 try RmwZenohDefaultConfig.sessionConfigJSON5.write(
                     to: configDir.appendingPathComponent("DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5"),
                     atomically: true, encoding: .utf8)

@@ -124,7 +124,12 @@
             let marker = "\(prefix)/share/ament_index/resource_index/packages/rmw_zenoh_cpp"
             let sessionCfg = "\(prefix)/share/rmw_zenoh_cpp/config/DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5"
             let routerCfg = "\(prefix)/share/rmw_zenoh_cpp/config/DEFAULT_RMW_ZENOH_ROUTER_CONFIG.json5"
+            let bufferBackendMarker =
+                "\(prefix)/share/ament_index/resource_index/packages/rosidl_buffer_backend"
             XCTAssertTrue(FileManager.default.fileExists(atPath: marker), "resource marker missing")
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: bufferBackendMarker),
+                "rosidl_buffer_backend marker missing")
             XCTAssertTrue(FileManager.default.fileExists(atPath: sessionCfg), "session config missing")
             XCTAssertTrue(FileManager.default.fileExists(atPath: routerCfg), "router config missing")
             let session = try String(contentsOfFile: sessionCfg, encoding: .utf8)

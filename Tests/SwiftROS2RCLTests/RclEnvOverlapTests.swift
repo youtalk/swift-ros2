@@ -41,47 +41,51 @@
             if let value { setenv(name, value, 1) } else { unsetenv(name) }
         }
 
-        // Non-LIFO teardown: the FIRST applier restores first. The slot must
-        // keep serving the surviving holder and only return to the pre-first
-        // value when the LAST holder drops.
-        func testOverlappingDiscoveryEnvRestoresPreFirstValueOnLastTeardown() {
-            let a = RclClient()
-            let b = RclClient()
-            XCTAssertTrue(
-                a.applyDiscoveryEnv(
-                    domainId: 0, unicastPeerAddresses: ["10.0.0.1"], networkInterface: nil))
-            XCTAssertTrue(
-                b.applyDiscoveryEnv(
-                    domainId: 0, unicastPeerAddresses: ["10.0.0.2"], networkInterface: nil))
+        // SPIKE: both discovery tests need the CDDSBridge XML builder, which
+        // SWIFT_ROS2_SPIKE_NO_WIRE_DDS=1 drops.
+        #if canImport(CDDSBridge)
+            // Non-LIFO teardown: the FIRST applier restores first. The slot must
+            // keep serving the surviving holder and only return to the pre-first
+            // value when the LAST holder drops.
+            func testOverlappingDiscoveryEnvRestoresPreFirstValueOnLastTeardown() {
+                let a = RclClient()
+                let b = RclClient()
+                XCTAssertTrue(
+                    a.applyDiscoveryEnv(
+                        domainId: 0, unicastPeerAddresses: ["10.0.0.1"], networkInterface: nil))
+                XCTAssertTrue(
+                    b.applyDiscoveryEnv(
+                        domainId: 0, unicastPeerAddresses: ["10.0.0.2"], networkInterface: nil))
 
-            a.restoreDiscoveryEnv()
-            let midValue = env("CYCLONEDDS_URI")
-            XCTAssertNotNil(midValue, "first-applier teardown must not clear the live slot")
-            XCTAssertTrue(
-                midValue?.contains("10.0.0.2") == true,
-                "slot must keep the surviving holder's XML, got: \(midValue ?? "unset")")
+                a.restoreDiscoveryEnv()
+                let midValue = env("CYCLONEDDS_URI")
+                XCTAssertNotNil(midValue, "first-applier teardown must not clear the live slot")
+                XCTAssertTrue(
+                    midValue?.contains("10.0.0.2") == true,
+                    "slot must keep the surviving holder's XML, got: \(midValue ?? "unset")")
 
-            b.restoreDiscoveryEnv()
-            XCTAssertNil(env("CYCLONEDDS_URI"), "last teardown must restore the pre-first value")
-        }
+                b.restoreDiscoveryEnv()
+                XCTAssertNil(env("CYCLONEDDS_URI"), "last teardown must restore the pre-first value")
+            }
 
-        func testDoubleRestoreDoesNotUnderflowTheDiscoveryHold() {
-            let a = RclClient()
-            let b = RclClient()
-            XCTAssertTrue(
-                a.applyDiscoveryEnv(
-                    domainId: 0, unicastPeerAddresses: ["10.0.0.1"], networkInterface: nil))
-            XCTAssertTrue(
-                b.applyDiscoveryEnv(
-                    domainId: 0, unicastPeerAddresses: ["10.0.0.2"], networkInterface: nil))
-            a.restoreDiscoveryEnv()
-            a.restoreDiscoveryEnv()  // second restore of the same instance: no-op
-            XCTAssertNotNil(
-                env("CYCLONEDDS_URI"),
-                "a repeated per-instance restore must not decrement another holder's ref")
-            b.restoreDiscoveryEnv()
-            XCTAssertNil(env("CYCLONEDDS_URI"))
-        }
+            func testDoubleRestoreDoesNotUnderflowTheDiscoveryHold() {
+                let a = RclClient()
+                let b = RclClient()
+                XCTAssertTrue(
+                    a.applyDiscoveryEnv(
+                        domainId: 0, unicastPeerAddresses: ["10.0.0.1"], networkInterface: nil))
+                XCTAssertTrue(
+                    b.applyDiscoveryEnv(
+                        domainId: 0, unicastPeerAddresses: ["10.0.0.2"], networkInterface: nil))
+                a.restoreDiscoveryEnv()
+                a.restoreDiscoveryEnv()  // second restore of the same instance: no-op
+                XCTAssertNotNil(
+                    env("CYCLONEDDS_URI"),
+                    "a repeated per-instance restore must not decrement another holder's ref")
+                b.restoreDiscoveryEnv()
+                XCTAssertNil(env("CYCLONEDDS_URI"))
+            }
+        #endif
 
         func testOverlappingZenohEnvKeepsLiveConfigFileUntilLastTeardown() throws {
             let a = RclClient()

@@ -1,4 +1,6 @@
-#if SWIFT_ROS2_RCL
+// SPIKE: CDDSBridge (the discovery-XML builder) is absent under
+// SWIFT_ROS2_SPIKE_NO_WIRE_DDS=1.
+#if SWIFT_ROS2_RCL && canImport(CDDSBridge)
     import CDDSBridge
     import Foundation
     import SwiftROS2RCL

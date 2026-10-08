@@ -203,6 +203,7 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(ROS2Distro.humble.displayName, "Humble")
         XCTAssertEqual(ROS2Distro.jazzy.displayName, "Jazzy")
         XCTAssertEqual(ROS2Distro.kilted.displayName, "Kilted")
+        XCTAssertEqual(ROS2Distro.lyrical.displayName, "Lyrical")
         XCTAssertEqual(ROS2Distro.rolling.displayName, "Rolling")
     }
 
@@ -234,7 +235,7 @@ final class WireCodecTests: XCTestCase {
 
     func testWireGroupDistros() {
         XCTAssertEqual(ROS2Distro.WireGroup.legacy.distros, [.humble])
-        XCTAssertEqual(ROS2Distro.WireGroup.modern.distros, [.jazzy, .kilted, .rolling])
+        XCTAssertEqual(ROS2Distro.WireGroup.modern.distros, [.jazzy, .kilted, .lyrical, .rolling])
     }
 
     func testWireGroupRawValues() {
@@ -243,8 +244,55 @@ final class WireCodecTests: XCTestCase {
     }
 
     func testDistroAllCases() {
-        XCTAssertEqual(ROS2Distro.allCases.count, 4)
-        XCTAssertTrue(ROS2Distro.allCases.contains(.humble))
-        XCTAssertTrue(ROS2Distro.allCases.contains(.rolling))
+        XCTAssertEqual(ROS2Distro.allCases, [.humble, .jazzy, .kilted, .lyrical, .rolling])
+    }
+
+    func testLyricalIsModern() {
+        XCTAssertEqual(ROS2Distro(rawValue: "lyrical"), .lyrical)
+        XCTAssertTrue(ROS2Distro.lyrical.supportsTypeHash)
+        XCTAssertFalse(ROS2Distro.lyrical.isLegacySchema)
+        XCTAssertFalse(ROS2Distro.lyrical.alwaysIncludeTypeHashInKey)
+        XCTAssertEqual(ROS2Distro.lyrical.wireGroup, .modern)
+        XCTAssertEqual(ROS2Distro.lyrical.formatTypeHash("RIHS01_abc"), "RIHS01_abc")
+    }
+
+    /// Lyrical speaks the Jazzy wire: every key expression and liveliness token must match byte for byte.
+    func testLyricalWireMatchesJazzy() {
+        let jazzy = ZenohWireCodec(distro: .jazzy)
+        let lyrical = ZenohWireCodec(distro: .lyrical)
+        let qos = QoSPolicy(reliability: .bestEffort, durability: .volatile, historyPolicy: .keepLast, historyDepth: 10)
+        for hash in ["RIHS01_abc123", nil] as [String?] {
+            XCTAssertEqual(
+                lyrical.makeKeyExpr(
+                    domainId: 123, namespace: "conduit", topic: "imu", typeName: "sensor_msgs/msg/Imu",
+                    typeHash: hash),
+                jazzy.makeKeyExpr(
+                    domainId: 123, namespace: "conduit", topic: "imu", typeName: "sensor_msgs/msg/Imu",
+                    typeHash: hash))
+            XCTAssertEqual(
+                lyrical.makeServiceKeyExpr(
+                    domainId: 123, namespace: "conduit", serviceName: "trigger",
+                    serviceTypeName: "std_srvs/srv/Trigger", requestTypeHash: hash),
+                jazzy.makeServiceKeyExpr(
+                    domainId: 123, namespace: "conduit", serviceName: "trigger",
+                    serviceTypeName: "std_srvs/srv/Trigger", requestTypeHash: hash))
+            for role in ZenohWireCodec.ActionRole.allCases {
+                XCTAssertEqual(
+                    lyrical.makeActionKeyExpr(
+                        role: role, domainId: 123, namespace: "conduit", actionName: "fibonacci",
+                        actionTypeName: "example_interfaces/action/Fibonacci", roleTypeHash: hash),
+                    jazzy.makeActionKeyExpr(
+                        role: role, domainId: 123, namespace: "conduit", actionName: "fibonacci",
+                        actionTypeName: "example_interfaces/action/Fibonacci", roleTypeHash: hash),
+                    "action role \(role)")
+            }
+            XCTAssertEqual(
+                lyrical.makeLivelinessToken(
+                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/conduit",
+                    nodeName: "imu_node", topic: "imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: qos),
+                jazzy.makeLivelinessToken(
+                    domainId: 123, sessionId: "abc123", nodeId: "1", entityId: "2", namespace: "/conduit",
+                    nodeName: "imu_node", topic: "imu", typeName: "sensor_msgs/msg/Imu", typeHash: hash, qos: qos))
+        }
     }
 }

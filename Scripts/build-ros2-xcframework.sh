@@ -100,6 +100,7 @@ SKIP_TEST_PKGS=(
   osrf_testing_tools_cpp performance_test_fixture
   gtest_vendor gmock_vendor google_benchmark_vendor
   mimick_vendor uncrustify_vendor
+  rmw_test_fixture_implementation
 )
 
 # Drop COLCON_IGNORE so colcon never discovers these subtrees and treats them
@@ -171,6 +172,17 @@ ignore_unbuildable() {
       if [[ -d "$SRC/$rel" ]]; then touch "$SRC/$rel/COLCON_IGNORE"; fi
     done
   fi
+}
+
+# A source patch whose anchor moved upstream would otherwise be skipped
+# silently. After patch_sources each file must be absent, carry our marker,
+# or no longer contain the code the patch exists for (upstream fixed it).
+require_patched() {  # $1 file, $2 marker regex, $3 regex of the code the patch fixes (optional)
+  [[ -f "$1" ]] || return 0
+  grep -Eq "$2" "$1" && return 0
+  if [[ -n "${3:-}" ]] && ! grep -Eq "$3" "$1"; then return 0; fi
+  echo "patch_sources: $1 still needs its patch (marker $2 missing) — did the anchor move?" >&2
+  return 1
 }
 
 # CycloneDDS's POSIX ifaddrs backend includes <net/if_media.h> on Apple to
@@ -312,6 +324,23 @@ patch_sources() {
       s{\nfind_package\(console_bridge_vendor REQUIRED\)}{\n# SWIFT_ROS2_STATIC_CLASS_LOADER\nif(DEFINED BUILD_SHARED_LIBS AND NOT BUILD_SHARED_LIBS)\n  set(explicit_library_type "STATIC")\nendif()\n\nfind_package(console_bridge_vendor REQUIRED)};
     ' "$cl_cmake"
   fi
+
+  # Every patch above is silent when its anchor is missing; fail the build
+  # instead when a file ended up neither patched nor fixed upstream.
+  require_patched "$f" 'SWIFT_ROS2_IOS_IFTYPE_STUB|TARGET_OS_IPHONE'
+  require_patched "$rawf" 'SWIFT_ROS2_IOS_NO_BPF' 'net/bpf\.h'
+  require_patched "$rcl_cmake" 'ament_export_dependencies\(\$\{RCL_LOGGING_IMPLEMENTATION\}\)'
+  require_patched "$fi_c" 'SWIFT_ROS2_ATOMIC_INIT' '= \{-1\};$'
+  require_patched "$yaml_c" 'SWIFT_ROS2_APPLE_CALL_ONCE' '^#include <threads\.h>$'
+  require_patched "$rb_cmake" 'SWIFT_ROS2_STATIC_ROSIDL_BUFFER' '^add_library\(\$\{PROJECT_NAME\} SHARED$'
+  if [[ "$RMW_VARIANT" == zenoh ]]; then
+    require_patched "$rbr_cmake" 'SWIFT_ROS2_STATIC_BUFFER_BACKEND_REGISTRY' '^add_library\(\$\{PROJECT_NAME\} SHARED$'
+    require_patched "$cl_cmake" 'SWIFT_ROS2_STATIC_CLASS_LOADER'
+  fi
+  if [[ "$RMW_VARIANT" == cyclonedds && -d "$cdds_src" ]]; then
+    git -C "$cdds_src" apply --reverse --check "$pad_patch" \
+      || { echo "patch_sources: the CycloneDDS UDP padding is not applied" >&2; return 1; }
+  fi
 }
 
 mkdir -p "$BUILD"
@@ -340,13 +369,19 @@ setup_venv() {
 }
 
 import_sources() {
-  if [[ ! -d "$SRC/ros2/rcl" ]]; then
+  # Re-import when the release tag changes: a Jazzy-era src_ws must never be
+  # reused for Lyrical. The marker is written only after a complete import, so
+  # an interrupted import starts over.
+  local tag_marker="$SRC/.swift-ros2-ros2-release"
+  if [[ ! -f "$tag_marker" || "$(cat "$tag_marker")" != "$ROS2_RELEASE_TAG" ]]; then
+    rm -rf "$SRC" "$BUILD/ros2-meta"
     mkdir -p "$SRC"
     git clone --depth 1 --branch "$ROS2_RELEASE_TAG" https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
     # The vcs import covers every repo in the release's ros2.repos set — including
     # ros2/geometry2, which carries tf2_msgs — so a fresh workspace needs no
     # extra step for the tf2_msgs package.
     ( cd "$SRC" && vcs import < "$BUILD/ros2-meta/ros2.repos" )
+    echo "$ROS2_RELEASE_TAG" > "$tag_marker"
   fi
   import_zenoh_sources
   import_extra_msg_sources
@@ -364,8 +399,9 @@ import_sources() {
 # install/lib/libyaml.a is merged like any other package archive.
 import_libyaml_source() {
   local dest="$SRC/yaml/libyaml"
-  [[ -d "$dest" ]] && return 0
-  git clone https://github.com/yaml/libyaml.git "$dest"
+  if [[ -d "$dest" && "$(git -C "$dest" rev-parse HEAD 2>/dev/null)" == "$LIBYAML_PIN" ]]; then return 0; fi
+  rm -rf "$dest"
+  git clone --branch 0.2.5 https://github.com/yaml/libyaml.git "$dest"
   git -C "$dest" checkout "$LIBYAML_PIN"
 }
 
@@ -436,6 +472,11 @@ import_zenoh_sources() {
   fi
   [[ "$(git -C "$rz" rev-parse HEAD)" == "$RMW_ZENOH_PIN" ]] || {
     echo "rmw_zenoh: HEAD is not RMW_ZENOH_PIN ($RMW_ZENOH_PIN)" >&2; return 1; }
+  local p
+  for p in "$ROOT/Scripts/ros2/patches/rmw_zenoh"/*.patch; do
+    git -C "$rz" apply --reverse --check "$p" \
+      || { echo "rmw_zenoh: $(basename "$p") is not applied" >&2; return 1; }
+  done
   import_tinyxml2_source
   # zenoh_cpp_vendor (an ament_vendor cargo wrapper) is replaced by the
   # prebuilt per-slice zenoh-c prefix (build_zenohc). COLCON_IGNORE makes
@@ -453,13 +494,18 @@ import_zenoh_sources() {
 # zenoh closure and pluginlib's find_package(TinyXML2) resolves to its config.
 import_tinyxml2_source() {
   local dest="$SRC/leethomason/tinyxml2"
-  [[ -d "$dest" ]] && return 0
-  git clone https://github.com/leethomason/tinyxml2.git "$dest"
+  if [[ -d "$dest" && "$(git -C "$dest" rev-parse HEAD 2>/dev/null)" == "$TINYXML2_PIN" ]]; then return 0; fi
+  rm -rf "$dest"
+  git clone --branch 10.0.0 https://github.com/leethomason/tinyxml2.git "$dest"
   git -C "$dest" checkout "$TINYXML2_PIN"
 }
 
 build_host_tools() {
-  [[ -f "$HOST/install/setup.sh" ]] && return 0
+  # colcon writes install/setup.sh before the packages build, so it cannot
+  # tell a finished host build from a failed one. Our own stamp is written
+  # only after colcon succeeds, keyed on the release tag.
+  [[ "$(cat "$HOST/.swift-ros2-host-ok" 2>/dev/null)" == "$ROS2_RELEASE_TAG" ]] && return 0
+  rm -rf "$HOST"
   ignore_unbuildable
   patch_sources
   # shellcheck disable=SC1091
@@ -473,6 +519,7 @@ build_host_tools() {
     --merge-install \
     --packages-up-to rosidl_default_generators rosidl_typesupport_introspection_c \
     --cmake-args -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release
+  echo "$ROS2_RELEASE_TAG" > "$HOST/.swift-ros2-host-ok"
 }
 
 slice_platform() { case "$1" in
@@ -510,19 +557,23 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
   local triple; triple="$(zenohc_triple "$slice")"
   local zc="$BUILD/zenoh-c" zcpp="$BUILD/zenoh-cpp"
   local out="$BUILD/$slice/zenohc-install"
-  [[ -f "$out/lib/libzenohc.a" ]] && return 0
-  if [[ ! -d "$zc" ]]; then
-    git clone https://github.com/eclipse-zenoh/zenoh-c.git "$zc"
-    git -C "$zc" checkout "$ZENOHC_PIN"
+  local stamp="$ZENOHC_PIN $ZENOHCPP_PIN"
+  [[ -f "$out/lib/libzenohc.a" && "$(cat "$out/.pins" 2>/dev/null)" == "$stamp" ]] && return 0
+  if [[ "$(git -C "$zc" rev-parse HEAD 2>/dev/null)" != "$ZENOHC_PIN" ]]; then
+    rm -rf "$zc"; git clone https://github.com/eclipse-zenoh/zenoh-c.git "$zc"; git -C "$zc" checkout "$ZENOHC_PIN"
   fi
-  if [[ ! -d "$zcpp" ]]; then
-    git clone https://github.com/eclipse-zenoh/zenoh-cpp.git "$zcpp"
-    git -C "$zcpp" checkout "$ZENOHCPP_PIN"
+  if [[ "$(git -C "$zcpp" rev-parse HEAD 2>/dev/null)" != "$ZENOHCPP_PIN" ]]; then
+    rm -rf "$zcpp"; git clone https://github.com/eclipse-zenoh/zenoh-cpp.git "$zcpp"; git -C "$zcpp" checkout "$ZENOHCPP_PIN"
   fi
   # zenoh-c pins its Rust toolchain via rust-toolchain.toml (currently
   # 1.97.1; rustup installs it on first use); running `rustup target add` inside the checkout installs the
   # std for THAT toolchain, not the default one (E0463 otherwise).
   ( cd "$zc" && rustup target add "$triple" )
+  # Without these, cc-rs compiles ring's C objects for the SDK's own version
+  # (minos 27.0 with Xcode 27) instead of our deployment targets.
+  local ios_dt="$DEPLOY_IOS"
+  [[ "$slice" == maccatalyst ]] && ios_dt="$DEPLOY_MAC"
+  export IPHONEOS_DEPLOYMENT_TARGET="$ios_dt" MACOSX_DEPLOYMENT_TARGET="$DEPLOY_MAC"
   ( cd "$zc" && cargo build --release -j 4 --target "$triple" \
       --features unstable --features transport_serial )
   rm -rf "$out"
@@ -538,6 +589,7 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
   cp -R "$ROOT/Scripts/ros2/zenohc-cmake/zenohcxx" "$out/lib/cmake/zenohcxx"
   cp "$ROOT/Scripts/ros2/zenohc-cmake/zenoh_cpp_vendor/zenoh_cpp_vendorConfig.cmake" \
      "$out/share/zenoh_cpp_vendor/cmake/"
+  echo "$stamp" > "$out/.pins"
 }
 
 cross_build() {  # $1 = slice, $2... = extra --packages-up-to
@@ -632,6 +684,9 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
   # <algorithm> etc. and break the module when built in C mode; they are not
   # needed for the C publish path, so drop them.
   find "$out/include" -type f ! -name '*.h' -delete
+  # libyaml and tinyxml2 install top-level headers; in the flattened
+  # build-products include dir they would shadow a consumer's own copies.
+  rm -f "$out/include/yaml.h" "$out/include/tinyxml2.h"
   # Drop the fastrtps typesupport from the public umbrella: fastcdr ships C++
   # under a .h extension (Cdr.h includes <array>) and every message package's
   # per-type *__rosidl_typesupport_fastrtps_c.h pulls fastcdr/Cdr.h — both
@@ -650,6 +705,35 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
   if [[ "$RMW_VARIANT" != cyclonedds ]]; then rm -rf "$out/include/dds"; fi
   rm -rf "$out/include/ddsc" "$out/include/idl" "$out/include/idlc"
   find "$out/include" -type d -empty -delete
+}
+
+# Facts every slice must satisfy (spike change list, "post-merge assertions").
+assert_merged_slice() {  # $1 = slice
+  local sb="$BUILD/$1" a="$BUILD/$1/merged/librclros.a" fail=0
+  local dylibs; dylibs="$(find "$sb/install/lib" -name '*.dylib' 2>/dev/null)"
+  [[ -z "$dylibs" ]] || { echo "assert: unmerged runtime dylibs: $dylibs" >&2; fail=1; }
+  local undef
+  undef="$(comm -23 <(nm -u "$a" 2>/dev/null | awk 'NF{print $NF}' | sort -u) \
+                    <(nm -gU "$a" 2>/dev/null | awk 'NF==3{print $3}' | sort -u) \
+           | grep -E '^_(rosidl_buffer_|yaml_)' || true)"
+  [[ -z "$undef" ]] || { echo "assert: undefined in librclros.a: $undef" >&2; fail=1; }
+  local logging; logging="$(nm -gU -A "$a" 2>/dev/null | grep ' T _rcl_logging_external_initialize$' || true)"
+  [[ "$(printf '%s\n' "$logging" | grep -c .)" == 1 && "$logging" == *noop* ]] \
+    || { echo "assert: _rcl_logging_external_initialize is not the single noop one: $logging" >&2; fail=1; }
+  local dds; dds="$(nm -gU "$a" 2>/dev/null | grep -c ' T _dds_create_participant$' || true)"
+  local want=1; [[ "$RMW_VARIANT" == zenoh ]] && want=0
+  [[ "$dds" == "$want" ]] || { echo "assert: $dds CycloneDDS builds in librclros.a (want $want)" >&2; fail=1; }
+  # Host Homebrew headers or libraries in a slice's cache entries (the libyaml
+  # leak the spike hit). cmake / python living under /opt/homebrew is fine,
+  # so only *_INCLUDE_DIR(S) / *_LIBRARY / *_LIBRARIES entries count, and the
+  # host interpreter's own FindPython3 entries (_Python3_INCLUDE_DIR,
+  # _Python3_LIBRARY_RELEASE, ...) are not a leak: no Python is linked in.
+  local leaks
+  leaks="$(grep -HE '^[A-Za-z0-9_]*(INCLUDE_DIRS?|LIBRARY|LIBRARIES)[A-Za-z0-9_]*:[A-Z]+=.*/opt/homebrew' \
+           "$sb"/build/*/CMakeCache.txt 2>/dev/null \
+           | grep -vE 'CMakeCache\.txt:_?(Python[0-9]*|PYTHON[0-9]*)_' || true)"
+  [[ -z "$leaks" ]] || { echo "assert: Homebrew paths in slice CMake caches: $leaks" >&2; fail=1; }
+  return $fail
 }
 
 assemble_xcframework() {  # $@ = slices
@@ -694,6 +778,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   for slice in "$@"; do
     cross_build "$slice" "${PKGS_UP_TO[@]}"
     merge_slice "$slice"
+    assert_merged_slice "$slice"
   done
   assemble_xcframework "$@"
   assemble_zenoh_ament_prefix

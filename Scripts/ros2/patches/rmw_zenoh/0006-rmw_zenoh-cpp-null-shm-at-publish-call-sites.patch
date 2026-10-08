@@ -1,8 +1,8 @@
 diff --git a/rmw_zenoh_cpp/src/rmw_zenoh.cpp b/rmw_zenoh_cpp/src/rmw_zenoh.cpp
-index 2d0be13..d427656 100644
+index 093fcc6..fb63f8c 100644
 --- a/rmw_zenoh_cpp/src/rmw_zenoh.cpp
 +++ b/rmw_zenoh_cpp/src/rmw_zenoh.cpp
-@@ -621,7 +621,11 @@ rmw_publish(
+@@ -620,7 +620,11 @@ rmw_publish(
  
    return pub_data->publish(
      ros_message,
@@ -14,7 +14,7 @@ index 2d0be13..d427656 100644
    );
  }
  
-@@ -729,7 +733,11 @@ rmw_publish_serialized_message(
+@@ -728,7 +732,11 @@ rmw_publish_serialized_message(
  
    return publisher_data->publish_serialized_message(
      serialized_message,

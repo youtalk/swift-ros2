@@ -214,6 +214,18 @@ patch_sources() {
       s{#include <windows.h>\n#else\n#include <threads.h>\n}{#include <windows.h>\n#elif defined(__APPLE__)\n#include <pthread.h>\ntypedef pthread_once_t once_flag;\n#define ONCE_FLAG_INIT PTHREAD_ONCE_INIT\n#define call_once(flag, func) pthread_once((flag), (func))\n#else\n#include <threads.h>\n};
     ' "$yaml_c"
   fi
+
+  # Lyrical adds rosidl_buffer, a C++ runtime library that rosidl_runtime_c
+  # (sequence __fini -> rosidl_buffer_uint8_destroy) and every generated
+  # introspection typesupport with a uint8[] field
+  # (rosidl_buffer_uint8_throw_if_not_cpu) now call into. Its CMakeLists
+  # hard-codes add_library(... SHARED), so it installs a .dylib that
+  # merge_slice (static archives only) skips, leaving both symbols undefined
+  # at app link time. Let it follow BUILD_SHARED_LIBS (OFF here). Idempotent.
+  local rb_cmake="$SRC/ros2/rosidl/rosidl_buffer/CMakeLists.txt"
+  if [[ -f "$rb_cmake" ]] && grep -q '^add_library(${PROJECT_NAME} SHARED$' "$rb_cmake"; then
+    sed -i '' 's/^add_library(${PROJECT_NAME} SHARED$/add_library(${PROJECT_NAME}  # SWIFT_ROS2_STATIC_ROSIDL_BUFFER/' "$rb_cmake"
+  fi
 }
 
 mkdir -p "$BUILD"

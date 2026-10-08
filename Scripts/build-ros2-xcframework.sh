@@ -267,11 +267,18 @@ mkdir -p "$BUILD"
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 setup_venv() {
-  [[ -d "$VENV" ]] && return 0
-  python3.11 -m venv "$VENV"
+  if [[ ! -d "$VENV" ]]; then
+    python3.11 -m venv "$VENV"
+    # shellcheck disable=SC1091
+    source "$VENV/bin/activate"
+    pip install -r "$ROOT/Scripts/ros2/requirements.txt"
+  fi
+  # Always activate: import_sources runs `vcs import`, and vcstool comes from
+  # the venv (requirements.txt). With a pre-existing venv (the zenoh variant
+  # reuses the cyclonedds tree's) the early return used to leave PATH on
+  # whatever `vcs` the host has (here a Homebrew one with a dead interpreter).
   # shellcheck disable=SC1091
   source "$VENV/bin/activate"
-  pip install -r "$ROOT/Scripts/ros2/requirements.txt"
 }
 
 import_sources() {

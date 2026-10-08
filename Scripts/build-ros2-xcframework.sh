@@ -169,6 +169,26 @@ patch_sources() {
     ' "$f" > "$tmp" && mv "$tmp" "$f"
   fi
 
+  # Lyrical's cyclonedds (11.x) adds a BSD/Apple raw-Ethernet transport that
+  # includes <net/bpf.h>; the iOS device/simulator SDK does not ship it. Gate
+  # the Apple arm of ddsi_raweth.c on the header so iOS falls through to the
+  # file's own `#else` stub (ddsi_raweth_init returns 0, raweth unavailable);
+  # macOS/Catalyst keep the real BPF path. Absent from 0.10.x trees (the line
+  # below does not exist there), so the guard short-circuits. Idempotent.
+  local rawf="$SRC/eclipse-cyclonedds/cyclonedds/src/core/ddsi/src/ddsi_raweth.c"
+  local raw_orig='#if (defined(__linux) || defined(__FreeBSD__) || defined(__QNXNTO__) || defined(__APPLE__)) && !LWIP_SOCKET'
+  if [[ -f "$rawf" ]] && ! grep -q "SWIFT_ROS2_IOS_NO_BPF" "$rawf" && grep -qxF "$raw_orig" "$rawf"; then
+    local tmp3; tmp3="$(mktemp)"
+    awk -v orig="$raw_orig" '
+      $0 == orig && !done {
+        print "#if (defined(__linux) || defined(__FreeBSD__) || defined(__QNXNTO__) || (defined(__APPLE__) && __has_include(<net/bpf.h>))) && !LWIP_SOCKET /* SWIFT_ROS2_IOS_NO_BPF */"
+        done = 1
+        next
+      }
+      { print }
+    ' "$rawf" > "$tmp3" && mv "$tmp3" "$rawf"
+  fi
+
   # rcl exports rcl_logging_interface but not the concrete logging
   # implementation it links (RCL_LOGGING_IMPLEMENTATION=rcl_logging_noop,
   # pinned in both colcon-defaults.meta and colcon-defaults-zenoh.meta —

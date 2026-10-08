@@ -233,6 +233,27 @@ patch_sources() {
     ' "$rb_cmake"
   fi
 
+  # Zenoh variant (Lyrical): rmw_zenoh_cpp links rosidl_buffer_backend_registry
+  # (pluginlib -> class_loader), and both hard-code SHARED, so the slice build
+  # would install .dylibs that merge_slice skips. Build them static when
+  # BUILD_SHARED_LIBS is explicitly OFF (same rule as rosidl_buffer above).
+  # Neither is in the cyclonedds closure (rmw_zenoh is COLCON_IGNOREd there)
+  # or in the host-tools closure, and the rule keeps SHARED when
+  # BUILD_SHARED_LIBS is unset, so both stay unchanged. Idempotent.
+  local rbr_cmake="$SRC/ros2/rosidl/rosidl_buffer_backend_registry/CMakeLists.txt"
+  if [[ -f "$rbr_cmake" ]] && ! grep -q "SWIFT_ROS2_STATIC_BUFFER_BACKEND_REGISTRY" "$rbr_cmake" \
+      && grep -q '^add_library(${PROJECT_NAME} SHARED$' "$rbr_cmake"; then
+    perl -0pi -e '
+      s{\nadd_library\(\$\{PROJECT_NAME\} SHARED\n}{\n# SWIFT_ROS2_STATIC_BUFFER_BACKEND_REGISTRY\nif(DEFINED BUILD_SHARED_LIBS AND NOT BUILD_SHARED_LIBS)\n  set(_swift_ros2_registry_type STATIC)\nelse()\n  set(_swift_ros2_registry_type SHARED)\nendif()\nadd_library(\$\{PROJECT_NAME\} \$\{_swift_ros2_registry_type\}\n};
+    ' "$rbr_cmake"
+  fi
+  local cl_cmake="$SRC/ros/class_loader/CMakeLists.txt"
+  if [[ -f "$cl_cmake" ]] && ! grep -q "SWIFT_ROS2_STATIC_CLASS_LOADER" "$cl_cmake" \
+      && grep -q '^find_package(console_bridge_vendor REQUIRED)' "$cl_cmake"; then
+    perl -0pi -e '
+      s{\nfind_package\(console_bridge_vendor REQUIRED\)}{\n# SWIFT_ROS2_STATIC_CLASS_LOADER\nif(DEFINED BUILD_SHARED_LIBS AND NOT BUILD_SHARED_LIBS)\n  set(explicit_library_type "STATIC")\nendif()\n\nfind_package(console_bridge_vendor REQUIRED)};
+    ' "$cl_cmake"
+  fi
 }
 
 mkdir -p "$BUILD"
@@ -356,12 +377,28 @@ import_zenoh_sources() {
   fi
   [[ "$(git -C "$rz" rev-parse HEAD)" == "$RMW_ZENOH_PIN" ]] || {
     echo "rmw_zenoh: HEAD is not RMW_ZENOH_PIN ($RMW_ZENOH_PIN)" >&2; return 1; }
+  import_tinyxml2_source
   # zenoh_cpp_vendor (an ament_vendor cargo wrapper) is replaced by the
   # prebuilt per-slice zenoh-c prefix (build_zenohc). COLCON_IGNORE makes
   # colcon treat it as external, so rmw_zenoh_cpp's
   # find_package(zenoh_cpp_vendor) resolves through CMAKE_PREFIX_PATH to the
   # hand-assembled config instead of driving cargo inside the colcon graph.
   touch "$rz/zenoh_cpp_vendor/COLCON_IGNORE"
+}
+
+# Lyrical's rmw_zenoh_cpp depends on rosidl_buffer_backend_registry, which
+# depends on pluginlib, which find_packages a system TinyXML2. Lyrical's
+# ros2.repos dropped tinyxml2_vendor and the host has no tinyxml2, so clone
+# tinyxml2 into the source tree (same pattern as libyaml): colcon builds it as
+# the CMake package `tinyxml2` that pluginlib <depend>s on, so it joins the
+# zenoh closure and pluginlib's find_package(TinyXML2) resolves to its config.
+TINYXML2_PIN=321ea883b7190d4e85cae5512a12e5eaa8f8731f  # tag 10.0.0
+
+import_tinyxml2_source() {
+  local dest="$SRC/leethomason/tinyxml2"
+  [[ -d "$dest" ]] && return 0
+  git clone https://github.com/leethomason/tinyxml2.git "$dest"
+  git -C "$dest" checkout "$TINYXML2_PIN"
 }
 
 build_host_tools() {

@@ -6,7 +6,7 @@
 //
 // Regression for youtalk/swift-ros2#149: the unicast block used to emit
 // <EnableTopicDiscoveryEndpoints>, which CycloneDDS builds compiled without
-// topic-discovery support (e.g. the one bundled in CRos2Jazzy on iOS) reject as
+// topic-discovery support (e.g. the one bundled in CRos2 on iOS) reject as
 // an unknown element, failing rmw_create_node on the RCL unicast path.
 
 import CDDSBridge
@@ -48,7 +48,7 @@ final class DiscoveryConfigXMLTests: XCTestCase {
 
     /// The unicast block must carry the static <Peer> and the mobile-friendly
     /// <SPDPInterval>, but must NOT emit <EnableTopicDiscoveryEndpoints> — that
-    /// element is compiled out of some CycloneDDS builds (CRos2Jazzy / iOS) and
+    /// element is compiled out of some CycloneDDS builds (CRos2 / iOS) and
     /// makes rmw_create_node reject the whole config (issue #149).
     func testUnicastXMLOmitsEnableTopicDiscoveryEndpoints() {
         let xml = buildXML(peers: ["192.168.1.85"], interface: "en0")

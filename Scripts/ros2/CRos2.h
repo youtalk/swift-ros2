@@ -1,4 +1,4 @@
-// Curated module header for the CRos2Jazzy module.
+// Curated module header for the CRos2 module.
 //
 // Declared as a plain `header` (not `umbrella header` / `umbrella "."`) in
 // module.modulemap, so Clang compiles only the headers reachable from here,

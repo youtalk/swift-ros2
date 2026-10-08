@@ -83,7 +83,8 @@ let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir !=
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.1.0"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
-// CRos2Jazzy(.Zenoh) xcframework resolves from the release URL, selected by
+// CRos2(.Zenoh) xcframework (still published as CRos2Jazzy(.Zenoh) in the
+// 2.1.0 release) resolves from the release URL, selected by
 // `rclRmwVariant` below (the MZ2 "Replace on Apple" decision: a plain Apple
 // `swift build` gets the RCL backend without any env opt-in).
 // SWIFT_ROS2_DISABLE_RCL=1 opts an Apple build back out (wire-only graph, no
@@ -107,10 +108,11 @@ let enableRcl =
 let useLocalRclXCFramework = Context.environment["SWIFT_ROS2_RCL_LOCAL"] == "1"
 
 // SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the RCL binary
-// target: "cyclonedds" (default) -> CRos2Jazzy.xcframework.zip, or
-// "zenoh" -> CRos2JazzyZenoh.xcframework.zip (rmw_zenoh_cpp + fastrtps
-// typesupport), both resolved from the release URL — or from build/ros2*/
-// under SWIFT_ROS2_RCL_LOCAL=1 (build with
+// target: "cyclonedds" (default) -> CRos2.xcframework, or
+// "zenoh" -> CRos2Zenoh.xcframework (rmw_zenoh_cpp + fastrtps
+// typesupport). They resolve from the release URL as the 2.1.0 zips
+// CRos2Jazzy.xcframework.zip / CRos2JazzyZenoh.xcframework.zip — or from
+// build/ros2*/ under SWIFT_ROS2_RCL_LOCAL=1 (build with
 // `RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`). Both variants
 // expose the identical rcl C API, so every Swift target is variant-agnostic.
 let rclRmwVariant: String = {
@@ -124,12 +126,19 @@ let rclRmwVariant: String = {
 // On Apple the binary target is NAMED after the variant so the released
 // zip's .xcframework basename matches the target name (SwiftPM resolves
 // url-based binary artifacts by that match). Linux keeps the single
-// CRos2Jazzy systemLibrary name for both transports (runtime rmw selection).
+// CRos2 systemLibrary name for both transports (runtime rmw selection).
 // Nothing `import`s this module from Swift, so the name is link-graph-only.
-let ros2XCFrameworkName = rclRmwVariant == "zenoh" ? "CRos2JazzyZenoh" : "CRos2Jazzy"
-let ros2CTargetName = isLinuxBuild ? "CRos2Jazzy" : ros2XCFrameworkName
+// Locally built xcframeworks (Scripts/build-ros2-xcframework.sh) are named
+// CRos2 / CRos2Zenoh. The released 2.1.0 assets keep their old names
+// (CRos2Jazzy / CRos2JazzyZenoh) until the 2.2.0 pin, because a URL binary
+// target's name must match the zip's .xcframework basename.
+let ros2XCFrameworkName: String = {
+    if useLocalRclXCFramework { return rclRmwVariant == "zenoh" ? "CRos2Zenoh" : "CRos2" }
+    return rclRmwVariant == "zenoh" ? "CRos2JazzyZenoh" : "CRos2Jazzy"
+}()
+let ros2CTargetName = isLinuxBuild ? "CRos2" : ros2XCFrameworkName
 
-// zenoh-pico (the wire path) and zenoh-c (bundled inside CRos2JazzyZenoh)
+// zenoh-pico (the wire path) and zenoh-c (bundled inside CRos2Zenoh)
 // both export the standard zenoh C API, so they cannot link into one binary.
 // Selecting the zenoh rmw variant therefore carves the zenoh-pico wire family
 // (CZenohPico / CZenohBridge / SwiftROS2Zenoh + its tests) out of the build
@@ -735,13 +744,13 @@ if enableRcl {
     // (ament prefix). rcl has no pkg-config, so — unlike CCycloneDDS on Linux —
     // no `pkgConfig:` is passed; the -I/-L/-l come from the CRclBridge cSettings
     // + the per-target linker flags below (the same shape as the Windows
-    // CCycloneDDS systemLibrary path). Nothing `import`s the CRos2Jazzy module
+    // CCycloneDDS systemLibrary path). Nothing `import`s the CRos2 module
     // from Swift, so on Linux the systemLibrary's shim.h/modulemap is
     // declared-but-never-compiled — CRclBridge reaches rcl through plain
     // `#include` resolved by its own -I flags.
     if isLinuxBuild {
         targets.append(
-            .systemLibrary(name: "CRos2Jazzy", path: "Sources/CRos2Jazzy"))
+            .systemLibrary(name: "CRos2", path: "Sources/CRos2"))
     } else if useLocalRclXCFramework {
         // Local xcframework built by Scripts/build-ros2-xcframework.sh — the
         // ci-rcl macOS legs and ROS-2-cross-build development use this.
@@ -749,8 +758,8 @@ if enableRcl {
             .binaryTarget(
                 name: ros2XCFrameworkName,
                 path: rclRmwVariant == "zenoh"
-                    ? "build/ros2zenoh/CRos2JazzyZenoh.xcframework"
-                    : "build/ros2/CRos2Jazzy.xcframework"
+                    ? "build/ros2zenoh/CRos2Zenoh.xcframework"
+                    : "build/ros2/CRos2.xcframework"
             ))
     } else if rclRmwVariant == "zenoh" {
         targets.append(
@@ -767,7 +776,7 @@ if enableRcl {
                 checksum: "0a0298224dad998892ed5e46498e8583d69e23f7a0118369d5283ca211b11625"
             ))
     }
-    // rmw_cyclonedds_cpp / rcpputils in CRos2Jazzy are C++, so every target
+    // rmw_cyclonedds_cpp / rcpputils in CRos2 are C++, so every target
     // that links the merged archive needs the C++ runtime. On Apple that is
     // libc++ (`-lc++`); on Linux the system ROS 2 libs are built against
     // libstdc++ (linked via `-l:libstdc++.so.6` inside rclLinuxLinkerFlags),
@@ -778,7 +787,7 @@ if enableRcl {
     // rustls/ring TLS, network monitoring, and serialport (transport_serial
     // feature) code require these system frameworks at final link.
     let rclLinuxLinkAll: [LinkerSetting] = [.unsafeFlags(rclLinuxLinkerFlags)]
-    // Applied to CRclBridge AND to targets that depend on CRos2Jazzy directly
+    // Applied to CRclBridge AND to targets that depend on CRos2 directly
     // (rcl-smoke).
     let rclBridgeLinkerSettings: [LinkerSetting] =
         isLinuxBuild
@@ -798,7 +807,7 @@ if enableRcl {
             dependencies: [.target(name: ros2CTargetName)],
             path: "Sources/Examples/RclSmoke",
             // C source that `#include <rcl/rcl.h>` directly; cSettings do not
-            // propagate from CRos2Jazzy (no pkg-config), so inject -I here too.
+            // propagate from CRos2 (no pkg-config), so inject -I here too.
             cSettings: isLinuxBuild ? [.unsafeFlags(rclLinuxIncludeFlags)] : [],
             linkerSettings: rclBridgeLinkerSettings
         ))

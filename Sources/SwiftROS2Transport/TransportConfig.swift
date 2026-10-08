@@ -151,7 +151,7 @@ public struct TransportConfig: Sendable {
     /// RCL + `rmw_cyclonedds_cpp` backend.
     ///
     /// Requires the RCL backend with the `rmw_cyclonedds_cpp` rmw in the build:
-    /// on by default on Apple platforms (prebuilt CRos2Jazzy xcframework; not
+    /// on by default on Apple platforms (prebuilt CRos2 xcframework; not
     /// with `SWIFT_ROS2_DISABLE_RCL=1` or `SWIFT_ROS2_RCL_RMW=zenoh`), opt-in via
     /// `SWIFT_ROS2_ENABLE_RCL=1` on Linux (system ROS 2 install, see
     /// `ROS2_RCL_PREFIX`). On other configurations, `ROS2Context(transport:)`

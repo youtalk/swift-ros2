@@ -4,7 +4,7 @@
 #include <rcl/publisher.h>
 // rcl_error_string_t / rcl_get_error_string / rcl_reset_error (capture_error()).
 // Included explicitly for the symbols this TU uses rather than relying on the
-// CRos2Jazzy module re-exporting it: the modulemap declares CRos2Jazzy.h as a
+// CRos2 module re-exporting it: the modulemap declares CRos2.h as a
 // plain (non-umbrella) header, so `#include <rcl/...>` resolves textually and
 // only brings what each header transitively pulls in.
 #include <rcl/error_handling.h>

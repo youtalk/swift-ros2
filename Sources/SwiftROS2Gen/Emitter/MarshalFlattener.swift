@@ -1,5 +1,5 @@
 /// A single flat C parameter derived from a ROS message field. The native-RCL
-/// marshaller never lets a Swift target touch a `CRos2Jazzy` struct, so every
+/// marshaller never lets a Swift target touch a `CRos2` struct, so every
 /// message value is destructured into flat C arguments: nested single messages
 /// flatten into scalar args, sequences pass as `(ptr, count)`, and a
 /// sequence-of-structs passes as parallel arrays (struct-of-arrays). The

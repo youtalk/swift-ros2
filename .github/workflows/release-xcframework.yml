@@ -64,7 +64,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - framework: CRos2Jazzy
+          - framework: CRos2
             rmw_variant: cyclonedds
             slices: maccatalyst iphoneos iphonesimulator macosx xros xrsimulator
             build_dir: build/ros2
@@ -72,7 +72,7 @@ jobs:
           # graph (pnet_sys 0.35) does not compile for visionOS yet, so those
           # slices are dropped by design — visionOS consumers stay on the
           # zenoh-pico wire path or the .dds transport.
-          - framework: CRos2JazzyZenoh
+          - framework: CRos2Zenoh
             rmw_variant: zenoh
             slices: maccatalyst iphoneos iphonesimulator macosx
             build_dir: build/ros2zenoh
@@ -131,7 +131,7 @@ jobs:
   publish-xcframeworks:
     name: Publish (xcframeworks)
     # Publishing is intentionally gated on BOTH build jobs: once Package.swift
-    # pins the CRos2Jazzy* URLs, a release without the ros2 assets would be
+    # pins the CRos2* URLs, a release without the ros2 assets would be
     # broken for downstream anyway. The cost is that a transient failure in
     # the long ros2 cross-build blocks the whole release — RECOVERY: re-run
     # this workflow via workflow_dispatch with the existing tag; it rebuilds
@@ -162,10 +162,10 @@ jobs:
             upload/CZenohPico.xcframework.zip.checksum \
             upload/CCycloneDDS.xcframework.zip \
             upload/CCycloneDDS.xcframework.zip.checksum \
-            upload/CRos2Jazzy.xcframework.zip \
-            upload/CRos2Jazzy.xcframework.zip.checksum \
-            upload/CRos2JazzyZenoh.xcframework.zip \
-            upload/CRos2JazzyZenoh.xcframework.zip.checksum
+            upload/CRos2.xcframework.zip \
+            upload/CRos2.xcframework.zip.checksum \
+            upload/CRos2Zenoh.xcframework.zip \
+            upload/CRos2Zenoh.xcframework.zip.checksum
 
       - name: Assert all expected assets present on the release
         # Fail loudly if the release is missing any expected asset.
@@ -186,10 +186,10 @@ jobs:
             CZenohPico.xcframework.zip.checksum
             CCycloneDDS.xcframework.zip
             CCycloneDDS.xcframework.zip.checksum
-            CRos2Jazzy.xcframework.zip
-            CRos2Jazzy.xcframework.zip.checksum
-            CRos2JazzyZenoh.xcframework.zip
-            CRos2JazzyZenoh.xcframework.zip.checksum
+            CRos2.xcframework.zip
+            CRos2.xcframework.zip.checksum
+            CRos2Zenoh.xcframework.zip
+            CRos2Zenoh.xcframework.zip.checksum
           )
           actual=$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | sort)
           echo "Actual assets on release $TAG:"

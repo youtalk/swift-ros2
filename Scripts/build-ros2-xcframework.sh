@@ -2,12 +2,12 @@
 # Build the real ROS 2 C/C++ stack for Apple slices and assemble an
 # xcframework. Two rmw variants (select with RMW_VARIANT):
 #   cyclonedds (default) — rcl + rmw_cyclonedds_cpp + rosidl introspection
-#                          typesupport -> build/ros2/CRos2Jazzy.xcframework
+#                          typesupport -> build/ros2/CRos2.xcframework
 #   zenoh                — rcl + rmw_zenoh_cpp (no-SHM patch set under
 #                          Scripts/ros2/patches/rmw_zenoh) + rosidl fastrtps
 #                          typesupport (rmw_zenoh hard-codes it) + prebuilt
 #                          zenoh-c staticlib (Rust; needs rustup/cargo on
-#                          PATH) -> build/ros2zenoh/CRos2JazzyZenoh.xcframework
+#                          PATH) -> build/ros2zenoh/CRos2Zenoh.xcframework
 # Usage: [RMW_VARIANT=zenoh] Scripts/build-ros2-xcframework.sh maccatalyst iphoneos
 set -euo pipefail
 
@@ -19,7 +19,7 @@ RMW_VARIANT="${RMW_VARIANT:-cyclonedds}"
 case "$RMW_VARIANT" in
   cyclonedds)
     BUILD="$ROOT/build/ros2"
-    XCFW_NAME="CRos2Jazzy"
+    XCFW_NAME="CRos2"
     RMW_PKG=rmw_cyclonedds_cpp
     TS_C=rosidl_typesupport_introspection_c
     TS_CPP=rosidl_typesupport_introspection_cpp
@@ -27,7 +27,7 @@ case "$RMW_VARIANT" in
     ;;
   zenoh)
     BUILD="$ROOT/build/ros2zenoh"
-    XCFW_NAME="CRos2JazzyZenoh"
+    XCFW_NAME="CRos2Zenoh"
     RMW_PKG=rmw_zenoh_cpp
     # rmw_zenoh_cpp resolves message types through the fastrtps typesupport
     # only (type_support_common.hpp hard-codes the identifier), so the single
@@ -469,7 +469,7 @@ assemble_xcframework() {  # $@ = slices
   for slice in "$@"; do
     m="$BUILD/$slice/merged"
     cp "$ROOT/Scripts/ros2/module.modulemap" "$m/include/module.modulemap"
-    cp "$ROOT/Scripts/ros2/CRos2Jazzy.h" "$m/include/CRos2Jazzy.h"
+    cp "$ROOT/Scripts/ros2/CRos2.h" "$m/include/CRos2.h"
     args+=(-library "$m/librclros.a" -headers "$m/include")
   done
   xcodebuild -create-xcframework "${args[@]}" -output "$out"

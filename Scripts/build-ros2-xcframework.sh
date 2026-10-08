@@ -245,6 +245,25 @@ import_sources() {
   fi
   import_zenoh_sources
   import_extra_msg_sources
+  import_libyaml_source
+}
+
+# Lyrical's libyaml_vendor no longer builds libyaml — it only ships a
+# Findyaml.cmake that looks for a system libyaml (CONFIG, then pkg-config).
+# Cross builds then silently pick up the host's Homebrew libyaml headers via
+# pkg-config and leave yaml_* undefined in librclros.a. Clone libyaml 0.2.5
+# (the version Jazzy's libyaml_vendor built) into the source tree instead:
+# colcon builds it as a plain CMake package named `yaml`, which rcl and
+# rcl_yaml_param_parser <depend> on, so it joins the --packages-up-to closure,
+# Findyaml's CONFIG lookup finds it ahead of pkg-config, and its
+# install/lib/libyaml.a is merged like any other package archive.
+LIBYAML_PIN=2c891fc7a770e8ba2fec34fc6b545c672beb37e6  # tag 0.2.5
+
+import_libyaml_source() {
+  local dest="$SRC/yaml/libyaml"
+  [[ -d "$dest" ]] && return 0
+  git clone https://github.com/yaml/libyaml.git "$dest"
+  git -C "$dest" checkout "$LIBYAML_PIN"
 }
 
 # Conduit-critical message repos that are NOT in the jazzy ros2.repos set —

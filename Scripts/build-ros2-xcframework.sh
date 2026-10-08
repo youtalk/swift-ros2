@@ -115,6 +115,14 @@ IGNORE_SUBTREES=(
   # Python-only (same reason as rosidl_python) and Lyrical's ros2.repos no
   # longer vendors pybind11, so drop it.
   ros2/rosidl/rosidl_buffer_py
+  # Lyrical: rcl_logging_implementation is a dlopen-based runtime selector
+  # (default rcl_logging_spdlog). rcl links rcl_logging_noop statically
+  # (RCL_LOGGING_IMPLEMENTATION in the colcon meta) and only find_packages the
+  # selector in dynamic mode, but rcl's package.xml still pulls it into the
+  # closure. Built, it lands in librclros.a next to rcl_logging_noop with the
+  # same rcl_logging_external_* symbols, and the linker resolves them to the
+  # selector (archive order) — which would dlopen spdlog at runtime. Drop it.
+  ros2/rcl_logging/rcl_logging_implementation
 )
 ignore_unbuildable() {
   local rel

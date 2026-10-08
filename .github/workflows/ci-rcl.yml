@@ -16,6 +16,9 @@ name: CI (RCL)
 #     (ROS2_RCL_PREFIX + pkg-config). Source-builds the one required message
 #     package the ROS 2 apt repo doesn't ship (audio_common_msgs) into a
 #     small colcon overlay layered in front of the base distro.
+#   rcl-linux-lyrical — the same steps against ROS 2 Lyrical from apt, in the
+#     swift:6.4.0-resolute container (Lyrical ships for Ubuntu 26.04 only), and
+#     it also runs SwiftROS2DDSTests against Lyrical's CycloneDDS 11.0.1.
 # SwiftROS2RCLTests only exists in the build graph when SWIFT_ROS2_ENABLE_RCL=1
 # (ci.yml's swift test runs never set it), so this workflow is the only place
 # those tests execute.
@@ -510,3 +513,69 @@ jobs:
           # SwiftROS2BenchTests rides along: the RESULT-line stack stamp is
           # build-arm-dependent and its Linux-RCL branch only exists here.
           swift test --filter 'SwiftROS2RCLTests|SwiftROS2BenchTests'
+
+  rcl-linux-lyrical:
+    name: RCL build + tests (Linux, ROS 2 Lyrical)
+    # Lyrical publishes apt binaries only for Ubuntu 26.04 (resolute), and
+    # swift.org ships Ubuntu 26.04 toolchains from 6.4.0 on, so this lane runs
+    # in the official swift:6.4.0-resolute image and installs ROS 2 Lyrical from
+    # the ROS apt repo (the other Linux lanes stay on 6.3.1). audio_common_msgs
+    # is apt-available for Lyrical, so there is no source overlay.
+    # SwiftROS2DDSTests rides along: with SWIFT_ROS2_ENABLE_RCL=1, CDDSBridge
+    # links the system CycloneDDS 11.0.1 (type and topic discovery on), the same
+    # CycloneDDS the Apple default graph links from 2.2.0 (route (B)).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: swift:6.4.0-resolute
+    env:
+      ROS_DISTRO: lyrical
+      SWIFT_ROS2_ENABLE_RCL: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ROS 2 Lyrical (rcl + both rmw + message packages)
+        run: |
+          apt-get update
+          apt-get install -y cmake pkg-config curl gnupg lsb-release
+          mkdir -p /usr/share/keyrings
+          curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+            > /etc/apt/sources.list.d/ros2.list
+          apt-get update
+          apt-get install -y \
+            ros-lyrical-rcl ros-lyrical-rcl-action \
+            ros-lyrical-rmw-zenoh-cpp ros-lyrical-rmw-cyclonedds-cpp \
+            ros-lyrical-rosidl-typesupport-introspection-c \
+            ros-lyrical-sensor-msgs ros-lyrical-geometry-msgs ros-lyrical-std-msgs \
+            ros-lyrical-std-srvs ros-lyrical-example-interfaces ros-lyrical-tf2-msgs \
+            ros-lyrical-point-cloud-interfaces ros-lyrical-audio-common-msgs
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Verify ROS 2 RCL deps
+        run: |
+          source /opt/ros/lyrical/setup.bash
+          export ROS2_RCL_PREFIX=/opt/ros/lyrical
+          bash Scripts/build-linux-rcl-deps.sh
+
+      - name: Build (Linux RCL, Lyrical)
+        run: |
+          source /opt/ros/lyrical/setup.bash
+          export ROS2_RCL_PREFIX=/opt/ros/lyrical
+          export PKG_CONFIG_PATH="/opt/ros/lyrical/lib/$(uname -m)-linux-gnu/pkgconfig:/opt/ros/lyrical/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          swift build
+
+      - name: Run SwiftROS2RCLTests + SwiftROS2DDSTests (Linux, Lyrical)
+        run: |
+          source /opt/ros/lyrical/setup.bash
+          export ROS2_RCL_PREFIX=/opt/ros/lyrical
+          export PKG_CONFIG_PATH="/opt/ros/lyrical/lib/$(uname -m)-linux-gnu/pkgconfig:/opt/ros/lyrical/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          swift test --filter 'SwiftROS2RCLTests|SwiftROS2BenchTests|SwiftROS2DDSTests'

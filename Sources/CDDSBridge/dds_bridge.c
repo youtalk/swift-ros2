@@ -219,7 +219,7 @@ char* dds_bridge_build_domain_config_xml(int32_t domain_id, const bridge_discove
         // NOTE: do not emit <EnableTopicDiscoveryEndpoints> here. It does not
         // disable multicast SPDP (it toggles DCPSTopic discovery, which ROS 2
         // graph discovery does not use), and CycloneDDS builds compiled without
-        // topic-discovery support — e.g. the one bundled in CRos2Jazzy on iOS,
+        // topic-discovery support — e.g. the one bundled in CRos2 on iOS,
         // reached by the RCL path via CYCLONEDDS_URI — reject it as an unknown
         // element and fail rmw_create_node (issue #149). Leaving multicast SPDP
         // enabled next to the explicit <Peers> is harmless: it is simply

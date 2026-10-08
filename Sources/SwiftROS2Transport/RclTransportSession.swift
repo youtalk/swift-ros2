@@ -58,7 +58,7 @@ public final class RclTransportSession: TransportSession, @unchecked Sendable {
         try config.validate()
         guard client.isAvailable else {
             throw TransportError.unsupportedFeature(
-                "RCL transport not available (CRos2Jazzy not built)")
+                "RCL transport not available (CRos2 not built)")
         }
         // DDS discovery (`host:port` peer addresses — the port is load-bearing,
         // see `DDSPeer.discoveryAddress`) on the `.rcl` path; the router locator

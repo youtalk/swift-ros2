@@ -26,7 +26,7 @@ ACTION_TYPES="example_interfaces/action/Fibonacci"
 # Messages that get a typesupport entry without marshal functions — published
 # and subscribed over the rmw serialized seam (still fully route-a through
 # rcl/rmw). Covers every SwiftROS2Messages type whose package typesupport is
-# bundled in CRos2Jazzy.xcframework, including the three Conduit-critical
+# bundled in CRos2.xcframework, including the three Conduit-critical
 # packages (tf2_msgs, audio_common_msgs, point_cloud_interfaces) added to
 # PKGS_UP_TO in Scripts/build-ros2-xcframework.sh. Skipped: action_msgs
 # GoalInfo/GoalStatus and unique_identifier_msgs/UUID (nested-only — no

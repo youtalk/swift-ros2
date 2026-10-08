@@ -3,7 +3,7 @@
     import XCTest
 
     /// Registry-expansion guard: every SwiftROS2Messages type whose package
-    /// typesupport is bundled in CRos2Jazzy.xcframework must resolve through
+    /// typesupport is bundled in CRos2.xcframework must resolve through
     /// `crcl_marshal_resolve_typesupport`. A resolution miss silently drops
     /// the type to the route-b raw-CDR fallback, so this is the gate that
     /// keeps publish/subscribe fully route-a (rcl + rmw) for the whole set.

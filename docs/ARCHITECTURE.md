@@ -47,7 +47,7 @@ services, actions, parameters — is shared.
      │    └── SwiftROS2Wire   — Zenoh / DDS wire codecs, ROS2Distro (no deps)
      ├── SwiftROS2Zenoh ── CZenohBridge ── CZenohPico    (zenoh-pico FFI, internal)
      ├── SwiftROS2DDS   ── CDDSBridge   ── CCycloneDDS   (CycloneDDS FFI, internal)
-     └── SwiftROS2RCL   ── CRclBridge   ── CRos2Jazzy    (rcl/rmw FFI; Apple default, Linux opt-in)
+     └── SwiftROS2RCL   ── CRclBridge   ── CRos2    (rcl/rmw FFI; Apple default, Linux opt-in)
 
 Tooling targets outside the runtime graph:
 
@@ -59,7 +59,7 @@ Tooling targets outside the runtime graph:
   product).
 
 `CZenohBridge`, `CDDSBridge`, and `CRclBridge` are swift-ros2–authored C shims
-around the vendor APIs. `CZenohPico`, `CCycloneDDS`, and `CRos2Jazzy` are
+around the vendor APIs. `CZenohPico`, `CCycloneDDS`, and `CRos2` are
 link-only C targets — never `import`ed from Swift (a CI lint enforces this);
 Swift reaches them through the bridge modules.
 
@@ -88,19 +88,19 @@ On by default on Apple (since 1.4.0; `SWIFT_ROS2_DISABLE_RCL=1` opts out)
 and opt-in on Linux (`SWIFT_ROS2_ENABLE_RCL=1`). The rmw selection differs per
 platform:
 
-- **Apple** — `CRos2Jazzy` is a URL-based `binaryTarget`: the prebuilt
+- **Apple** — `CRos2` is a URL-based `binaryTarget`: the prebuilt
   xcframework is a release artifact (built by `Scripts/build-ros2-xcframework.sh`
   in `release-xcframework.yml`) resolved from the pinned release URL +
   checksum. `SWIFT_ROS2_RCL_LOCAL=1` resolves it from a local `build/ros2*/`
   instead (CI and ROS 2 cross-build iteration). The rmw is **baked per build
   variant**, selected by `SWIFT_ROS2_RCL_RMW`: `cyclonedds` (default) →
-  `CRos2Jazzy.xcframework`, `zenoh` → `CRos2JazzyZenoh.xcframework` (no
+  `CRos2.xcframework`, `zenoh` → `CRos2Zenoh.xcframework` (no
   visionOS slice). The zenoh variant bundles zenoh-c, which collides with
   zenoh-pico's C symbols, so that variant carves the zenoh-pico wire family
   out of the build graph and `.zenoh` configs are served by rcl +
   `rmw_zenoh_cpp` instead; `.rcl` / `.rclUnicast` throw there, since they
   target `rmw_cyclonedds_cpp`.
-- **Linux** — `CRos2Jazzy` is a `systemLibrary` over the system ROS 2 install,
+- **Linux** — `CRos2` is a `systemLibrary` over the system ROS 2 install,
   located through `ROS2_RCL_PREFIX` (colon-separated ament prefix list,
   defaulting to `/opt/ros/${ROS_DISTRO:-jazzy}`). rcl has no pkg-config, so
   the manifest injects `-I`/`-L`/`-l` flags directly. The rmw is selected **at

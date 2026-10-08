@@ -1,6 +1,6 @@
 //
 // rcl_bridge.h
-// C-FFI bridge for the real rcl + rmw_cyclonedds_cpp stack (CRos2Jazzy).
+// C-FFI bridge for the real rcl + rmw_cyclonedds_cpp stack (CRos2).
 // Types use the "crcl_" prefix to avoid colliding with rcl types.
 //
 #ifndef CRCL_BRIDGE_H

@@ -1,4 +1,4 @@
-module CRos2Jazzy [system] {
+module CRos2 [system] {
     header "shim.h"
     export *
 }

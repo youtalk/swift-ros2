@@ -181,6 +181,16 @@ patch_sources() {
       }
     ' "$rcl_cmake" > "$tmp2" && mv "$tmp2" "$rcl_cmake"
   fi
+
+  # Lyrical rcutils (7.1.x) initializes a C11 atomic with a braced scalar
+  # initializer, which Apple clang 21 (Xcode 27) rejects as "illegal
+  # initializer type 'atomic_int_least64_t'" in every -std mode. Upstream
+  # rolling already switched non-MSVC builds to a plain scalar initializer;
+  # apply the same one-line fix. Idempotent.
+  local fi_c="$SRC/ros2/rcutils/src/testing/fault_injection.c"
+  if [[ -f "$fi_c" ]] && grep -q '^static atomic_int_least64_t g_rcutils_fault_injection_count = {-1};$' "$fi_c"; then
+    sed -i '' 's/^static atomic_int_least64_t g_rcutils_fault_injection_count = {-1};$/static atomic_int_least64_t g_rcutils_fault_injection_count = -1;  \/\* SWIFT_ROS2_ATOMIC_INIT \*\//' "$fi_c"
+  fi
 }
 
 mkdir -p "$BUILD"

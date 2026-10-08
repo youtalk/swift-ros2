@@ -57,7 +57,7 @@ Declare typed parameters (`node.declareParameter` + on-set veto callbacks; inter
 
 Two backends sit behind one backend-agnostic umbrella API:
 
-- **Native RCL backend** — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. **Apple:** prebuilt `CRos2` / `CRos2Zenoh` xcframeworks downloaded from the release URL, one rmw baked per build variant; in the build graph **by default since 1.4.0** (opt out with `SWIFT_ROS2_DISABLE_RCL=1`). **Linux:** opt-in with `SWIFT_ROS2_ENABLE_RCL=1`; links a system ROS 2 install via `ROS2_RCL_PREFIX` and picks the rmw at runtime from the transport type.
+- **Native RCL backend** — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. **Apple:** prebuilt `CRos2` / `CRos2Zenoh` xcframeworks downloaded from the release URL (the 2.1.0 release assets keep the old names `CRos2Jazzy` / `CRos2JazzyZenoh` until the next pin), one rmw baked per build variant; in the build graph **by default since 1.4.0** (opt out with `SWIFT_ROS2_DISABLE_RCL=1`). **Linux:** opt-in with `SWIFT_ROS2_ENABLE_RCL=1`; links a system ROS 2 install via `ROS2_RCL_PREFIX` and picks the rmw at runtime from the transport type.
 - **Internal wire fallback** (pure-Swift over `zenoh-pico` / CycloneDDS, no `rcl`) — the original all-platforms backend, an implementation detail since 2.0.0, and the golden-byte oracle for the CDR / wire codecs.
 
 **2.0.0 removes the wire clients from the public API; the wire runtime remains the internal fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.** `ZenohClient` / `DDSClient` and the `SwiftROS2Zenoh` / `SwiftROS2DDS` products are gone — use `ROS2Context`.
@@ -131,7 +131,7 @@ targets: [
 ]
 ```
 
-`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. Since 1.4.0 that includes the RCL xcframework (`CRos2`); set `SWIFT_ROS2_DISABLE_RCL=1` in the environment that resolves packages (for Xcode, the environment Xcode itself runs in) to keep a wire-only graph. `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin lags one PR behind each tag — pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
+`swift build` downloads the pinned xcframeworks in seconds — no CMake, no local bootstrap. Since 1.4.0 that includes the RCL xcframework (`CRos2`, published as `CRos2Jazzy` in the 2.1.0 release); set `SWIFT_ROS2_DISABLE_RCL=1` in the environment that resolves packages (for Xcode, the environment Xcode itself runs in) to keep a wire-only graph. `import SwiftROS2` exposes `ROS2Context` / `ROS2Node` / `ROS2Publisher` / `ROS2Subscription` and transitively links the backends; `SwiftROS2` is the product to depend on. (The URL pin lags one PR behind each tag — pinning `from: "X.Y.Z"` resolves to the X.Y.Z commit; tracking `main` always picks up the latest pinned binaries.)
 
 ### Linux
 

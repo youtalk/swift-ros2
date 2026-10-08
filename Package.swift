@@ -83,7 +83,8 @@ let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir !=
 let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.1.0"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
-// CRos2(.Zenoh) xcframework resolves from the release URL, selected by
+// CRos2(.Zenoh) xcframework (still published as CRos2Jazzy(.Zenoh) in the
+// 2.1.0 release) resolves from the release URL, selected by
 // `rclRmwVariant` below (the MZ2 "Replace on Apple" decision: a plain Apple
 // `swift build` gets the RCL backend without any env opt-in).
 // SWIFT_ROS2_DISABLE_RCL=1 opts an Apple build back out (wire-only graph, no
@@ -107,10 +108,11 @@ let enableRcl =
 let useLocalRclXCFramework = Context.environment["SWIFT_ROS2_RCL_LOCAL"] == "1"
 
 // SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the RCL binary
-// target: "cyclonedds" (default) -> CRos2.xcframework.zip, or
-// "zenoh" -> CRos2Zenoh.xcframework.zip (rmw_zenoh_cpp + fastrtps
-// typesupport), both resolved from the release URL — or from build/ros2*/
-// under SWIFT_ROS2_RCL_LOCAL=1 (build with
+// target: "cyclonedds" (default) -> CRos2.xcframework, or
+// "zenoh" -> CRos2Zenoh.xcframework (rmw_zenoh_cpp + fastrtps
+// typesupport). They resolve from the release URL as the 2.1.0 zips
+// CRos2Jazzy.xcframework.zip / CRos2JazzyZenoh.xcframework.zip — or from
+// build/ros2*/ under SWIFT_ROS2_RCL_LOCAL=1 (build with
 // `RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`). Both variants
 // expose the identical rcl C API, so every Swift target is variant-agnostic.
 let rclRmwVariant: String = {

@@ -91,15 +91,16 @@ platform:
 - **Apple** — `CRos2` is a URL-based `binaryTarget`: the prebuilt
   xcframework is a release artifact (built by `Scripts/build-ros2-xcframework.sh`
   in `release-xcframework.yml`) resolved from the pinned release URL +
-  checksum. `SWIFT_ROS2_RCL_LOCAL=1` resolves it from a local `build/ros2*/`
-  instead (CI and ROS 2 cross-build iteration). The rmw is **baked per build
-  variant**, selected by `SWIFT_ROS2_RCL_RMW`: `cyclonedds` (default) →
-  `CRos2.xcframework`, `zenoh` → `CRos2Zenoh.xcframework` (no
-  visionOS slice). The zenoh variant bundles zenoh-c, which collides with
-  zenoh-pico's C symbols, so that variant carves the zenoh-pico wire family
-  out of the build graph and `.zenoh` configs are served by rcl +
-  `rmw_zenoh_cpp` instead; `.rcl` / `.rclUnicast` throw there, since they
-  target `rmw_cyclonedds_cpp`.
+  checksum. The 2.1.0 release assets keep the old names `CRos2Jazzy` /
+  `CRos2JazzyZenoh` until the next pin. `SWIFT_ROS2_RCL_LOCAL=1` resolves it
+  from a local `build/ros2*/` instead (CI and ROS 2 cross-build iteration).
+  The rmw is **baked per build variant**, selected by `SWIFT_ROS2_RCL_RMW`:
+  `cyclonedds` (default) → `CRos2.xcframework`, `zenoh` →
+  `CRos2Zenoh.xcframework` (no visionOS slice). The zenoh variant bundles
+  zenoh-c, which collides with zenoh-pico's C symbols, so that variant carves
+  the zenoh-pico wire family out of the build graph and `.zenoh` configs are
+  served by rcl + `rmw_zenoh_cpp` instead; `.rcl` / `.rclUnicast` throw there,
+  since they target `rmw_cyclonedds_cpp`.
 - **Linux** — `CRos2` is a `systemLibrary` over the system ROS 2 install,
   located through `ROS2_RCL_PREFIX` (colon-separated ament prefix list,
   defaulting to `/opt/ros/${ROS_DISTRO:-jazzy}`). rcl has no pkg-config, so

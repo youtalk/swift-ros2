@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-08
+
 ### Added
 
 - **ROS 2 Lyrical Luth.** `ROS2Distro.lyrical` joins the modern wire group (same key expressions and type hashes as Jazzy). **Source-level note:** exhaustive `switch` statements over `ROS2Distro` need a `.lyrical` case or a `default` — new distributions ship in minors by policy (see `MIGRATION.md` "2.0 → 2.1").

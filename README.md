@@ -223,7 +223,8 @@ Each release has a [GitHub release](https://github.com/youtalk/swift-ros2/releas
 
 | Tag        | Date       | Headline                                                                                              |
 |------------|------------|-------------------------------------------------------------------------------------------------------|
-| **2.0.0**  | 2026-09-22 | **Wire clients leave the public API.** `ZenohClient` / `DDSClient` and their products removed; DDS service/action interop with `rmw_cyclonedds_cpp` fixed (#115); `ActionGoalHandle.result()` without a timeout no longer traps (#190). Wire runtime stays as the internal fallback. |
+| **2.1.0**  | 2026-10-08 | **ROS 2 Lyrical Luth.** `ROS2Distro.lyrical` joins the modern wire group (same key expressions and type hashes as Jazzy); the hash oracle gains a required Lyrical lane and a weekly run. New distributions ship in minors by policy. |
+| 2.0.0      | 2026-09-22 | **Wire clients leave the public API.** `ZenohClient` / `DDSClient` and their products removed; DDS service/action interop with `rmw_cyclonedds_cpp` fixed (#115); `ActionGoalHandle.result()` without a timeout no longer traps (#190). Wire runtime stays as the internal fallback. |
 | 1.4.0      | 2026-09-21 | **Bridge to 2.0.** Umbrella API on Android / DDS-less Windows; first tag carrying RCL-default-on + the wire-client deprecation; fixes #116, #162, #176. |
 | 1.3.0      | 2026-07-13 | **RCL everywhere it can reach.** Native `rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp` backend, opt-in via `SWIFT_ROS2_ENABLE_RCL=1`, on Apple (prebuilt xcframeworks) and Linux (system ROS 2 install). Parity matrix across latency / correctness / resource axes for both rmws. Additive except the new `TransportType.rcl` case, which breaks exhaustive `switch`es (#119–#172). |
 | 1.2.0      | 2026-06-06 | **Source-timestamp publish overload** — additive `publish(_:timestamp:sequenceNumber:)` (#117). |

@@ -621,6 +621,13 @@ assemble_zenoh_ament_prefix() {
   mkdir -p "$ap/share/ament_index/resource_index/packages" \
            "$ap/share/rmw_zenoh_cpp/config"
   touch "$ap/share/ament_index/resource_index/packages/rmw_zenoh_cpp"
+  # Lyrical: every rmw_zenoh context creates a BufferBackendRegistry, whose
+  # pluginlib::ClassLoader("rosidl_buffer_backend", ...) first resolves that
+  # package through the ament index. Without the marker it throws (caught;
+  # logs an ERROR on every rmw init). With the marker and no
+  # rosidl_buffer_backend__pluginlib__plugin resources, it finds zero plugin
+  # classes, so no backend library is ever dlopened.
+  touch "$ap/share/ament_index/resource_index/packages/rosidl_buffer_backend"
   cp "$SRC/ros2/rmw_zenoh/rmw_zenoh_cpp/config/"*.json5 \
      "$ap/share/rmw_zenoh_cpp/config/"
 }

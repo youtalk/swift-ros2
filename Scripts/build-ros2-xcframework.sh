@@ -219,12 +219,18 @@ patch_sources() {
   # (sequence __fini -> rosidl_buffer_uint8_destroy) and every generated
   # introspection typesupport with a uint8[] field
   # (rosidl_buffer_uint8_throw_if_not_cpu) now call into. Its CMakeLists
-  # hard-codes add_library(... SHARED), so it installs a .dylib that
-  # merge_slice (static archives only) skips, leaving both symbols undefined
-  # at app link time. Let it follow BUILD_SHARED_LIBS (OFF here). Idempotent.
+  # hard-codes add_library(... SHARED), so the slice build installs a .dylib
+  # that merge_slice (static archives only) skips, leaving both symbols
+  # undefined at app link time. Build it static when BUILD_SHARED_LIBS is
+  # explicitly OFF (the slice builds); keep SHARED otherwise — the host tools
+  # build links it into the shared, C-linked librosidl_runtime_c, where a
+  # static C++ archive would leave the libc++ symbols unresolved. Idempotent.
   local rb_cmake="$SRC/ros2/rosidl/rosidl_buffer/CMakeLists.txt"
-  if [[ -f "$rb_cmake" ]] && grep -q '^add_library(${PROJECT_NAME} SHARED$' "$rb_cmake"; then
-    sed -i '' 's/^add_library(${PROJECT_NAME} SHARED$/add_library(${PROJECT_NAME}  # SWIFT_ROS2_STATIC_ROSIDL_BUFFER/' "$rb_cmake"
+  if [[ -f "$rb_cmake" ]] && ! grep -q "SWIFT_ROS2_STATIC_ROSIDL_BUFFER" "$rb_cmake" \
+      && grep -q '^add_library(${PROJECT_NAME} SHARED$' "$rb_cmake"; then
+    perl -0pi -e '
+      s{\nadd_library\(\$\{PROJECT_NAME\} SHARED\n}{\n# SWIFT_ROS2_STATIC_ROSIDL_BUFFER\nif(DEFINED BUILD_SHARED_LIBS AND NOT BUILD_SHARED_LIBS)\n  set(_swift_ros2_rosidl_buffer_type STATIC)\nelse()\n  set(_swift_ros2_rosidl_buffer_type SHARED)\nendif()\nadd_library(\$\{PROJECT_NAME\} \$\{_swift_ros2_rosidl_buffer_type\}\n};
+    ' "$rb_cmake"
   fi
 }
 

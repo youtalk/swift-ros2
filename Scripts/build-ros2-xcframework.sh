@@ -128,6 +128,15 @@ ignore_unbuildable() {
       if [[ -d "$SRC/$rel" ]]; then touch "$SRC/$rel/COLCON_IGNORE"; fi
     done
   fi
+  if [[ "$RMW_VARIANT" == cyclonedds ]]; then
+    # Lyrical's ros2.repos carries ros2/rmw_zenoh (Jazzy's did not), and
+    # rmw_implementation build-depends on rmw_zenoh_cpp, which drags
+    # zenoh_cpp_vendor (cargo) and rosidl_buffer_backend_registry (pluginlib)
+    # into the closure. The cyclonedds variant carries no Zenoh — drop it.
+    for rel in ros2/rmw_zenoh; do
+      if [[ -d "$SRC/$rel" ]]; then touch "$SRC/$rel/COLCON_IGNORE"; fi
+    done
+  fi
 }
 
 # CycloneDDS's POSIX ifaddrs backend includes <net/if_media.h> on Apple to

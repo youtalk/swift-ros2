@@ -191,6 +191,21 @@ patch_sources() {
   if [[ -f "$fi_c" ]] && grep -q '^static atomic_int_least64_t g_rcutils_fault_injection_count = {-1};$' "$fi_c"; then
     sed -i '' 's/^static atomic_int_least64_t g_rcutils_fault_injection_count = {-1};$/static atomic_int_least64_t g_rcutils_fault_injection_count = -1;  \/\* SWIFT_ROS2_ATOMIC_INIT \*\//' "$fi_c"
   fi
+
+  # Lyrical rcl 10.4.4 (rcl_yaml_param_parser) makes strtod locale-independent
+  # with C11 call_once from <threads.h>, which Apple SDKs do not ship ("fatal
+  # error: 'threads.h' file not found"). The rcl `lyrical` branch (post-10.4.4)
+  # and rolling already carry an Apple branch that maps call_once onto
+  # pthread_once and pulls newlocale/uselocale from <xlocale.h>; apply the
+  # same change. Idempotent.
+  local yaml_c="$SRC/ros2/rcl/rcl_yaml_param_parser/src/parse.c"
+  if [[ -f "$yaml_c" ]] && grep -q '^#include <threads.h>$' "$yaml_c" \
+      && ! grep -q "SWIFT_ROS2_APPLE_CALL_ONCE" "$yaml_c"; then
+    perl -0pi -e '
+      s{#include <locale.h>\n}{#include <locale.h>\n#ifdef __APPLE__  /* SWIFT_ROS2_APPLE_CALL_ONCE */\n#include <xlocale.h>\n#endif\n};
+      s{#include <windows.h>\n#else\n#include <threads.h>\n}{#include <windows.h>\n#elif defined(__APPLE__)\n#include <pthread.h>\ntypedef pthread_once_t once_flag;\n#define ONCE_FLAG_INIT PTHREAD_ONCE_INIT\n#define call_once(flag, func) pthread_once((flag), (func))\n#else\n#include <threads.h>\n};
+    ' "$yaml_c"
+  fi
 }
 
 mkdir -p "$BUILD"

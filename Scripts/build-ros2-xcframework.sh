@@ -232,6 +232,7 @@ patch_sources() {
       s{\nadd_library\(\$\{PROJECT_NAME\} SHARED\n}{\n# SWIFT_ROS2_STATIC_ROSIDL_BUFFER\nif(DEFINED BUILD_SHARED_LIBS AND NOT BUILD_SHARED_LIBS)\n  set(_swift_ros2_rosidl_buffer_type STATIC)\nelse()\n  set(_swift_ros2_rosidl_buffer_type SHARED)\nendif()\nadd_library(\$\{PROJECT_NAME\} \$\{_swift_ros2_rosidl_buffer_type\}\n};
     ' "$rb_cmake"
   fi
+
 }
 
 mkdir -p "$BUILD"
@@ -321,26 +322,40 @@ import_extra_msg_sources() {
     lyrical "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
 }
 
-# rmw_zenoh jazzy pin (0.2.9 line) — the commit the no-SHM patch set under
-# Scripts/ros2/patches/rmw_zenoh was authored against.
-RMW_ZENOH_PIN=fe3553c7c127273280617d3d778859f22c4c3eb7
+# rmw_zenoh lyrical pin (rmw_zenoh_cpp 0.10.7, the `lyrical` branch tip) — the
+# commit the no-SHM patch set under Scripts/ros2/patches/rmw_zenoh is rebased
+# onto. Lyrical's ros2.repos itself pins rmw_zenoh 0.10.5.
+RMW_ZENOH_PIN=2dfb794617d033021c6dddeab0238d1f01689db5
 
 import_zenoh_sources() {
   [[ "$RMW_VARIANT" == zenoh ]] || return 0
   local rz="$SRC/ros2/rmw_zenoh"
-  [[ -d "$rz" ]] && return 0
-  # rmw_zenoh is not in the jazzy ros2.repos set — clone + pin it explicitly.
-  git clone --branch jazzy --single-branch https://github.com/ros2/rmw_zenoh.git "$rz"
-  git -C "$rz" checkout "$RMW_ZENOH_PIN"
-  # zenoh's shared-memory subsystem hard-fails to compile for target_os=ios
-  # and rmw_zenoh_cpp has no no-SHM build mode; the patch set guards every
-  # SHM use behind Z_FEATURE_SHARED_MEMORY (absent in our zenoh-c build),
-  # makes the library static, and skips the rmw_zenohd executable when
-  # cross-compiling.
-  local p
-  for p in "$ROOT/Scripts/ros2/patches/rmw_zenoh"/*.patch; do
-    git -C "$rz" apply "$p"
-  done
+  # Lyrical's ros2.repos carries ros2/rmw_zenoh (0.10.5), so the vcs import
+  # already created $rz. Replace that copy with the pinned clone exactly once
+  # and apply the patch set to it. The marker records the pin plus a hash of
+  # the patch set and is written only after every patch applied, so a re-run
+  # neither re-applies the patches nor skips them, an interrupted run starts
+  # over from a fresh clone, and a changed pin or patch set re-clones.
+  local marker="$rz/.swift-ros2-pinned"
+  local want
+  want="$RMW_ZENOH_PIN $(cat "$ROOT/Scripts/ros2/patches/rmw_zenoh"/*.patch | shasum -a 256 | cut -d' ' -f1)"
+  if [[ ! -f "$marker" || "$(cat "$marker")" != "$want" ]]; then
+    rm -rf "$rz"
+    git clone --branch lyrical --single-branch https://github.com/ros2/rmw_zenoh.git "$rz"
+    git -C "$rz" checkout "$RMW_ZENOH_PIN"
+    # zenoh's shared-memory subsystem hard-fails to compile for target_os=ios
+    # and rmw_zenoh_cpp has no no-SHM build mode; the patch set guards every
+    # SHM use behind Z_FEATURE_SHARED_MEMORY (absent in our zenoh-c build),
+    # makes the library static, and skips the host-only targets (rmw_zenohd,
+    # the rmw_zenoh_cpp_test_fixture plugin) when cross-compiling.
+    local p
+    for p in "$ROOT/Scripts/ros2/patches/rmw_zenoh"/*.patch; do
+      git -C "$rz" apply "$p"
+    done
+    echo "$want" > "$marker"
+  fi
+  [[ "$(git -C "$rz" rev-parse HEAD)" == "$RMW_ZENOH_PIN" ]] || {
+    echo "rmw_zenoh: HEAD is not RMW_ZENOH_PIN ($RMW_ZENOH_PIN)" >&2; return 1; }
   # zenoh_cpp_vendor (an ament_vendor cargo wrapper) is replaced by the
   # prebuilt per-slice zenoh-c prefix (build_zenohc). COLCON_IGNORE makes
   # colcon treat it as external, so rmw_zenoh_cpp's
@@ -375,10 +390,11 @@ slice_platform() { case "$1" in
   xrsimulator) echo "SIMULATOR_VISIONOS $DEPLOY_VISIONOS" ;;
   *) echo "unknown slice: $1" >&2; return 1 ;; esac; }
 
-# zenoh-c / zenoh-cpp pins from rmw_zenoh jazzy's zenoh_cpp_vendor
-# (zenoh-c 1.8.0 + fixes; zenoh-cpp is the header-only C++ API).
-ZENOHC_PIN=05bd370343b5161ca9269649b9a914c9c2dc4170
-ZENOHCPP_PIN=af381b420cc8837ac7da42c9984594ef8f110e90
+# zenoh-c / zenoh-cpp pins from rmw_zenoh lyrical's zenoh_cpp_vendor
+# (zenoh-c 1.10.1 + fixes; zenoh-cpp is the header-only C++ API). The vendor
+# pins commits, not tags.
+ZENOHC_PIN=07b0d432121933cb368528153df000463292635d
+ZENOHCPP_PIN=1e343e61b92a73af3bc247c178214bcc1042c34c
 
 zenohc_triple() { case "$1" in
   maccatalyst) echo aarch64-apple-ios-macabi ;;
@@ -413,7 +429,7 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
     git -C "$zcpp" checkout "$ZENOHCPP_PIN"
   fi
   # zenoh-c pins its Rust toolchain via rust-toolchain.toml (currently
-  # 1.93.0); running `rustup target add` inside the checkout installs the
+  # 1.97.1; rustup installs it on first use); running `rustup target add` inside the checkout installs the
   # std for THAT toolchain, not the default one (E0463 otherwise).
   ( cd "$zc" && rustup target add "$triple" )
   ( cd "$zc" && cargo build --release -j 4 --target "$triple" \

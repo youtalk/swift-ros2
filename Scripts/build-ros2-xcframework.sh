@@ -156,7 +156,8 @@ patch_sources() {
   # Each patch below carries its own existence + already-applied guard so a
   # previously-patched file never short-circuits the later patches.
   local f="$SRC/eclipse-cyclonedds/cyclonedds/src/ddsrt/src/ifaddrs/posix/ifaddrs.c"
-  if [[ -f "$f" ]] && ! grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f"; then
+  # Lyrical's cyclonedds (11.x) already guards that branch with !TARGET_OS_IPHONE, so the stub below would redefine guess_iftype and hide <net/if_dl.h> (LLADDR) on iOS; skip it there.
+  if [[ -f "$f" ]] && ! grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f" && ! grep -q "TARGET_OS_IPHONE" "$f"; then
     local tmp; tmp="$(mktemp)"
     awk '
       /^#elif defined\(__APPLE__\) \|\| defined\(__QNXNTO__\)/ && !done {

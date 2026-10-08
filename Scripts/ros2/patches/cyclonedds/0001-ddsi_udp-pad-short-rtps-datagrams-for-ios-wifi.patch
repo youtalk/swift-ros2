@@ -1,0 +1,58 @@
+diff --git a/src/core/ddsi/src/ddsi_udp.c b/src/core/ddsi/src/ddsi_udp.c
+index 7db3f948..7bc67260 100644
+--- a/src/core/ddsi/src/ddsi_udp.c
++++ b/src/core/ddsi/src/ddsi_udp.c
+@@ -279,6 +279,53 @@ static dds_return_t ddsi_udp_conn_write (struct ddsi_tran_conn * conn_cmn, const
+   };
+   (void) flags; // in case ! DDSRT_MSGHDR_FLAGS
+ 
++  // SWIFT_ROS2_IOS_UDP_PAD — youtalk/cyclonedds 7290b22e, ported to 11.0.1.
++  // iOS Wi-Fi truncates short UDP datagrams (64 -> 56 bytes observed), which
++  // breaks the RTPS HEARTBEAT/ACKNACK exchange of reliable SEDP. Linearize a
++  // datagram shorter than 128 bytes, zero-pad it to 128, and set the last
++  // submessage's octetsToNextHeader to 0 so the receiver reads the padding as
++  // part of that submessage. Trailing zeros after PID_SENTINEL are harmless in
++  // the PL_CDR payloads of SPDP/SEDP.
++#define SWIFT_ROS2_UDP_PAD_THRESHOLD 128
++#define SWIFT_ROS2_RTPS_HEADER_SIZE 20
++  uint8_t padbuf[SWIFT_ROS2_UDP_PAD_THRESHOLD];
++  ddsrt_iovec_t pad_iov;
++  {
++    size_t total = 0;
++    for (size_t i = 0; i < msgfrags->niov; i++)
++      total += msgfrags->iov[i].iov_len;
++    if (total > SWIFT_ROS2_RTPS_HEADER_SIZE + DDSI_RTPS_SUBMESSAGE_HEADER_SIZE && total < SWIFT_ROS2_UDP_PAD_THRESHOLD)
++    {
++      size_t off = 0;
++      for (size_t i = 0; i < msgfrags->niov; i++)
++      {
++        memcpy (padbuf + off, msgfrags->iov[i].iov_base, msgfrags->iov[i].iov_len);
++        off += msgfrags->iov[i].iov_len;
++      }
++      size_t last_sm = SWIFT_ROS2_RTPS_HEADER_SIZE;
++      size_t pos = SWIFT_ROS2_RTPS_HEADER_SIZE;
++      while (pos + DDSI_RTPS_SUBMESSAGE_HEADER_SIZE <= off)
++      {
++        last_sm = pos;
++        uint16_t otn;
++        memcpy (&otn, &padbuf[pos + 2], sizeof (otn));
++        if (otn == 0)
++          break;
++        size_t next = pos + DDSI_RTPS_SUBMESSAGE_HEADER_SIZE + otn;
++        if (next >= off)
++          break;
++        pos = next;
++      }
++      padbuf[last_sm + 2] = 0;
++      padbuf[last_sm + 3] = 0;
++      memset (&padbuf[off], 0, SWIFT_ROS2_UDP_PAD_THRESHOLD - off);
++      pad_iov.iov_base = padbuf;
++      pad_iov.iov_len = SWIFT_ROS2_UDP_PAD_THRESHOLD;
++      msg.msg_iov = &pad_iov;
++      msg.msg_iovlen = 1;
++    }
++  }
++
+ #if MSG_NOSIGNAL && !LWIP_SOCKET
+   sendflags |= MSG_NOSIGNAL;
+ #endif

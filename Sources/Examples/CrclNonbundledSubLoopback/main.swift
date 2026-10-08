@@ -7,8 +7,11 @@
 // CycloneDDS participant on the rcl context's domain.
 //
 // The sender is a SECOND, pure-Swift `.dds` (wire) AudioData publisher on the
-// SAME domain. Both standalone-CCycloneDDS participants interoperate in-process
-// while rcl's CycloneDDS coexists — the runtime co-existence this gate proves.
+// SAME domain. Both CDDSBridge participants (linked against the standalone
+// CCycloneDDS, or, in a route-(B) graph, against the CycloneDDS inside the RCL
+// xcframework — the same one rmw_cyclonedds_cpp runs on) interoperate
+// in-process with the rcl participants — the runtime co-existence this gate
+// proves.
 //
 // On success prints "crcl_nonbundled_sub_loopback OK" + flush, then exits 0
 // before teardown (which can block on headless runners — ci-rcl bounds the run

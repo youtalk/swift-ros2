@@ -18,6 +18,7 @@
 // Only compile CycloneDDS implementation when available
 #ifdef DDS_AVAILABLE
 #include <dds/dds.h>
+#include <dds/version.h>
 #include <dds/ddsc/dds_opcodes.h>
 #include "raw_cdr_sertype.h"
 #endif
@@ -57,8 +58,9 @@ void dds_bridge_clear_error(void) {
 
 const char* dds_bridge_get_version(void) {
 #ifdef DDS_AVAILABLE
-    // CycloneDDS version is defined at build time
-    return "0.10.5";  // Matches deps/cyclonedds tag
+    // The version of the CycloneDDS this bridge was compiled and linked against:
+    // the wire CCycloneDDS fork, or, under route (B), the one inside CRos2.
+    return DDS_VERSION;
 #else
     return "unavailable";
 #endif

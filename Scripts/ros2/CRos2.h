@@ -7,9 +7,11 @@
 // rcutils/stdatomic_helper/win32/stdatomic.h -> <Windows.h>, fastcdr C++
 // headers) that do not compile in a macOS/iOS C module build; an umbrella
 // *directory* would try to compile all of them, and an umbrella *header*
-// would additionally associate sibling binary targets' headers (notably
-// CCycloneDDS's dds/ tree, flattened into the shared build-products include
-// dir) with this module. The rcl C API reachable from <rcl/rcl.h> is
+// would additionally associate sibling headers (notably the dds/ tree,
+// flattened into the shared build-products include dir) with this module. In
+// the cyclonedds variant the xcframework ships dds/ (textual, not part of the
+// module) and CDDSBridge compiles against it under route (B); elsewhere
+// CCycloneDDS provides it. The rcl C API reachable from <rcl/rcl.h> is
 // self-contained C, so this stays clean.
 //
 // Extend this list as the native-rcl backend grows (M1+): add the per-message

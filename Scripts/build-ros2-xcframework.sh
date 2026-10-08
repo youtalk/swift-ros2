@@ -181,6 +181,17 @@ ignore_unbuildable() {
 patch_sources() {
   # Each patch below carries its own existence + already-applied guard so a
   # previously-patched file never short-circuits the later patches.
+  # Route (B): the wire .dds transport links this CycloneDDS too, so it carries
+  # the iOS Wi-Fi UDP padding of the wire fork (youtalk/cyclonedds 7290b22e).
+  # The reverse check makes it idempotent; an anchor that moved makes
+  # `git apply` fail, which stops the build (set -e).
+  local cdds_src="$SRC/eclipse-cyclonedds/cyclonedds"
+  local pad_patch="$ROOT/Scripts/ros2/patches/cyclonedds/0001-ddsi_udp-pad-short-rtps-datagrams-for-ios-wifi.patch"
+  if [[ "$RMW_VARIANT" == cyclonedds && -d "$cdds_src" ]] \
+      && ! git -C "$cdds_src" apply --reverse --check "$pad_patch" 2>/dev/null; then
+    git -C "$cdds_src" apply "$pad_patch"
+  fi
+
   local f="$SRC/eclipse-cyclonedds/cyclonedds/src/ddsrt/src/ifaddrs/posix/ifaddrs.c"
   # Lyrical's cyclonedds (11.x) already guards that branch with !TARGET_OS_IPHONE, so the stub below would redefine guess_iftype and hide <net/if_dl.h> (LLADDR) on iOS; skip it there.
   if [[ -f "$f" ]] && ! grep -q "SWIFT_ROS2_IOS_IFTYPE_STUB" "$f" && ! grep -q "TARGET_OS_IPHONE" "$f"; then
@@ -631,13 +642,13 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
          "$out/include/rosidl_typesupport_fastrtps_c" \
          "$out/include/rosidl_typesupport_fastrtps_cpp"
   find "$out/include" -name '*rosidl_typesupport_fastrtps*' -delete
-  # CycloneDDS internal/tooling headers (dds/, ddsc/, idl/, idlc/) are not part
-  # of the rcl C API — rmw_cyclonedds installs no public header and nothing
-  # else includes <dds/...>; CycloneDDS is consumed only at link time (libddsc
-  # in librclros.a). Their internal headers reference iceoryx (the disabled SHM
-  # transport) and don't self-compile under the umbrella, so drop them.
-  rm -rf "$out/include/dds" "$out/include/ddsc" \
-         "$out/include/idl" "$out/include/idlc"
+  # CycloneDDS headers. Route (B): the cyclonedds variant keeps dds/, because
+  # CDDSBridge (the wire .dds bridge) compiles against the CycloneDDS inside
+  # librclros.a. The module map lists only CRos2.h, so dds/ stays textual and
+  # compiles only where CDDSBridge includes it. ddsc/, idl/ and idlc/ are
+  # tooling headers nothing consumes.
+  if [[ "$RMW_VARIANT" != cyclonedds ]]; then rm -rf "$out/include/dds"; fi
+  rm -rf "$out/include/ddsc" "$out/include/idl" "$out/include/idlc"
   find "$out/include" -type d -empty -delete
 }
 

@@ -125,6 +125,24 @@ jobs:
           path: build/ros2/CRos2.xcframework
           key: ros2-xcfw-cyclonedds-maccatalyst-macosx-xcode26.4.1-${{ hashFiles('Scripts/build-ros2-xcframework.sh', 'Scripts/ros2/**') }}
 
+      # Route (B): the RCL-enabled cyclonedds graph must link exactly one
+      # CycloneDDS — CDDSBridge depends on the RCL xcframework and CCycloneDDS
+      # is not declared. The wire-only graph keeps CCycloneDDS.
+      - name: Route (B) dependency check
+        run: |
+          swift package describe --type json > describe-rcl.json
+          SWIFT_ROS2_DISABLE_RCL=1 swift package describe --type json > describe-wire.json
+          python3 - <<'EOF'
+          import json
+          def targets(path):
+              return {t["name"]: t for t in json.load(open(path))["targets"]}
+          rcl, wire = targets("describe-rcl.json"), targets("describe-wire.json")
+          assert rcl["CDDSBridge"].get("target_dependencies") == ["CRos2"], rcl["CDDSBridge"]
+          assert "CCycloneDDS" not in rcl, "CCycloneDDS declared in the cyclonedds RCL graph"
+          assert wire["CDDSBridge"].get("target_dependencies") == ["CCycloneDDS"], wire["CDDSBridge"]
+          print("route (B) OK")
+          EOF
+
       # Regression guard for the umbrella build path
       # (SwiftROS2 -> SwiftROS2DDS -> CDDSBridge). This is the path the
       # CRos2 modulemap interaction broke on enableRcl Catalyst; building
@@ -302,8 +320,8 @@ jobs:
       # participant and the env tests never start rmw. This is the only place
       # these tests run — the target only exists under SWIFT_ROS2_ENABLE_RCL=1,
       # which ci.yml's swift test jobs never set.
-      - name: Run SwiftROS2RCLTests (cyclonedds, macOS native)
-        run: swift test --filter SwiftROS2RCLTests
+      - name: Run SwiftROS2RCLTests + SwiftROS2DDSTests (cyclonedds, macOS native)
+        run: swift test --filter 'SwiftROS2RCLTests|SwiftROS2DDSTests'
 
   rcl-zenoh:
     name: RCL zenoh-rmw build + tests (macOS)

@@ -54,7 +54,7 @@ struct SwiftROS2GenCommand: ParsableCommand {
         help: """
             Comma-separated distro allow-list for --verify-hashes (default: all distros derived from --input \
             except 'humble', which has no rosidl type-hash JSON). Each distro must match the tag the Docker image \
-            is pulled from (e.g. 'jazzy,kilted,rolling').
+            is pulled from (e.g. 'jazzy,kilted,lyrical,rolling').
             """
     )
     var distros: String?

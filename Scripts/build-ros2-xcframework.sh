@@ -110,6 +110,11 @@ IGNORE_SUBTREES=(
   # ROS 2 from C/C++/Swift only, so drop the Python generator entirely; message
   # packages then generate just the C/C++/introspection typesupports.
   ros2/rosidl_python
+  # Lyrical: rosidl_buffer_py is the pybind11 Python C-extension for the new
+  # rosidl_buffer type, pulled in by rosidl_core_runtime's export deps. It is
+  # Python-only (same reason as rosidl_python) and Lyrical's ros2.repos no
+  # longer vendors pybind11, so drop it.
+  ros2/rosidl/rosidl_buffer_py
 )
 ignore_unbuildable() {
   local rel

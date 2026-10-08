@@ -424,8 +424,15 @@ public struct IRBuildError: Error, CustomStringConvertible, Equatable, Sendable 
 extension IRBuilder {
     /// Canonical ordering of distros for the multi-distro merge walk. Older
     /// distros come first so their field order takes precedence when a field
-    /// is shared with a newer distro.
-    public static let distroOrder: [String] = ["humble", "jazzy", "kilted", "rolling"]
+    /// is shared with a newer distro. Every other distro list in the generator
+    /// derives from this one, so supporting a new ROS 2 release is a one-line
+    /// change here (plus the `ROS2Distro` case in `SwiftROS2Wire`).
+    public static let distroOrder: [String] = ["humble", "jazzy", "kilted", "lyrical", "rolling"]
+
+    /// The distros that share the RIHS01 type-hash wire format: every distro
+    /// after Humble, in `distroOrder` order. Jazzy comes first, so it stays the
+    /// precedence source for the emitted modern `typeInfo` hash.
+    public static let modernDistros: [String] = distroOrder.filter { $0 != "humble" }
 
     /// Build a unified IR from one parsed IDL per distro.
     ///

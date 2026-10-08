@@ -13,7 +13,7 @@ public struct Range: ROS2Message, Equatable, Sendable {
                 typeName: "sensor_msgs/msg/Range",
                 typeHash: nil
             )
-        case .jazzy, .kilted, .rolling:
+        case .jazzy, .kilted, .lyrical, .rolling:
             return ROS2MessageTypeInfo(
                 typeName: "sensor_msgs/msg/Range",
                 typeHash: "RIHS01_b42b62562e93cbfe9d42b82fe5994dfa3d63d7d5c90a317981703f7388adff3a"

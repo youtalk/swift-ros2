@@ -53,7 +53,7 @@
       "name": "rcl_interfaces",
       "vendor": "vendor/rcl_interfaces-jazzy/rcl_interfaces",
       "types": "FloatingPointRange,IntegerRange,ListParametersResult,Parameter,ParameterDescriptor,ParameterEvent,ParameterEventDescriptors,ParameterType,ParameterValue,SetParametersResult,DescribeParameters,GetParameters,GetParameterTypes,ListParameters,SetParameters,SetParametersAtomically",
-      "distros": ["jazzy", "kilted", "rolling"]
+      "distros": ["jazzy", "kilted", "lyrical", "rolling"]
     }
   ]
 }

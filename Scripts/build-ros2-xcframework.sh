@@ -190,7 +190,7 @@ setup_venv() {
 import_sources() {
   if [[ ! -d "$SRC/ros2/rcl" ]]; then
     mkdir -p "$SRC"
-    git clone --depth 1 --branch release-jazzy-20250430 https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
+    git clone --depth 1 --branch release-lyrical-20260807 https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
     # The vcs import covers every repo in the jazzy ros2.repos set — including
     # ros2/geometry2, which carries tf2_msgs — so a fresh workspace needs no
     # extra step for the tf2_msgs package.
@@ -210,9 +210,9 @@ import_sources() {
 # audio_common `ros2` branch (the ROS 2 development branch, released into
 # jazzy) — audio_common_msgs 3.x.
 AUDIO_COMMON_PIN=db2770b0ad703c474039914937974c764dc94351
-# point_cloud_transport_plugins `jazzy` branch — point_cloud_interfaces
+# point_cloud_transport_plugins `lyrical` branch — point_cloud_interfaces
 # (CompressedPointCloud2, the type Conduit publishes for Draco LiDAR).
-PCT_PLUGINS_PIN=1e4490c796e2de271fe5159431638fe1b5e2ffc4
+PCT_PLUGINS_PIN=5e55a9491f86ba064a97570a1d961258cde6799f
 
 import_msg_only_repo() {  # $1=url $2=branch $3=pin $4=dest $5=package-to-keep
   local url="$1" branch="$2" pin="$3" dest="$4" keep="$5"
@@ -234,7 +234,7 @@ import_extra_msg_sources() {
   import_msg_only_repo https://github.com/ros-drivers/audio_common.git \
     ros2 "$AUDIO_COMMON_PIN" "$SRC/ros-drivers/audio_common" audio_common_msgs
   import_msg_only_repo https://github.com/ros-perception/point_cloud_transport_plugins.git \
-    jazzy "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
+    lyrical "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
 }
 
 # rmw_zenoh jazzy pin (0.2.9 line) — the commit the no-SHM patch set under

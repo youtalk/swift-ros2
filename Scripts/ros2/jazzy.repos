@@ -6,4 +6,4 @@ repositories:
   ros2:
     type: git
     url: https://github.com/ros2/ros2.git
-    version: release-jazzy-20250430
+    version: release-lyrical-20260807

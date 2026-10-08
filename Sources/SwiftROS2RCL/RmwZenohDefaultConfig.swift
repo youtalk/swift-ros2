@@ -13,7 +13,8 @@
     /// rmw_zenoh_cpp/config/ directory of the pinned rmw_zenoh checkout the
     /// variant xcframework is built from: https://github.com/ros2/rmw_zenoh
     /// at RMW_ZENOH_PIN 2dfb794617d033021c6dddeab0238d1f01689db5
-    /// (Scripts/build-ros2-xcframework.sh:356). Re-copy when the pin moves.
+    /// (`RMW_ZENOH_PIN` in `resolve_distro_pins` of
+    /// Scripts/build-ros2-xcframework.sh). Re-copy when the pin moves.
     package enum RmwZenohDefaultConfig {
         /// Verbatim rmw_zenoh_cpp/config/DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5.
         package static let sessionConfigJSON5 = """

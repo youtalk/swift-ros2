@@ -40,6 +40,32 @@ case "$RMW_VARIANT" in
     ;;
   *) echo "RMW_VARIANT must be 'cyclonedds' or 'zenoh'; got '$RMW_VARIANT'" >&2; exit 1 ;;
 esac
+
+# ROS 2 distribution of the RCL stack (spec D5: Lyrical replaces Jazzy). Every
+# upstream pin the build consumes comes from this table; a staged-opt-in exit
+# would add a `jazzy` row. Pick a new ros2/ros2 tag with:
+#   git ls-remote --tags https://github.com/ros2/ros2.git 'refs/tags/release-<distro>-*' \
+#     | grep -v beta | awk -F/ '{print $3}' | sort -V | tail -1
+ROS2_DISTRO="${ROS2_DISTRO:-lyrical}"
+resolve_distro_pins() {
+  case "$ROS2_DISTRO" in
+    lyrical)
+      ROS2_RELEASE_TAG=release-lyrical-20260807                   # rcl 10.4.4, CycloneDDS 11.0.1
+      RMW_ZENOH_BRANCH=lyrical
+      RMW_ZENOH_PIN=2dfb794617d033021c6dddeab0238d1f01689db5      # rmw_zenoh_cpp 0.10.7
+      ZENOHC_PIN=07b0d432121933cb368528153df000463292635d         # zenoh-c 1.10.1 + fixes (zenoh_cpp_vendor)
+      ZENOHCPP_PIN=1e343e61b92a73af3bc247c178214bcc1042c34c
+      AUDIO_COMMON_BRANCH=ros2
+      AUDIO_COMMON_PIN=db2770b0ad703c474039914937974c764dc94351
+      PCT_PLUGINS_BRANCH=lyrical
+      PCT_PLUGINS_PIN=5e55a9491f86ba064a97570a1d961258cde6799f    # point_cloud_transport_plugins 6.2.0
+      LIBYAML_PIN=2c891fc7a770e8ba2fec34fc6b545c672beb37e6        # libyaml 0.2.5
+      TINYXML2_PIN=321ea883b7190d4e85cae5512a12e5eaa8f8731f       # tinyxml2 10.0.0
+      ;;
+    *) echo "ROS2_DISTRO must be 'lyrical'; got '$ROS2_DISTRO'" >&2; return 1 ;;
+  esac
+}
+resolve_distro_pins
 SRC="$BUILD/src_ws"
 # The host generators and the python venv are rmw-agnostic; both variants
 # share the cyclonedds tree's copies so the zenoh variant never rebuilds them.
@@ -61,7 +87,7 @@ DEPLOY_VISIONOS=1.0
 # tf2_msgs + audio_common_msgs + point_cloud_interfaces carry the three
 # Conduit-critical message types (latched /tf_static TFMessage, microphone
 # AudioData, Draco-compressed CompressedPointCloud2). tf2_msgs (ros2/geometry2)
-# is part of the jazzy ros2.repos import; the other two repos are not, so
+# is part of the release's ros2.repos import; the other two repos are not, so
 # import_extra_msg_sources clones + pins them explicitly.
 PKGS_UP_TO=(rcl "$RMW_PKG" rcl_action builtin_interfaces std_msgs geometry_msgs sensor_msgs std_srvs example_interfaces tf2_msgs audio_common_msgs point_cloud_interfaces)
 # C++ test-only / lint vendor packages get dragged into the --packages-up-to
@@ -305,8 +331,8 @@ setup_venv() {
 import_sources() {
   if [[ ! -d "$SRC/ros2/rcl" ]]; then
     mkdir -p "$SRC"
-    git clone --depth 1 --branch release-lyrical-20260807 https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
-    # The vcs import covers every repo in the jazzy ros2.repos set — including
+    git clone --depth 1 --branch "$ROS2_RELEASE_TAG" https://github.com/ros2/ros2.git "$BUILD/ros2-meta"
+    # The vcs import covers every repo in the release's ros2.repos set — including
     # ros2/geometry2, which carries tf2_msgs — so a fresh workspace needs no
     # extra step for the tf2_msgs package.
     ( cd "$SRC" && vcs import < "$BUILD/ros2-meta/ros2.repos" )
@@ -325,8 +351,6 @@ import_sources() {
 # rcl_yaml_param_parser <depend> on, so it joins the --packages-up-to closure,
 # Findyaml's CONFIG lookup finds it ahead of pkg-config, and its
 # install/lib/libyaml.a is merged like any other package archive.
-LIBYAML_PIN=2c891fc7a770e8ba2fec34fc6b545c672beb37e6  # tag 0.2.5
-
 import_libyaml_source() {
   local dest="$SRC/yaml/libyaml"
   [[ -d "$dest" ]] && return 0
@@ -334,20 +358,13 @@ import_libyaml_source() {
   git -C "$dest" checkout "$LIBYAML_PIN"
 }
 
-# Conduit-critical message repos that are NOT in the jazzy ros2.repos set —
-# clone + pin explicitly (same pattern as RMW_ZENOH_PIN below). Only the
-# msg-only package in each repo is built: every sibling package (the
-# gstreamer-based audio pipelines in audio_common, the draco/zlib/zstd
-# transport plugin packages in point_cloud_transport_plugins) pulls
-# dependencies that do not cross-compile to the static Apple toolchain, so
-# they get COLCON_IGNOREd.
-# audio_common `ros2` branch (the ROS 2 development branch, released into
-# jazzy) — audio_common_msgs 3.x.
-AUDIO_COMMON_PIN=db2770b0ad703c474039914937974c764dc94351
-# point_cloud_transport_plugins `lyrical` branch — point_cloud_interfaces
-# (CompressedPointCloud2, the type Conduit publishes for Draco LiDAR).
-PCT_PLUGINS_PIN=5e55a9491f86ba064a97570a1d961258cde6799f
-
+# Conduit-critical message repos that are NOT in the release's ros2.repos set —
+# clone + pin explicitly (same pattern as the rmw_zenoh pin in
+# import_zenoh_sources). Only the msg-only package in each repo is built: every
+# sibling package (the gstreamer-based audio pipelines in audio_common, the
+# draco/zlib/zstd transport plugin packages in point_cloud_transport_plugins)
+# pulls dependencies that do not cross-compile to the static Apple toolchain,
+# so they get COLCON_IGNOREd.
 import_msg_only_repo() {  # $1=url $2=branch $3=pin $4=dest $5=package-to-keep
   local url="$1" branch="$2" pin="$3" dest="$4" keep="$5"
   if [[ ! -d "$dest" ]]; then
@@ -364,18 +381,21 @@ import_msg_only_repo() {  # $1=url $2=branch $3=pin $4=dest $5=package-to-keep
   done
 }
 
+# AUDIO_COMMON_BRANCH is audio_common's `ros2` branch (the ROS 2 development
+# branch, released into jazzy) — audio_common_msgs 3.x. PCT_PLUGINS_BRANCH is
+# point_cloud_transport_plugins' `lyrical` branch — point_cloud_interfaces
+# (CompressedPointCloud2, the type Conduit publishes for Draco LiDAR). Branches
+# and pins come from resolve_distro_pins.
 import_extra_msg_sources() {
   import_msg_only_repo https://github.com/ros-drivers/audio_common.git \
-    ros2 "$AUDIO_COMMON_PIN" "$SRC/ros-drivers/audio_common" audio_common_msgs
+    "$AUDIO_COMMON_BRANCH" "$AUDIO_COMMON_PIN" "$SRC/ros-drivers/audio_common" audio_common_msgs
   import_msg_only_repo https://github.com/ros-perception/point_cloud_transport_plugins.git \
-    lyrical "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
+    "$PCT_PLUGINS_BRANCH" "$PCT_PLUGINS_PIN" "$SRC/ros-perception/point_cloud_transport_plugins" point_cloud_interfaces
 }
 
-# rmw_zenoh lyrical pin (rmw_zenoh_cpp 0.10.7, the `lyrical` branch tip) — the
-# commit the no-SHM patch set under Scripts/ros2/patches/rmw_zenoh is rebased
-# onto. Lyrical's ros2.repos itself pins rmw_zenoh 0.10.5.
-RMW_ZENOH_PIN=2dfb794617d033021c6dddeab0238d1f01689db5
-
+# RMW_ZENOH_PIN is rmw_zenoh_cpp 0.10.7, the `lyrical` branch tip — the commit
+# the no-SHM patch set under Scripts/ros2/patches/rmw_zenoh is rebased onto.
+# Lyrical's ros2.repos itself pins rmw_zenoh 0.10.5.
 import_zenoh_sources() {
   [[ "$RMW_VARIANT" == zenoh ]] || return 0
   local rz="$SRC/ros2/rmw_zenoh"
@@ -390,7 +410,7 @@ import_zenoh_sources() {
   want="$RMW_ZENOH_PIN $(cat "$ROOT/Scripts/ros2/patches/rmw_zenoh"/*.patch | shasum -a 256 | cut -d' ' -f1)"
   if [[ ! -f "$marker" || "$(cat "$marker")" != "$want" ]]; then
     rm -rf "$rz"
-    git clone --branch lyrical --single-branch https://github.com/ros2/rmw_zenoh.git "$rz"
+    git clone --branch "$RMW_ZENOH_BRANCH" --single-branch https://github.com/ros2/rmw_zenoh.git "$rz"
     git -C "$rz" checkout "$RMW_ZENOH_PIN"
     # zenoh's shared-memory subsystem hard-fails to compile for target_os=ios
     # and rmw_zenoh_cpp has no no-SHM build mode; the patch set guards every
@@ -420,8 +440,6 @@ import_zenoh_sources() {
 # tinyxml2 into the source tree (same pattern as libyaml): colcon builds it as
 # the CMake package `tinyxml2` that pluginlib <depend>s on, so it joins the
 # zenoh closure and pluginlib's find_package(TinyXML2) resolves to its config.
-TINYXML2_PIN=321ea883b7190d4e85cae5512a12e5eaa8f8731f  # tag 10.0.0
-
 import_tinyxml2_source() {
   local dest="$SRC/leethomason/tinyxml2"
   [[ -d "$dest" ]] && return 0
@@ -455,12 +473,6 @@ slice_platform() { case "$1" in
   xrsimulator) echo "SIMULATOR_VISIONOS $DEPLOY_VISIONOS" ;;
   *) echo "unknown slice: $1" >&2; return 1 ;; esac; }
 
-# zenoh-c / zenoh-cpp pins from rmw_zenoh lyrical's zenoh_cpp_vendor
-# (zenoh-c 1.10.1 + fixes; zenoh-cpp is the header-only C++ API). The vendor
-# pins commits, not tags.
-ZENOHC_PIN=07b0d432121933cb368528153df000463292635d
-ZENOHCPP_PIN=1e343e61b92a73af3bc247c178214bcc1042c34c
-
 zenohc_triple() { case "$1" in
   maccatalyst) echo aarch64-apple-ios-macabi ;;
   macosx)      echo aarch64-apple-darwin ;;
@@ -479,6 +491,9 @@ zenohc_triple() { case "$1" in
 # zenohcxx). The feature set is rmw_zenoh's pin minus shared-memory: zenoh-shm
 # gates platform support and compile_error!s for iOS targets, which is exactly
 # what the patch set compensates for on the C++ side.
+# ZENOHC_PIN / ZENOHCPP_PIN are rmw_zenoh lyrical's zenoh_cpp_vendor pins
+# (zenoh-c 1.10.1 + fixes; zenoh-cpp is the header-only C++ API). The vendor
+# pins commits, not tags.
 build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
   local slice="$1"
   local triple; triple="$(zenohc_triple "$slice")"

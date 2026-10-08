@@ -5,7 +5,7 @@
 [![Windows CI](https://img.shields.io/github/actions/workflow/status/youtalk/swift-ros2/ci.yml?branch=main&label=Windows)](https://github.com/youtalk/swift-ros2/actions/workflows/ci.yml)
 [![Android CI](https://img.shields.io/github/actions/workflow/status/youtalk/swift-ros2/ci.yml?branch=main&label=Android)](https://github.com/youtalk/swift-ros2/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/youtalk/swift-ros2?label=release&sort=semver)](https://github.com/youtalk/swift-ros2/releases)
-[![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy%20%7C%20Kilted%20%7C%20Rolling-22314E.svg)](https://docs.ros.org)
+[![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Jazzy%20%7C%20Kilted%20%7C%20Lyrical%20%7C%20Rolling-22314E.svg)](https://docs.ros.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![SPI Swift compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/youtalk/swift-ros2)
 [![SPI platform compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fyoutalk%2Fswift-ros2%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/youtalk/swift-ros2)
@@ -88,14 +88,14 @@ Code that built the 1.x wire clients only to hand them to `ROS2Context` drops th
 
 ## API stability
 
-2.0.0 opens the 2.x line of the [SemVer](https://semver.org/spec/v2.0.0.html) contract that 1.0.0 inaugurated: no minor or patch release breaks the public API — breaking changes require a major bump. The frozen surface covers `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, and every `ROS2Message` / `ROS2ServiceType` / `ROS2Action` type. Retiring the internal wire fallback per platform in 2.x minors is non-breaking. See [`MIGRATION.md`](MIGRATION.md) for the 1.x → 2.0 wire-client removal and the internal-plumbing demotions made at the 1.0 cut.
+2.0.0 opens the 2.x line of the [SemVer](https://semver.org/spec/v2.0.0.html) contract that 1.0.0 inaugurated: no minor or patch release breaks the public API — breaking changes require a major bump. The frozen surface covers `ROS2Context`, `ROS2Node`, `ROS2Publisher`, `ROS2Subscription`, `ROS2Service`, `ROS2Client`, `ROS2ActionServer`, `ROS2ActionClient`, `QoSProfile`, `TransportConfig`, and every `ROS2Message` / `ROS2ServiceType` / `ROS2Action` type. Retiring the internal wire fallback per platform in 2.x minors is non-breaking. See [`MIGRATION.md`](MIGRATION.md) for the 1.x → 2.0 wire-client removal and the internal-plumbing demotions made at the 1.0 cut. New ROS 2 distributions are added to `ROS2Distro` in minor releases (the yearly May release), so code that switches over `ROS2Distro` must include a `default` branch.
 
 ## Features
 
 - **Dual transport, two backends, one API.** The `TransportConfig` type picks the transport and the build graph picks the backend behind it (see the routing table under [Backends](#backends-rcl-with-an-internal-wire-fallback)). Switch transports with a single `TransportConfig` change.
 - **No mandatory `rcl` toolchain.** Apple downloads prebuilt xcframeworks (including the RCL variants); Linux uses a system ROS 2 install for RCL; the wire path needs no ROS 2 install at all (Windows resolves CycloneDDS via `vcpkg`; Android is Zenoh-only).
 - **Swift-native API.** `async`/`await` everywhere, `AsyncStream` subscriptions, `Sendable`, structured concurrency, no opaque pointer juggling above the FFI seam.
-- **Multi-distro.** Humble, Jazzy, Kilted, Rolling — select via `ROS2Distro` (Zenoh defaults to Jazzy). Schema differences (e.g. `sensor_msgs/Range.variance`, added after Humble) are gated automatically via `isLegacySchema`.
+- **Multi-distro.** Humble, Jazzy, Kilted, Lyrical, Rolling — select via `ROS2Distro` (Zenoh defaults to Jazzy). Schema differences (e.g. `sensor_msgs/Range.variance`, added after Humble) are gated automatically via `isLegacySchema`.
 - **23 built-in message types** across `sensor_msgs`, `geometry_msgs`, `std_msgs`, `audio_common_msgs`, `tf2_msgs`, on a pure-Swift XCDR v1 encoder + decoder.
 - **Services & Actions** — `rclcpp` / `rclpy`-shaped `ROS2Service` / `ROS2Client` and typed `ROS2ActionServer<H>` / `ROS2ActionClient<A>` (goal handles, feedback `AsyncStream`, cancellation) over both transports, all distros.
 - **Parameters** — every `ROS2Node` declares typed parameters with descriptors / ranges, auto-registers the six standard `rcl_interfaces` services, and publishes `/parameter_events`; interoperates with `ros2 param`.
@@ -136,7 +136,7 @@ targets: [
 ### Linux
 
 ```bash
-sudo apt install ros-jazzy-cyclonedds        # or ros-humble / ros-rolling
+sudo apt install ros-jazzy-cyclonedds        # or ros-humble / ros-lyrical / ros-rolling
 git clone --recursive https://github.com/youtalk/swift-ros2.git && cd swift-ros2
 bash Scripts/build-linux-deps.sh             # verifies pkg-config finds CycloneDDS
 

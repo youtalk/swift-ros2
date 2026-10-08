@@ -15,6 +15,7 @@
 | 1.2.x | 1.3.0 | **One, source-level:** `TransportType` gained a `.rcl` case (#120), so exhaustive `switch` statements over `TransportType` need a `.rcl` case, and `TransportType.allCases` now includes it. Everything else is additive — the RCL backend is opt-in via `SWIFT_ROS2_ENABLE_RCL=1` at this tag. |
 | 1.3.x | 1.4.0 | **None.** Additive: umbrella on Android/DDS-less Windows; RCL default-on and the wire-client deprecation warnings first reach tagged consumers here. |
 | 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API. On the pure-Swift wire transports, the action frame layout and the DDS service request header (24 → 16 bytes) changed, so 1.x wire peers do not interoperate with 2.0 for actions or DDS services (including the DDS-wire parameter services); 1.x peers on the RCL backend are unaffected (see below). |
+| 2.0.x | 2.1.0 | **One, source-level:** `ROS2Distro` gained a `.lyrical` case (ROS 2 Lyrical Luth), so exhaustive `switch` statements over `ROS2Distro` need a `.lyrical` case or a `default`, and `ROS2Distro.allCases` now includes it. New distributions ship in minors by policy — see "2.0 → 2.1". |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 
@@ -379,3 +380,21 @@ peer for actions or DDS services** (the DDS-wire parameter services included) �
 both sides. A 1.x peer on the RCL backend
 (e.g. `.rcl`) already emitted the upstream layout through rmw and interoperates with 2.0
 unchanged. Topics and Zenoh services are unaffected.
+
+## 2.0 → 2.1 — ROS 2 Lyrical Luth
+
+`ROS2Distro.lyrical` joins the modern wire group (RIHS01 type hash, the same
+key expressions as Jazzy, `isLegacySchema == false`). `ROS2Context`'s default
+distro stays `.jazzy`; pass `distro: .lyrical` to label a Lyrical host
+explicitly.
+
+**Distribution policy.** ROS 2 ships a new distribution every May. swift-ros2
+adds the matching `ROS2Distro` case in a minor release rather than a major
+one, the same way 1.3.0 added `TransportType.rcl`. Code that switches over
+`ROS2Distro` should include a `default` branch so a new distribution does
+not break the build:
+
+    switch distro {
+    case .humble: legacyPath()
+    default: modernPath()
+    }

@@ -8,11 +8,12 @@ import Foundation
 /// Each distro has specific wire format requirements for rmw compatibility.
 /// Key differences:
 /// - Humble: No type hash support (uses "TypeHashNotSupported")
-/// - Jazzy/Kilted/Rolling: RIHS01 type hash support
+/// - Jazzy/Kilted/Lyrical/Rolling: RIHS01 type hash support
 public enum ROS2Distro: String, CaseIterable, Sendable {
     case humble
     case jazzy
     case kilted
+    case lyrical
     case rolling
 
     public var displayName: String {
@@ -24,7 +25,7 @@ public enum ROS2Distro: String, CaseIterable, Sendable {
         switch self {
         case .humble:
             return false
-        case .jazzy, .kilted, .rolling:
+        case .jazzy, .kilted, .lyrical, .rolling:
             return true
         }
     }
@@ -35,7 +36,7 @@ public enum ROS2Distro: String, CaseIterable, Sendable {
         switch self {
         case .humble:
             return true
-        case .jazzy, .kilted, .rolling:
+        case .jazzy, .kilted, .lyrical, .rolling:
             return false
         }
     }
@@ -48,7 +49,7 @@ public enum ROS2Distro: String, CaseIterable, Sendable {
         public var distros: [ROS2Distro] {
             switch self {
             case .legacy: return [.humble]
-            case .modern: return [.jazzy, .kilted, .rolling]
+            case .modern: return [.jazzy, .kilted, .lyrical, .rolling]
             }
         }
     }
@@ -76,7 +77,7 @@ public enum ROS2Distro: String, CaseIterable, Sendable {
         switch self {
         case .humble:
             return true
-        case .jazzy, .kilted, .rolling:
+        case .jazzy, .kilted, .lyrical, .rolling:
             return false
         }
     }

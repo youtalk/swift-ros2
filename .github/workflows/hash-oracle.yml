@@ -16,6 +16,11 @@ on:
       - 'Package.swift'
   push:
     branches: [main]
+  schedule:
+    # Weekly: catch a type-hash change shipped in an upstream patch release
+    # (a new image digest) without waiting for a swift-ros2 PR.
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -35,6 +40,9 @@ jobs:
           - ros_distro: kilted
             image: osrf/ros:kilted-desktop
             required: false
+          - ros_distro: lyrical
+            image: osrf/ros:lyrical-desktop
+            required: true
           - ros_distro: rolling
             image: osrf/ros:rolling-desktop
             required: false

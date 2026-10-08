@@ -13,9 +13,14 @@
 # already includes them.
 #
 # Removals of public APIs are SemVer-breaking on the 2.x line — adding an
-# entry here is a signal that a 3.0 bump is required.
+# entry here is a signal that a 3.0 bump is required. The one exception is a
+# new `ROS2Distro` case for a new ROS 2 release: by policy (README "API
+# stability", MIGRATION "2.0 → 2.1") it ships in a minor.
 #
 # NOTE: this gate does not catch a `public` -> `package` demotion (SwiftPM's
 # ABI digest lists `package` declarations too, so a symbol that drops from
 # `public` to `package` — while still present in the digest — is not reported
 # as a breakage).
+
+# 2.1.0 — ROS 2 Lyrical Luth (distribution case, minor by policy). Drop after the 2.1.0 tag.
+API breakage: enumelement ROS2Distro.lyrical has been added as a new enum case

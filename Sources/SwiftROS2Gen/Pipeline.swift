@@ -425,7 +425,7 @@ extension Pipeline {
             //     this point is identical in every contributing distro.
             let distros: Set<String>
             if entry.ir.kind == .srv {
-                distros = ["humble", "jazzy", "kilted", "rolling"]
+                distros = Set(IRBuilder.distroOrder)
             } else if entry.ir.perDistroFieldPresence.isEmpty {
                 distros = [entry.run.input.distro]
             } else {
@@ -433,15 +433,12 @@ extension Pipeline {
             }
             var perDistroHashes: [String: String?] = [:]
             for distro in distros {
-                switch distro {
-                case "humble":
+                if distro == "humble" {
                     // Humble has no RIHS01 — present in this distro, hash is nil.
                     perDistroHashes["humble"] = nil
-                case "jazzy", "kilted", "rolling":
+                } else if IRBuilder.modernDistros.contains(distro) {
                     // Modern distros share the jazzy wire format and hash.
                     perDistroHashes[distro] = primaryHash
-                default:
-                    break
                 }
             }
             // The non-conditional emit path keys on `perDistroHashes["jazzy"]`

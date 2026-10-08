@@ -516,8 +516,8 @@ public enum SwiftEmitter {
     }
 
     /// Emit `static func typeInfo(for distro:)` plus the `static var typeInfo`
-    /// shim. Splits the four `ROS2Distro` cases into the legacy (humble) arm
-    /// and the modern (jazzy/kilted/rolling) arm.
+    /// shim. Splits the `ROS2Distro` cases into the legacy (humble) arm and the
+    /// modern arm (`IRBuilder.modernDistros`).
     static func emitTypeInfoFactory(_ ir: MessageIR) -> String {
         var out = ""
         out += "    public static func typeInfo(for distro: ROS2Distro) -> ROS2MessageTypeInfo {\n"
@@ -528,11 +528,11 @@ public enum SwiftEmitter {
         out += "                typeName: \"\(ir.rosTypeName)\",\n"
         out += "                typeHash: \(quotedOrNil(humbleHash))\n"
         out += "            )\n"
-        let modernHash =
-            (ir.perDistroHashes["jazzy"] ?? nil)
-            ?? (ir.perDistroHashes["kilted"] ?? nil)
-            ?? (ir.perDistroHashes["rolling"] ?? nil)
-        out += "        case .jazzy, .kilted, .rolling:\n"
+        let modernHash = IRBuilder.modernDistros.lazy
+            .compactMap { ir.perDistroHashes[$0] ?? nil }
+            .first
+        let modernCases = IRBuilder.modernDistros.map { ".\($0)" }.joined(separator: ", ")
+        out += "        case \(modernCases):\n"
         out += "            return ROS2MessageTypeInfo(\n"
         out += "                typeName: \"\(ir.rosTypeName)\",\n"
         out += "                typeHash: \(quotedOrNil(modernHash))\n"
@@ -566,7 +566,7 @@ public enum SwiftEmitter {
             precondition(
                 !distros.isEmpty,
                 "FieldAvailability.onlyIn must contain at least one distro")
-            let known: Set<String> = ["humble", "jazzy", "kilted", "rolling"]
+            let known = Set(IRBuilder.distroOrder)
             precondition(
                 distros.allSatisfy(known.contains),
                 "FieldAvailability.onlyIn contains unknown distro(s): \(distros)")
@@ -602,7 +602,7 @@ public enum SwiftEmitter {
             precondition(
                 !distros.isEmpty,
                 "FieldAvailability.onlyIn must contain at least one distro")
-            let known: Set<String> = ["humble", "jazzy", "kilted", "rolling"]
+            let known = Set(IRBuilder.distroOrder)
             precondition(
                 distros.allSatisfy(known.contains),
                 "FieldAvailability.onlyIn contains unknown distro(s): \(distros)")

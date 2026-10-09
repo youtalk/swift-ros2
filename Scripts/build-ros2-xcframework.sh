@@ -205,7 +205,11 @@ patch_sources() {
   # `git apply` fail, which stops the build (set -e).
   local cdds_src="$SRC/eclipse-cyclonedds/cyclonedds"
   local pad_patch="$ROOT/Scripts/ros2/patches/cyclonedds/0001-ddsi_udp-pad-short-rtps-datagrams-for-ios-wifi.patch"
-  if [[ "$RMW_VARIANT" == cyclonedds && -d "$cdds_src" ]] \
+  # Fail closed: a missing CycloneDDS source must not silently ship CRos2
+  # without the padding (the zenoh variant carries no CycloneDDS to patch).
+  [[ "$RMW_VARIANT" != cyclonedds || -d "$cdds_src" ]] \
+    || { echo "patch_sources: CycloneDDS source missing at $cdds_src" >&2; return 1; }
+  if [[ "$RMW_VARIANT" == cyclonedds ]] \
       && ! git -C "$cdds_src" apply --reverse --check "$pad_patch" 2>/dev/null; then
     git -C "$cdds_src" apply "$pad_patch"
   fi
@@ -343,7 +347,7 @@ patch_sources() {
     require_patched "$rbr_cmake" 'SWIFT_ROS2_STATIC_BUFFER_BACKEND_REGISTRY' '^add_library\(\$\{PROJECT_NAME\} SHARED$'
     require_patched "$cl_cmake" 'SWIFT_ROS2_STATIC_CLASS_LOADER'
   fi
-  if [[ "$RMW_VARIANT" == cyclonedds && -d "$cdds_src" ]]; then
+  if [[ "$RMW_VARIANT" == cyclonedds ]]; then
     git -C "$cdds_src" apply --reverse --check "$pad_patch" \
       || { echo "patch_sources: the CycloneDDS UDP padding is not applied" >&2; return 1; }
   fi
@@ -420,7 +424,10 @@ import_libyaml_source() {
 # so they get COLCON_IGNOREd.
 import_msg_only_repo() {  # $1=url $2=branch $3=pin $4=dest $5=package-to-keep
   local url="$1" branch="$2" pin="$3" dest="$4" keep="$5"
-  if [[ ! -d "$dest" ]]; then
+  # Re-clone when the checkout is missing or not at the pin (same guard as
+  # import_libyaml_source), so a stale tree never feeds the build.
+  if [[ ! -d "$dest" || "$(git -C "$dest" rev-parse HEAD 2>/dev/null)" != "$pin" ]]; then
+    rm -rf "$dest"
     git clone --branch "$branch" --single-branch "$url" "$dest"
     git -C "$dest" checkout "$pin"
   fi
@@ -579,8 +586,10 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
   # (minos 27.0 with Xcode 27) instead of our deployment targets.
   local ios_dt="$DEPLOY_IOS"
   [[ "$slice" == maccatalyst ]] && ios_dt="$DEPLOY_MAC"
-  export IPHONEOS_DEPLOYMENT_TARGET="$ios_dt" MACOSX_DEPLOYMENT_TARGET="$DEPLOY_MAC"
-  ( cd "$zc" && cargo build --release -j 4 --target "$triple" \
+  # Scoped to the cargo invocation: exported, they would leak into the later
+  # colcon steps and the next slice.
+  ( cd "$zc" && IPHONEOS_DEPLOYMENT_TARGET="$ios_dt" MACOSX_DEPLOYMENT_TARGET="$DEPLOY_MAC" \
+      cargo build --release -j 4 --target "$triple" \
       --features unstable --features transport_serial )
   rm -rf "$out"
   mkdir -p "$out/lib/cmake" "$out/share/zenoh_cpp_vendor/cmake"
@@ -732,6 +741,16 @@ assert_merged_slice() {  # $1 = slice
   local dds; dds="$(nm -gU "$a" 2>/dev/null | grep -c ' T _dds_create_participant$' || true)"
   local want=1; [[ "$RMW_VARIANT" == zenoh ]] && want=0
   [[ "$dds" == "$want" ]] || { echo "assert: $dds CycloneDDS builds in librclros.a (want $want)" >&2; fail=1; }
+  # Route (B): CDDSBridge compiles against the headers of this CycloneDDS (the
+  # version check and the 2.2.0 pin both read dds/version.h), so merge_slice
+  # must ship dds/dds.h and dds/version.h in the cyclonedds variant.
+  if [[ "$RMW_VARIANT" == cyclonedds ]]; then
+    local h
+    for h in dds/dds.h dds/version.h; do
+      [[ -f "$sb/merged/include/$h" ]] \
+        || { echo "assert: merged include dir is missing $h (route (B) needs it)" >&2; fail=1; }
+    done
+  fi
   # Host Homebrew headers or libraries in a slice's cache entries (the libyaml
   # leak the spike hit). cmake / python living under /opt/homebrew is fine,
   # so only *_INCLUDE_DIR(S) / *_LIBRARY / *_LIBRARIES entries count, and the

@@ -100,7 +100,6 @@ SKIP_TEST_PKGS=(
   osrf_testing_tools_cpp performance_test_fixture
   gtest_vendor gmock_vendor google_benchmark_vendor
   mimick_vendor uncrustify_vendor
-  rmw_test_fixture_implementation
 )
 
 # Drop COLCON_IGNORE so colcon never discovers these subtrees and treats them
@@ -150,6 +149,13 @@ IGNORE_SUBTREES=(
   # same rcl_logging_external_* symbols, and the linker resolves them to the
   # selector (archive order) — which would dlopen spdlog at runtime. Drop it.
   ros2/rcl_logging/rcl_logging_implementation
+  # Lyrical: rmw_test_fixture_implementation is the test-isolation shim behind
+  # run_rmw_isolated; it also builds a host-libpython-linked Python extension.
+  # Nothing here runs it. It is skipped by COLCON_IGNORE rather than
+  # --packages-skip because ament_cmake_ros exec-depends on it, and a skipped
+  # package that is not in the host tools leaves its dependents without an
+  # environment script ("Failed to find ... package.sh").
+  ros2/ament_cmake_ros/rmw_test_fixture_implementation
 )
 ignore_unbuildable() {
   local rel

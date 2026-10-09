@@ -421,11 +421,16 @@ jobs:
       # transport — through a standalone zenohd at rmw_zenoh's Zenoh version.
       - name: Start zenohd 1.10.1
         run: |
-          curl -sSL -o /tmp/zenoh.zip \
+          curl -fsSL -o /tmp/zenoh.zip \
             https://github.com/eclipse-zenoh/zenoh/releases/download/1.10.1/zenoh-1.10.1-aarch64-apple-darwin-standalone.zip
           mkdir -p /tmp/zenoh && unzip -q -o /tmp/zenoh.zip -d /tmp/zenoh
           /tmp/zenoh/zenohd --listen tcp/127.0.0.1:7447 --no-multicast-scouting > /tmp/zenohd.log 2>&1 &
-          sleep 3
+          # Wait (bounded) for the listener instead of sleeping a fixed time.
+          for _ in $(seq 20); do
+            nc -z 127.0.0.1 7447 && exit 0
+            sleep 1
+          done
+          echo "::error::zenohd did not open 127.0.0.1:7447 within 20 s"; cat /tmp/zenohd.log; exit 1
       - name: Run the crcl loopbacks over .zenoh(locator:)
         env:
           CRCL_ZENOH_LOCATOR: tcp/127.0.0.1:7447
@@ -434,7 +439,8 @@ jobs:
           for exe in crcl-loopback crcl-svc-loopback crcl-action-loopback; do
             out="$(perl -e 'alarm 150; exec @ARGV' "$bin/$exe" 2>&1)" || true
             printf '%s\n' "$out"
-            printf '%s\n' "$out" | grep -q "OK" || { echo "::error::$exe failed"; cat /tmp/zenohd.log; exit 1; }
+            # Each loopback prints "<exe with underscores> OK:" on success.
+            printf '%s\n' "$out" | grep -qF "${exe//-/_} OK:" || { echo "::error::$exe failed"; cat /tmp/zenohd.log; exit 1; }
             if printf '%s\n' "$out" | grep -q "rosidl_buffer_backend"; then
               echo "::error::$exe logged a rosidl_buffer_backend ERROR"; exit 1
             fi

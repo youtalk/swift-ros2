@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-09
+
 ### Changed
 
 - **Apple RCL runs ROS 2 Lyrical.** `CRos2` / `CRos2Zenoh` are built from `release-lyrical-20260807`: rcl 10.4.4, `rmw_cyclonedds_cpp` 4.1.4 with CycloneDDS 11.0.1, and `rmw_zenoh_cpp` 0.10.7 with zenoh-c 1.10.1. They interoperate with Jazzy and Lyrical hosts (README "Interop").

@@ -16,6 +16,7 @@
 | 1.3.x | 1.4.0 | **None.** Additive: umbrella on Android/DDS-less Windows; RCL default-on and the wire-client deprecation warnings first reach tagged consumers here. |
 | 1.4.x | 2.0.0 | **Yes.** Wire clients removed from the public API. On the pure-Swift wire transports, the action frame layout and the DDS service request header (24 → 16 bytes) changed, so 1.x wire peers do not interoperate with 2.0 for actions or DDS services (including the DDS-wire parameter services); 1.x peers on the RCL backend are unaffected (see below). |
 | 2.0.x | 2.1.0 | **One, source-level:** `ROS2Distro` gained a `.lyrical` case (ROS 2 Lyrical Luth), so exhaustive `switch` statements over `ROS2Distro` need a `.lyrical` case or a `default`, and `ROS2Distro.allCases` now includes it. New distributions ship in minors by policy — see "2.0 → 2.1". |
+| 2.1.x | 2.2.0 | **None.** The Apple RCL xcframeworks are rebuilt from ROS 2 Lyrical and renamed `CRos2` / `CRos2Zenoh`. They are binary targets, not products, and nothing imports them. In the default Apple graph (cyclonedds RCL variant), `.dds` now runs on the CycloneDDS 11.0.1 inside `CRos2` instead of the bundled 0.10.5 fork. |
 
 SwiftROS2 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once 1.0.0 is cut. Breaking changes after 1.0 require a major bump.
 

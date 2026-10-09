@@ -64,9 +64,8 @@ link-only C targets — never `import`ed from Swift (a CI lint enforces this);
 Swift reaches them through the bridge modules.
 
 `CDDSBridge` links one CycloneDDS per graph. In the RCL-enabled cyclonedds
-graph on Apple (the local `SWIFT_ROS2_RCL_LOCAL=1` xcframework until the 2.2.0
-pin) it links the CycloneDDS inside `CRos2` instead of `CCycloneDDS`, so the
-binary carries a single CycloneDDS; wire-only graphs
+graph on Apple it links the CycloneDDS inside `CRos2` instead of `CCycloneDDS`,
+so the binary carries a single CycloneDDS; wire-only graphs
 (`SWIFT_ROS2_DISABLE_RCL=1`) and the zenoh variant link `CCycloneDDS`.
 
 ## Platform arms
@@ -97,8 +96,7 @@ platform:
 - **Apple** — `CRos2` is a URL-based `binaryTarget`: the prebuilt
   xcframework is a release artifact (built by `Scripts/build-ros2-xcframework.sh`
   in `release-xcframework.yml`) resolved from the pinned release URL +
-  checksum. The 2.1.0 release assets keep the old names `CRos2Jazzy` /
-  `CRos2JazzyZenoh` until the next pin. `SWIFT_ROS2_RCL_LOCAL=1` resolves it
+  checksum. `SWIFT_ROS2_RCL_LOCAL=1` resolves it
   from a local `build/ros2*/` instead (CI and ROS 2 cross-build iteration).
   The rmw is **baked per build variant**, selected by `SWIFT_ROS2_RCL_RMW`:
   `cyclonedds` (default) → `CRos2.xcframework`, `zenoh` →

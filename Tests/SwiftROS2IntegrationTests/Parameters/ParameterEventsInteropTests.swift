@@ -4,8 +4,9 @@ import SwiftROS2Messages
 import SwiftROS2Transport
 import XCTest
 
-// Exec's the `ros2` CLI via Process — native-host only; unavailable on Mac Catalyst.
-#if !targetEnvironment(macCatalyst)
+// Exec's the `ros2` CLI via Process, so these tests build only on native macOS
+// and Linux (`Process` is unavailable on iOS, Mac Catalyst and visionOS).
+#if os(macOS) || os(Linux)
     final class ParameterEventsInteropTests: XCTestCase {
         func testParameterEventsConsumableByROS2TopicEcho() async throws {
             // Match the gating used by the other LAN-gated tests in this

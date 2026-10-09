@@ -49,18 +49,20 @@ For example `swift run action-client rcl-unicast 192.168.1.10 123 15` sends a Fi
 
 ### Loopback checks
 
-`crcl-loopback`, `crcl-svc-loopback` and `crcl-action-loopback` are self-contained RCL smoke tests (topic, service plus parameters, and action respectively) that take no arguments and exist only in RCL-enabled build graphs. They run on `.rcl(domainId: 0)` by default. Set `CRCL_ZENOH_LOCATOR` to run the same loopback over `.zenoh(locator:)` instead, which is how the zenoh `rmw_zenoh_cpp` build variant is exercised (that variant rejects `.rcl`):
+`crcl-loopback`, `crcl-svc-loopback` and `crcl-action-loopback` are self-contained RCL smoke tests (topic, service plus parameters, and action respectively) that take no arguments and exist only in RCL-enabled build graphs. They run on `.rcl(domainId: 0)` by default. Set `CRCL_ZENOH_LOCATOR` to run the same loopback over `.zenoh(locator:)` instead, which is how the zenoh `rmw_zenoh_cpp` build variant is exercised (that variant rejects `.rcl`). Build with `SWIFT_ROS2_RCL_RMW=zenoh` as well: on the default graph `.zenoh` resolves to the wire zenoh-pico transport, so the loopback would pass without touching RCL. A Zenoh router must be listening at the locator (for example `ros2 run rmw_zenoh_cpp rmw_zenohd`, or a standalone `zenohd --listen tcp/127.0.0.1:7447 --no-multicast-scouting`):
 
 ```bash
-CRCL_ZENOH_LOCATOR=tcp/127.0.0.1:7447 swift run crcl-loopback
+SWIFT_ROS2_RCL_RMW=zenoh CRCL_ZENOH_LOCATOR=tcp/127.0.0.1:7447 swift run crcl-loopback
 ```
+
+The variant resolves to the pinned release xcframework (until the 2.2.0 pin, the 2.1.0 Jazzy build `CRos2JazzyZenoh`); add `SWIFT_ROS2_RCL_LOCAL=1` to use a locally built `CRos2Zenoh` instead (`RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`).
 
 ## Prerequisites
 
 - macOS with Xcode 16+ **or** Ubuntu 22.04 / 24.04 with Swift 5.9+ and `ros-<distro>-cyclonedds` installed. See the top-level [`README.md`](../../README.md#installation) for per-platform setup.
 - A ROS 2 install on the peer side (Humble / Jazzy / Kilted / Rolling). These demos default to the Jazzy wire format; edit `.distro:` on the `ROS2Context` call if you need Humble.
 - **Zenoh only:** a running `rmw_zenoh_cpp` router (`ros2 run rmw_zenoh_cpp rmw_zenohd`) that both sides can reach over TCP.
-- **DDS only:** a multicast-capable LAN on a shared `ROS_DOMAIN_ID` (default `0`). On Wi-Fi without multicast, switch to `.ddsUnicast(peers:)` — see below.
+- **DDS only:** a multicast-capable LAN on a shared `ROS_DOMAIN_ID` (default `0`). On Wi-Fi without multicast, use the `dds-unicast` arm — see below.
 
 ## Zenoh tutorial
 
@@ -181,7 +183,15 @@ swift run listener dds 0
 
 ### Wi-Fi (no multicast)
 
-On networks that drop multicast, edit the demo's `.ddsMulticast(...)` call to use `.ddsUnicast(peers:)`:
+On networks that drop multicast, use the unicast arms; each takes the peer's IP address (required) and an optional domain ID:
+
+```bash
+swift run talker   dds-unicast 192.168.1.10 0    # wire CycloneDDS, .ddsUnicast(peers:)
+swift run listener dds-unicast 192.168.1.10 0
+swift run talker   rcl-unicast 192.168.1.10 0    # native RCL, .rclUnicast(peers:)
+```
+
+`<peer>` is the address of the host that runs the other end, not of this host. The discovery port is derived from the domain (`7400 + domain_id * 250`, so `7400` on domain 0). The other examples (`srv-server`, `action-client`, ...) accept the same arms. In your own code the `dds-unicast` arm is:
 
 ```swift
 transport = .ddsUnicast(
@@ -226,5 +236,5 @@ Swap `.zenoh(...)` ↔ `.ddsMulticast(...)` to switch transports — everything 
 
 - **`ros2 topic echo` prints nothing but `ros2 topic list` shows `/chatter`** — wire format mismatch. Pin `.distro:` on the Swift side to match the ROS 2 distro (e.g. `.humble` for Humble's pre-type-hash wire schema).
 - **Connection refused on Zenoh** — router isn't running, wrong IP, or firewall blocks TCP `7447`.
-- **DDS sees nothing** — wrong `ROS_DOMAIN_ID`, or the network drops multicast. Switch to `.ddsUnicast`.
+- **DDS sees nothing** — wrong `ROS_DOMAIN_ID`, or the network drops multicast. Switch to the `dds-unicast` arm (`.ddsUnicast`).
 - **`swift run` fails to find `talker`** — run it from the repo root (`deps/swift-ros2`), not a subdirectory; SPM resolves targets relative to `Package.swift`.

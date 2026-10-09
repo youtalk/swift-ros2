@@ -4,8 +4,9 @@ import SwiftROS2Messages
 import SwiftROS2Transport
 import XCTest
 
-// Exec's the `ros2` CLI via Process — native-host only; unavailable on Mac Catalyst.
-#if !targetEnvironment(macCatalyst)
+// Exec's the `ros2` CLI via Process, so these tests build only on native macOS
+// and Linux (`Process` is unavailable on iOS, Mac Catalyst and visionOS).
+#if os(macOS) || os(Linux)
     /// LAN-gated `ros2 param` CLI interop. Skips when `LINUX_IP` is unset
     /// or empty. Requires two running docker containers on the host:
     ///   - `ros_jazzy_zenoh` — ROS 2 Jazzy + `rmw_zenoh_cpp` + an active

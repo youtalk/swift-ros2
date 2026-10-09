@@ -57,7 +57,7 @@ Declare typed parameters (`node.declareParameter` + on-set veto callbacks; inter
 
 Two backends sit behind one backend-agnostic umbrella API:
 
-- **Native RCL backend** — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. **Apple:** prebuilt `CRos2` / `CRos2Zenoh` xcframeworks downloaded from the release URL (the 2.1.0 release assets keep the old names `CRos2Jazzy` / `CRos2JazzyZenoh` until the next pin), one rmw baked per build variant; in the build graph **by default since 1.4.0** (opt out with `SWIFT_ROS2_DISABLE_RCL=1`). **Linux:** opt-in with `SWIFT_ROS2_ENABLE_RCL=1`; links a system ROS 2 install via `ROS2_RCL_PREFIX` and picks the rmw at runtime from the transport type.
+- **Native RCL backend** — the real upstream stack (`rcl` + `rmw_zenoh_cpp` / `rmw_cyclonedds_cpp`), so type hashes, QoS semantics, the node graph, and introspection match upstream by construction. **Apple:** prebuilt `CRos2` / `CRos2Zenoh` xcframeworks downloaded from the release URL (the 2.1.0 release assets are the Jazzy build and keep the old names `CRos2Jazzy` / `CRos2JazzyZenoh` until the next pin), built from ROS 2 Lyrical (`release-lyrical-20260807`: rcl 10.4, `rmw_cyclonedds_cpp` 4.1 with CycloneDDS 11.0.1, or `rmw_zenoh_cpp` 0.10.7 with Zenoh 1.10.1), one rmw baked per build variant. They interoperate with Jazzy and Lyrical hosts (see "Interop" below); in the build graph **by default since 1.4.0** (opt out with `SWIFT_ROS2_DISABLE_RCL=1`). **Linux:** opt-in with `SWIFT_ROS2_ENABLE_RCL=1`; links a system ROS 2 install via `ROS2_RCL_PREFIX` and picks the rmw at runtime from the transport type.
 - **Internal wire fallback** (pure-Swift over `zenoh-pico` / CycloneDDS, no `rcl`) — the original all-platforms backend, an implementation detail since 2.0.0, and the golden-byte oracle for the CDR / wire codecs.
 
 **2.0.0 removes the wire clients from the public API; the wire runtime remains the internal fallback where RCL is not available and is retired per platform in 2.x minors, non-breaking.** `ZenohClient` / `DDSClient` and the `SwiftROS2Zenoh` / `SwiftROS2DDS` products are gone — use `ROS2Context`.
@@ -84,7 +84,16 @@ let ctx = try await ROS2Context(transport: .zenoh(locator: "tcp/192.168.1.85:744
 
 Code that built the 1.x wire clients only to hand them to `ROS2Context` drops the explicit construction; standalone uses (raw key-expression puts, wire-level subscribers) move to `node.createPublisher` / `node.createSubscription`. The CDR and wire codecs (`SwiftROS2CDR`, `SwiftROS2Wire`) stay public. Full recipes in [`MIGRATION.md`](MIGRATION.md).
 
-> **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link), so `.zenoh(locator:)` resolves to `rcl` + `rmw_zenoh_cpp` there; that variant ships no visionOS slice (visionOS builds use the default graph). On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin), but every transport type resolves to RCL, and the rmw is process-global — one process serves one rmw at a time. **Windows RCL is deferred** — no official Jazzy Windows binary ships `rmw_zenoh_cpp` and swift-ros2's RCL layer is Jazzy-pinned; re-gates on an official Jazzy binary or Kilted support. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
+> **Per-variant nuance.** In the Apple zenoh-rmw RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`) the zenoh wire family is *physically absent* (zenoh-pico and the bundled zenoh-c export the same C symbols and cannot co-link), so `.zenoh(locator:)` resolves to `rcl` + `rmw_zenoh_cpp` there; that variant ships no visionOS slice (visionOS builds use the default graph). On Linux RCL builds both backends stay linked (rmw is a dlopen'd plugin), but every transport type resolves to RCL, and the rmw is process-global — one process serves one rmw at a time. **Windows RCL is deferred** — to be re-evaluated against Lyrical's Windows 11 Tier 1 binaries. **Android RCL** (full-`rcl` NDK cross-build) remains unsolved.
+
+> **CycloneDDS per graph.** In the default Apple graph (cyclonedds RCL variant) the wire `.dds` transport runs on the CycloneDDS inside `CRos2` (11.0.1, type and topic discovery on, with the iOS Wi-Fi padding patch), so a binary carries one CycloneDDS. Wire-only graphs (`SWIFT_ROS2_DISABLE_RCL=1`) and the zenoh variant keep the bundled `CCycloneDDS` (the 0.10.5 fork).
+
+### Interop (Apple RCL on Lyrical)
+
+Verified Mac ↔ Ubuntu host, `ROS_DOMAIN_ID=123`, on the 2.2.0 release-candidate xcframeworks. Host DDS was pinned to its live NIC through `CYCLONEDDS_URI`; the Jazzy column is one Jazzy sync (packages listed in the PR).
+
+| Check | zenoh × Jazzy | zenoh × Lyrical | cdds `.rcl` × Jazzy | cdds `.rcl` × Lyrical | wire `.dds` × Jazzy | wire `.dds` × Lyrical |
+|---|---|---|---|---|---|---|
 
 ## API stability
 

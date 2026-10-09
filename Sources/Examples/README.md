@@ -55,7 +55,7 @@ For example `swift run action-client rcl-unicast 192.168.1.10 123 15` sends a Fi
 SWIFT_ROS2_RCL_RMW=zenoh CRCL_ZENOH_LOCATOR=tcp/127.0.0.1:7447 swift run crcl-loopback
 ```
 
-The variant resolves to the pinned release xcframework (until the 2.2.0 pin, the 2.1.0 Jazzy build `CRos2JazzyZenoh`); add `SWIFT_ROS2_RCL_LOCAL=1` to use a locally built `CRos2Zenoh` instead (`RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`).
+The variant resolves to the pinned release xcframework `CRos2Zenoh`; add `SWIFT_ROS2_RCL_LOCAL=1` to use a locally built `CRos2Zenoh` instead (`RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`).
 
 ## Prerequisites
 

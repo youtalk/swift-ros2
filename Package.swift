@@ -80,11 +80,10 @@ let windowsCycloneDDSDir: String? = {
 // can only when `CYCLONEDDS_DIR` is set; Android never can.
 let canBuildDDS = !isAndroidBuild && (!isWindowsBuild || windowsCycloneDDSDir != nil)
 
-let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.1.0"
+let releaseBaseURL = "https://github.com/youtalk/swift-ros2/releases/download/2.2.0"
 
 // Native-rcl backend. Apple: in the build graph BY DEFAULT — the prebuilt
-// CRos2(.Zenoh) xcframework (still published as CRos2Jazzy(.Zenoh) in the
-// 2.1.0 release) resolves from the release URL, selected by
+// CRos2(.Zenoh) xcframework resolves from the release URL, selected by
 // `rclRmwVariant` below (the MZ2 "Replace on Apple" decision: a plain Apple
 // `swift build` gets the RCL backend without any env opt-in).
 // SWIFT_ROS2_DISABLE_RCL=1 opts an Apple build back out (wire-only graph, no
@@ -110,8 +109,8 @@ let useLocalRclXCFramework = Context.environment["SWIFT_ROS2_RCL_LOCAL"] == "1"
 // SWIFT_ROS2_RCL_RMW selects the rmw variant baked into the RCL binary
 // target: "cyclonedds" (default) -> CRos2.xcframework, or
 // "zenoh" -> CRos2Zenoh.xcframework (rmw_zenoh_cpp + fastrtps
-// typesupport). They resolve from the release URL as the 2.1.0 zips
-// CRos2Jazzy.xcframework.zip / CRos2JazzyZenoh.xcframework.zip — or from
+// typesupport). They resolve from the release URL as the zips
+// CRos2.xcframework.zip / CRos2Zenoh.xcframework.zip — or from
 // build/ros2*/ under SWIFT_ROS2_RCL_LOCAL=1 (build with
 // `RMW_VARIANT=zenoh Scripts/build-ros2-xcframework.sh`). Both variants
 // expose the identical rcl C API, so every Swift target is variant-agnostic.
@@ -128,24 +127,16 @@ let rclRmwVariant: String = {
 // url-based binary artifacts by that match). Linux keeps the single
 // CRos2 systemLibrary name for both transports (runtime rmw selection).
 // Nothing `import`s this module from Swift, so the name is link-graph-only.
-// Locally built xcframeworks (Scripts/build-ros2-xcframework.sh) are named
-// CRos2 / CRos2Zenoh. The released 2.1.0 assets keep their old names
-// (CRos2Jazzy / CRos2JazzyZenoh) until the 2.2.0 pin, because a URL binary
-// target's name must match the zip's .xcframework basename.
-let ros2XCFrameworkName: String = {
-    if useLocalRclXCFramework { return rclRmwVariant == "zenoh" ? "CRos2Zenoh" : "CRos2" }
-    return rclRmwVariant == "zenoh" ? "CRos2JazzyZenoh" : "CRos2Jazzy"
-}()
+let ros2XCFrameworkName = rclRmwVariant == "zenoh" ? "CRos2Zenoh" : "CRos2"
 let ros2CTargetName = isLinuxBuild ? "CRos2" : ros2XCFrameworkName
 
 // Route (B) (Lyrical RCL): an RCL-enabled cyclonedds graph on Apple links the
 // CycloneDDS that the RCL xcframework already carries in librclros.a, so the
 // wire DDS bridge and rmw_cyclonedds_cpp share one build. Linking the wire
 // CCycloneDDS next to it puts two CycloneDDS builds into one binary, which
-// aborts at node creation. Until the 2.2.0 pin only the locally built
-// xcframework exports the dds/ headers CDDSBridge compiles against.
+// aborts at node creation.
 let ddsFromRclXCFramework =
-    enableRcl && targetOS == "apple" && rclRmwVariant == "cyclonedds" && useLocalRclXCFramework
+    enableRcl && targetOS == "apple" && rclRmwVariant == "cyclonedds"
 
 // zenoh-pico (the wire path) and zenoh-c (bundled inside CRos2Zenoh)
 // both export the standard zenoh C API, so they cannot link into one binary.
@@ -313,7 +304,7 @@ let cZenohPico: Target = {
         return .binaryTarget(
             name: "CZenohPico",
             url: "\(releaseBaseURL)/CZenohPico.xcframework.zip",
-            checksum: "adee6aae0b4ce27a6f423d6075ccff235d2bc2874c27fd076ddcd5f211bb6152"
+            checksum: "7acc9008f42d0c42e5bfef82f65f8729f9dba4f21aeabae2242c72db8ef369ed"
         )
     }
 }()
@@ -553,8 +544,8 @@ if !dropZenohWire {
 // Only included on platforms where CycloneDDS is consumable (see
 // `canBuildDDS` above): Apple via binary xcframework, Linux via
 // pkg-config, Windows via vcpkg + `CYCLONEDDS_DIR`. RCL-enabled cyclonedds
-// graphs that use the local xcframework (`ddsFromRclXCFramework`) take
-// CycloneDDS from `CRos2` instead and declare no `CCycloneDDS` (route B).
+// graphs on Apple (`ddsFromRclXCFramework`) take CycloneDDS from `CRos2`
+// instead and declare no `CCycloneDDS` (route B).
 // Android does not ship DDS. Where this is absent, the SwiftROS2 umbrella
 // below drops its SwiftROS2DDS dependency and `.dds` fails loudly at runtime.
 if canBuildDDS {
@@ -578,7 +569,7 @@ if canBuildDDS {
             return .binaryTarget(
                 name: "CCycloneDDS",
                 url: "\(releaseBaseURL)/CCycloneDDS.xcframework.zip",
-                checksum: "b12c817b8d2a597c111c2fa4992907155635878711581aaf7413acd401499a8a"
+                checksum: "a89e1b1c27af33259a03f825b6071f2825f272833f66ffede23b7095ea9081e8"
             )
         }
     }()
@@ -779,16 +770,16 @@ if enableRcl {
     } else if rclRmwVariant == "zenoh" {
         targets.append(
             .binaryTarget(
-                name: "CRos2JazzyZenoh",
-                url: "\(releaseBaseURL)/CRos2JazzyZenoh.xcframework.zip",
-                checksum: "e82243f91330e2bc87f32bb37251735ed1c0710d128fad73fc04704210647ac8"
+                name: "CRos2Zenoh",
+                url: "\(releaseBaseURL)/CRos2Zenoh.xcframework.zip",
+                checksum: "b2089cc4d907fd4c4f889fac3e047966adefed6ab03057c3a5ccee34e63fe971"
             ))
     } else {
         targets.append(
             .binaryTarget(
-                name: "CRos2Jazzy",
-                url: "\(releaseBaseURL)/CRos2Jazzy.xcframework.zip",
-                checksum: "0a0298224dad998892ed5e46498e8583d69e23f7a0118369d5283ca211b11625"
+                name: "CRos2",
+                url: "\(releaseBaseURL)/CRos2.xcframework.zip",
+                checksum: "82eb98ef888c54b6adbba7baa8de4cc10eae34b8b4c471b787fbcb4cca884663"
             ))
     }
     // rmw_cyclonedds_cpp / rcpputils in CRos2 are C++, so every target

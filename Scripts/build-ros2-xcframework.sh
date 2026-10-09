@@ -716,7 +716,10 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
 # Facts every slice must satisfy (spike change list, "post-merge assertions").
 assert_merged_slice() {  # $1 = slice
   local sb="$BUILD/$1" a="$BUILD/$1/merged/librclros.a" fail=0
-  local dylibs; dylibs="$(find "$sb/install/lib" -name '*.dylib' 2>/dev/null)"
+  # libcycloneddsidl*.dylib are the idlc compiler's own libraries (idlc links
+  # them), built because the cyclonedds closure builds idlc; nothing in
+  # librclros.a references them, so they are tooling, not runtime.
+  local dylibs; dylibs="$(find "$sb/install/lib" -name '*.dylib' ! -name 'libcycloneddsidl*' 2>/dev/null)"
   [[ -z "$dylibs" ]] || { echo "assert: unmerged runtime dylibs: $dylibs" >&2; fail=1; }
   local undef
   undef="$(comm -23 <(nm -u "$a" 2>/dev/null | awk 'NF{print $NF}' | sort -u) \

@@ -9,7 +9,8 @@ name: CI (RCL)
 #   rcl-zenoh — rmw_zenoh_cpp (CRos2Zenoh.xcframework): builds the zenoh
 #     rmw variant (SWIFT_ROS2_RCL_RMW=zenoh — the dropZenohWire manifest
 #     carve-out + SWIFT_ROS2_RCL_RMW_ZENOH define + Context routing) and
-#     executes SwiftROS2RCLTests natively. Same cache strategy.
+#     executes SwiftROS2RCLTests natively, then runs the three crcl loopbacks
+#     over .zenoh(locator:) through a standalone zenohd. Same cache strategy.
 #   rcl-linux — ubuntu-24.04 + ROS 2 Jazzy: unlike the two macOS jobs above,
 #     this leg consumes ROS 2 straight from apt (/opt/ros/jazzy) rather than
 #     a cross-compiled xcframework — the Package.swift Linux RCL arm
@@ -228,8 +229,9 @@ jobs:
       # (audio_common_msgs/AudioData, absent from the marshal registry) is
       # published on the .rcl backend via RclClient's CDDSBridge raw-CDR
       # fallback below rmw, and received by a pure-Swift .dds wire subscription
-      # on the same domain — proving the two CycloneDDS instances (rcl's and the
-      # standalone bridge's) coexist in-process and interoperate by topic +
+      # on the same domain — proving the wire participants (the route-(b) raw
+      # writer and the .dds subscriber) and rmw_cyclonedds_cpp share the one
+      # CycloneDDS linked into the process and interoperate by topic +
       # DDS-type name. Same headless-runner caveats as crcl-loopback: bound the
       # run (alarm 120 — the example's own 20 s bound + ASan slowdown) and
       # decide success on the OK line + the absence of any ASan/leak report.
@@ -414,6 +416,29 @@ jobs:
       # MZ1 router plumbing under the real zenoh-variant build graph.
       - name: Run SwiftROS2RCLTests (zenoh, macOS native)
         run: swift test --filter SwiftROS2RCLTests
+
+      # The crcl loopbacks over .zenoh(locator:) — the zenoh variant's RCL
+      # transport — through a standalone zenohd at rmw_zenoh's Zenoh version.
+      - name: Start zenohd 1.10.1
+        run: |
+          curl -sSL -o /tmp/zenoh.zip \
+            https://github.com/eclipse-zenoh/zenoh/releases/download/1.10.1/zenoh-1.10.1-aarch64-apple-darwin-standalone.zip
+          mkdir -p /tmp/zenoh && unzip -q -o /tmp/zenoh.zip -d /tmp/zenoh
+          /tmp/zenoh/zenohd --listen tcp/127.0.0.1:7447 --no-multicast-scouting > /tmp/zenohd.log 2>&1 &
+          sleep 3
+      - name: Run the crcl loopbacks over .zenoh(locator:)
+        env:
+          CRCL_ZENOH_LOCATOR: tcp/127.0.0.1:7447
+        run: |
+          bin="$(swift build --show-bin-path)"
+          for exe in crcl-loopback crcl-svc-loopback crcl-action-loopback; do
+            out="$(perl -e 'alarm 150; exec @ARGV' "$bin/$exe" 2>&1)" || true
+            printf '%s\n' "$out"
+            printf '%s\n' "$out" | grep -q "OK" || { echo "::error::$exe failed"; cat /tmp/zenohd.log; exit 1; }
+            if printf '%s\n' "$out" | grep -q "rosidl_buffer_backend"; then
+              echo "::error::$exe logged a rosidl_buffer_backend ERROR"; exit 1
+            fi
+          done
 
   rcl-linux:
     name: RCL build + tests (Linux, ROS 2 Jazzy)

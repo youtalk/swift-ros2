@@ -105,7 +105,13 @@ actor LoopbackFibonacciHandler: ActionServerHandler {
 
 let ctx: ROS2Context
 do {
-    ctx = try await ROS2Context(transport: .rcl(domainId: 0))
+    // CRCL_ZENOH_LOCATOR runs the same loopback over .zenoh(locator:): the
+    // zenoh rmw variant rejects .rcl (which targets rmw_cyclonedds), so
+    // ci-rcl's rcl-zenoh job points this at a router it starts.
+    let transport: TransportConfig =
+        ProcessInfo.processInfo.environment["CRCL_ZENOH_LOCATOR"].map { .zenoh(locator: $0) }
+        ?? .rcl(domainId: 0)
+    ctx = try await ROS2Context(transport: transport)
 } catch {
     fail("ROS2Context creation threw: \(error)")
 }

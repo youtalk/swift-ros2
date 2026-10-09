@@ -53,10 +53,12 @@ final class ReceiveBox: @unchecked Sendable {
 }
 
 // --- Receiver context first: `.rcl` backend ------------------------------
-// rcl's CycloneDDS must create the process domain object first; the standalone
-// participants (the route-(b) raw reader and the `.dds` wire publisher) then
-// JOIN that domain. The reverse order makes a standalone bridge win the domain
-// and rcl's rmw_create_node fails "Precondition Not Met".
+// rcl's CycloneDDS must create the process domain object first. The CDDSBridge
+// participants below (the route-(b) raw reader and the wire `.dds` publisher)
+// then JOIN that domain via an implicit participant — their own
+// dds_create_domain on the already-owned id fails gracefully and they fall
+// through to the shared domain. The reverse order makes the wire bridge
+// win the domain and rcl's rmw_create_node fails "Precondition Not Met".
 let rclCtx: ROS2Context
 do {
     rclCtx = try await ROS2Context(transport: .rcl(domainId: 0))

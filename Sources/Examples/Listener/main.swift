@@ -20,8 +20,24 @@ case "zenoh":
 case "dds":
     let domainId = args.dropFirst().first.flatMap(Int.init) ?? 0
     transport = .ddsMulticast(domainId: domainId)
+case "rcl":
+    let domainId = args.dropFirst().first.flatMap(Int.init) ?? 0
+    transport = .rcl(domainId: domainId)
+case "dds-unicast", "rcl-unicast":
+    // <peer address> [domain] — exercises the discovery-XML builder.
+    guard let peer = args.dropFirst().first else {
+        FileHandle.standardError.write(Data("\(transportName) needs a peer address\n".utf8))
+        exit(2)
+    }
+    let domainId = args.dropFirst(2).first.flatMap(Int.init) ?? 0
+    let peers = [DDSPeer(address: peer, port: UInt16(7400 + domainId * 250))]
+    transport =
+        transportName == "rcl-unicast"
+        ? .rclUnicast(peers: peers, domainId: domainId)
+        : .ddsUnicast(peers: peers, domainId: domainId)
 default:
-    FileHandle.standardError.write(Data("Unknown transport '\(transportName)'. Use 'zenoh' or 'dds'.\n".utf8))
+    FileHandle.standardError.write(
+        Data("Unknown transport '\(transportName)'. Use 'zenoh', 'dds', 'dds-unicast', 'rcl' or 'rcl-unicast'.\n".utf8))
     exit(2)
 }
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `macos-arm64` slice of `CRos2` / `CRos2Zenoh` is built for macOS 13.0** (it was 13.1), matching `.macOS(.v13)`, so linking it no longer emits `object file ... was built for newer 'macOS' version (13.1) than being linked (13.0)` warnings. The build now asserts that no object in a slice targets a newer OS than the slice, and rebuilds a reused build tree whose deployment target changed.
+
+### Changed
+
+- **The README documents that the RCL xcframeworks are arm64-only** (true since 1.4.0) and the workarounds: `SWIFT_ROS2_DISABLE_RCL=1` on an Intel Mac or for any build that must include x86_64, and arm64-only simulator builds.
+
 ## [2.2.0] - 2026-10-09
 
 ### Changed

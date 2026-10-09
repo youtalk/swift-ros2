@@ -73,8 +73,17 @@ HOST="$ROOT/build/ros2/host_ws"
 VENV="$ROOT/build/ros2/venv"
 TOOLCHAIN="$ROOT/Scripts/ros2/ios-cmake/ios.toolchain.cmake"
 DEPLOY_IOS=16.0
-# leetal ios-cmake enforces a Mac Catalyst minimum deployment target of 13.1.
-DEPLOY_MAC=13.1
+# leetal ios-cmake enforces a Mac Catalyst minimum deployment target of 13.1
+# (an iOS-style macabi version, not a macOS one).
+DEPLOY_CATALYST=13.1
+# clang raises a lower arm64 Mac Catalyst target to iOS 14.0 (macOS 11.0, the
+# first arm64 macOS): -target arm64-apple-ios13.1-macabi yields minos 14.0, so
+# 14.0 is the oldest minos a Catalyst object can carry.
+CATALYST_ARM64_MINOS=14.0
+# Matches Package.swift's .macOS(.v13). Not the Catalyst 13.1 above: on macOS
+# that number means macOS 13.1, and a consumer linking the slice at 13.0 would
+# get "object file ... was built for newer 'macOS' version (13.1)" per object.
+DEPLOY_MACOS=13.0
 # visionOS versions are 1.x — passing the iOS target (16.0) to the xros /
 # xrsimulator slices would be rejected by the visionOS SDK.
 DEPLOY_VISIONOS=1.0
@@ -536,8 +545,8 @@ build_host_tools() {
 }
 
 slice_platform() { case "$1" in
-  maccatalyst) echo "MAC_CATALYST_ARM64 $DEPLOY_MAC" ;;
-  macosx)      echo "MAC_ARM64 $DEPLOY_MAC" ;;
+  maccatalyst) echo "MAC_CATALYST_ARM64 $DEPLOY_CATALYST" ;;
+  macosx)      echo "MAC_ARM64 $DEPLOY_MACOS" ;;
   iphoneos)    echo "OS64 $DEPLOY_IOS" ;;
   iphonesimulator) echo "SIMULATORARM64 $DEPLOY_IOS" ;;
   xros)        echo "VISIONOS $DEPLOY_VISIONOS" ;;
@@ -570,7 +579,10 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
   local triple; triple="$(zenohc_triple "$slice")"
   local zc="$BUILD/zenoh-c" zcpp="$BUILD/zenoh-cpp"
   local out="$BUILD/$slice/zenohc-install"
-  local stamp="$ZENOHC_PIN $ZENOHCPP_PIN"
+  # The stamp covers the slice's deployment target too: a build tree reused
+  # across a target change would otherwise ship objects built for the old one.
+  local deploy; read -r _ deploy < <(slice_platform "$slice")
+  local stamp="$ZENOHC_PIN $ZENOHCPP_PIN $deploy"
   [[ -f "$out/lib/libzenohc.a" && "$(cat "$out/.pins" 2>/dev/null)" == "$stamp" ]] && return 0
   if [[ "$(git -C "$zc" rev-parse HEAD 2>/dev/null)" != "$ZENOHC_PIN" ]]; then
     rm -rf "$zc"; git clone https://github.com/eclipse-zenoh/zenoh-c.git "$zc"; git -C "$zc" checkout "$ZENOHC_PIN"
@@ -585,10 +597,20 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
   # Without these, cc-rs compiles ring's C objects for the SDK's own version
   # (minos 27.0 with Xcode 27) instead of our deployment targets.
   local ios_dt="$DEPLOY_IOS"
-  [[ "$slice" == maccatalyst ]] && ios_dt="$DEPLOY_MAC"
+  [[ "$slice" == maccatalyst ]] && ios_dt="$DEPLOY_CATALYST"
+  # cargo does not fingerprint the deployment-target variables, so a reused
+  # target dir keeps rustc's and cc-rs's objects built for the previous target.
+  # Drop this triple's output when the target changed; the marker is written
+  # before the build so a retry after a failed build still resumes.
+  local tdir="$zc/target/$triple"
+  if [[ "$(cat "$tdir/.swift-ros2-deploy" 2>/dev/null)" != "$deploy" ]]; then
+    rm -rf "$tdir"
+    mkdir -p "$tdir"
+    echo "$deploy" > "$tdir/.swift-ros2-deploy"
+  fi
   # Scoped to the cargo invocation: exported, they would leak into the later
   # colcon steps and the next slice.
-  ( cd "$zc" && IPHONEOS_DEPLOYMENT_TARGET="$ios_dt" MACOSX_DEPLOYMENT_TARGET="$DEPLOY_MAC" \
+  ( cd "$zc" && IPHONEOS_DEPLOYMENT_TARGET="$ios_dt" MACOSX_DEPLOYMENT_TARGET="$DEPLOY_MACOS" \
       cargo build --release -j 4 --target "$triple" \
       --features unstable --features transport_serial )
   rm -rf "$out"
@@ -611,6 +633,17 @@ cross_build() {  # $1 = slice, $2... = extra --packages-up-to
   local slice="$1"; shift
   read -r platform deploy < <(slice_platform "$slice")
   local sb="$BUILD/$slice"
+  # ios.toolchain.cmake prepends its flags (including -target) to the cached
+  # CMAKE_*_FLAGS on every configure and clang takes the last -target, so a tree
+  # configured for another deployment target keeps compiling for the old one. A
+  # tree without this marker predates it. Start the slice over when its target
+  # changed; the marker is written before colcon so a retry after a failed
+  # build resumes.
+  if [[ -d "$sb/build" && "$(cat "$sb/.swift-ros2-deploy" 2>/dev/null)" != "$platform $deploy" ]]; then
+    rm -rf "$sb/build" "$sb/install"
+  fi
+  mkdir -p "$sb"
+  echo "$platform $deploy" > "$sb/.swift-ros2-deploy"
   ignore_unbuildable
   patch_sources
   local extra_cmake=()
@@ -722,6 +755,68 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
   find "$out/include" -type d -empty -delete
 }
 
+version_max() { printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1; }
+
+# No object in a slice's librclros.a may be built for an OS newer than the slice
+# itself: a consumer linking at the package's own minimum (Package.swift) gets
+# "object file ... was built for newer '<OS>' version" for every such object
+# (the macosx slice once shipped at 13.1 against .macOS(.v13)). Older is fine,
+# because Rust's prebuilt std and other objects may carry a lower minos.
+# `otool -l` prints every archive member in one pass; LC_BUILD_VERSION carries
+# the Mach-O platform number and minos (Mac Catalyst minos is iOS-style).
+assert_object_targets() {  # $1 = slice
+  local slice="$1" a="$BUILD/$1/merged/librclros.a"
+  local pnum pname limit deploy
+  read -r _ deploy < <(slice_platform "$slice")
+  case "$slice" in
+    macosx)          pnum=1;  pname=MACOS ;;
+    iphoneos)        pnum=2;  pname=IOS ;;
+    maccatalyst)     pnum=6;  pname=MACCATALYST ;;
+    iphonesimulator) pnum=7;  pname=IOSSIMULATOR ;;
+    xros)            pnum=11; pname=XROS ;;
+    xrsimulator)     pnum=12; pname=XROSSIMULATOR ;;
+    *) echo "assert: unknown slice: $slice" >&2; return 1 ;;
+  esac
+  limit="$deploy"
+  [[ "$slice" == maccatalyst ]] && limit="$(version_max "$deploy" "$CATALYST_ARM64_MINOS")"
+  local report n bad newest
+  report="$(otool -l "$a" 2>/dev/null | awk -v ar="$a" -v want="$pnum" -v wantname="$pname" -v limit="$limit" '
+    function ver(s,    p) { split(s, p, "."); return p[1] * 1000000 + p[2] * 1000 + p[3] }
+    BEGIN { lim = ver(limit) }
+    /^[^ ].*\):$/ && $1 != "Load" {
+      member = $0
+      if (index(member, ar "(") == 1) member = substr(member, length(ar) + 2)
+      sub(/\):$/, "", member)
+      next
+    }
+    $1 == "cmd" { in_bv = ($2 == "LC_BUILD_VERSION"); next }
+    in_bv && $1 == "platform" { plat = $2; next }
+    in_bv && $1 == "minos" {
+      n++
+      v = ver($2)
+      if (v > newest_v) { newest_v = v; newest = $2 }
+      if ((plat != want && plat != wantname) || v > lim) {
+        bad++
+        if (bad <= 20) printf "BAD %s: platform %s, minos %s\n", member, plat, $2
+      }
+      in_bv = 0
+    }
+    END { printf "SUMMARY %d %d %s\n", n, bad, newest }
+  ')" || true
+  read -r _ n bad newest <<< "$(printf '%s\n' "$report" | grep '^SUMMARY ' || true)"
+  if [[ -z "${n:-}" || "$n" == 0 ]]; then
+    echo "assert: no LC_BUILD_VERSION objects found in $a (did the otool -l format change?)" >&2
+    return 1
+  fi
+  if [[ "$bad" != 0 ]]; then
+    echo "assert: $bad of $n objects in librclros.a are not built for $pname <= $limit (the $slice slice):" >&2
+    printf '%s\n' "$report" | grep '^BAD ' | sed 's/^BAD /  /' >&2
+    [[ "$bad" -le 20 ]] || echo "  ... and $((bad - 20)) more" >&2
+    return 1
+  fi
+  echo "assert: $slice: $n objects, newest minos $newest (limit $limit, platform $pname)"
+}
+
 # Facts every slice must satisfy (spike change list, "post-merge assertions").
 assert_merged_slice() {  # $1 = slice
   local sb="$BUILD/$1" a="$BUILD/$1/merged/librclros.a" fail=0
@@ -761,6 +856,7 @@ assert_merged_slice() {  # $1 = slice
            "$sb"/build/*/CMakeCache.txt 2>/dev/null \
            | grep -vE 'CMakeCache\.txt:_?(Python[0-9]*|PYTHON[0-9]*)_' || true)"
   [[ -z "$leaks" ]] || { echo "assert: Homebrew paths in slice CMake caches: $leaks" >&2; fail=1; }
+  assert_object_targets "$1" || fail=1
   return $fail
 }
 

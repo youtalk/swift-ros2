@@ -576,12 +576,17 @@ zenohc_triple() { case "$1" in
 # pins commits, not tags.
 build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
   local slice="$1"
-  local triple; triple="$(zenohc_triple "$slice")"
+  # Explicit failures: this runs under `||` / `if` in sourced use, where set -e
+  # is suspended, and an unknown slice must never reach the rm -rf below.
+  local triple; triple="$(zenohc_triple "$slice")" || return 1
   local zc="$BUILD/zenoh-c" zcpp="$BUILD/zenoh-cpp"
   local out="$BUILD/$slice/zenohc-install"
   # The stamp covers the slice's deployment target too: a build tree reused
   # across a target change would otherwise ship objects built for the old one.
-  local deploy; read -r _ deploy < <(slice_platform "$slice")
+  local pd deploy
+  pd="$(slice_platform "$slice")" || return 1
+  read -r _ deploy <<< "$pd"
+  [[ -n "$triple" && -n "$deploy" ]] || return 1
   local stamp="$ZENOHC_PIN $ZENOHCPP_PIN $deploy"
   [[ -f "$out/lib/libzenohc.a" && "$(cat "$out/.pins" 2>/dev/null)" == "$stamp" ]] && return 0
   if [[ "$(git -C "$zc" rev-parse HEAD 2>/dev/null)" != "$ZENOHC_PIN" ]]; then
@@ -631,7 +636,12 @@ build_zenohc() {  # $1 = slice -> $BUILD/$slice/zenohc-install
 
 cross_build() {  # $1 = slice, $2... = extra --packages-up-to
   local slice="$1"; shift
-  read -r platform deploy < <(slice_platform "$slice")
+  # Explicit failure, not set -e: under `||` / `if` an unknown slice would leave
+  # $sb pointing outside the slice tree and the rm -rf below would follow it.
+  local pd platform deploy
+  pd="$(slice_platform "$slice")" || return 1
+  read -r platform deploy <<< "$pd"
+  [[ -n "$platform" && -n "$deploy" ]] || return 1
   local sb="$BUILD/$slice"
   # ios.toolchain.cmake prepends its flags (including -target) to the cached
   # CMAKE_*_FLAGS on every configure and clang takes the last -target, so a tree
@@ -688,6 +698,7 @@ merge_slice() {  # $1 = slice -> build/ros2/<slice>/merged/{librclros.a,include}
   # Separate `local` statements: `local a=$1 b=$BUILD/$a` expands $a before it
   # is localized, which trips `set -u` ("a: unbound variable").
   local slice="$1"
+  slice_platform "$slice" > /dev/null || return 1  # never rm -rf for an unknown slice
   local sb="$BUILD/$slice"
   local out="$sb/merged"
   rm -rf "$out"; mkdir -p "$out"
@@ -762,59 +773,75 @@ version_max() { printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | ta
 # "object file ... was built for newer '<OS>' version" for every such object
 # (the macosx slice once shipped at 13.1 against .macOS(.v13)). Older is fine,
 # because Rust's prebuilt std and other objects may carry a lower minos.
-# `otool -l` prints every archive member in one pass; LC_BUILD_VERSION carries
-# the Mach-O platform number and minos (Mac Catalyst minos is iOS-style).
+# `otool -l` prints every archive member in one pass. The target is in
+# LC_BUILD_VERSION (Mach-O platform number + minos; Mac Catalyst minos is
+# iOS-style) or, for objects that predate it, in LC_VERSION_MIN_<OS> (its
+# `version`; the Rust std objects of the zenoh iOS slices are such members).
+# LC_VERSION_MIN_IPHONEOS carries no simulator distinction, so it is accepted in
+# both iOS slices. Members with neither command are counted but not checked.
 assert_object_targets() {  # $1 = slice
   local slice="$1" a="$BUILD/$1/merged/librclros.a"
-  local pnum pname limit deploy
-  read -r _ deploy < <(slice_platform "$slice")
+  local pnum pname limit deploy pd
+  pd="$(slice_platform "$slice")" || return 1
+  read -r _ deploy <<< "$pd"
   case "$slice" in
     macosx)          pnum=1;  pname=MACOS ;;
     iphoneos)        pnum=2;  pname=IOS ;;
     maccatalyst)     pnum=6;  pname=MACCATALYST ;;
     iphonesimulator) pnum=7;  pname=IOSSIMULATOR ;;
-    xros)            pnum=11; pname=XROS ;;
-    xrsimulator)     pnum=12; pname=XROSSIMULATOR ;;
+    xros)            pnum=11; pname=VISIONOS ;;
+    xrsimulator)     pnum=12; pname=VISIONOSSIMULATOR ;;
     *) echo "assert: unknown slice: $slice" >&2; return 1 ;;
   esac
   limit="$deploy"
   [[ "$slice" == maccatalyst ]] && limit="$(version_max "$deploy" "$CATALYST_ARM64_MINOS")"
-  local report n bad newest
-  report="$(otool -l "$a" 2>/dev/null | awk -v ar="$a" -v want="$pnum" -v wantname="$pname" -v limit="$limit" '
+  local report n vmn members bad newest
+  report="$(otool -l "$a" 2>/dev/null | awk -v ar="$a" -v want="$pnum" -v limit="$limit" '
     function ver(s,    p) { split(s, p, "."); return p[1] * 1000000 + p[2] * 1000 + p[3] }
+    function vmplat(c) {
+      if (c == "LC_VERSION_MIN_MACOSX") return 1
+      if (c == "LC_VERSION_MIN_IPHONEOS") return 2
+      if (c == "LC_VERSION_MIN_TVOS") return 3
+      if (c == "LC_VERSION_MIN_WATCHOS") return 4
+      return 0
+    }
+    # p = platform number, v = minos / version, how = "" or the LC_VERSION_MIN_* command
+    function check(p, v, how,    ok, x) {
+      x = ver(v)
+      if (x > newest_v) { newest_v = x; newest = v }
+      ok = (p == want) || (how != "" && p == 2 && want == 7)
+      if (!ok || x > lim) {
+        bad++
+        if (bad <= 20) printf "BAD %s: platform %s%s, minos %s\n", member, p, (how != "" ? " (" how ")" : ""), v
+      }
+    }
     BEGIN { lim = ver(limit) }
     /^[^ ].*\):$/ && $1 != "Load" {
+      members++
       member = $0
       if (index(member, ar "(") == 1) member = substr(member, length(ar) + 2)
       sub(/\):$/, "", member)
+      cmd = ""
       next
     }
-    $1 == "cmd" { in_bv = ($2 == "LC_BUILD_VERSION"); next }
-    in_bv && $1 == "platform" { plat = $2; next }
-    in_bv && $1 == "minos" {
-      n++
-      v = ver($2)
-      if (v > newest_v) { newest_v = v; newest = $2 }
-      if ((plat != want && plat != wantname) || v > lim) {
-        bad++
-        if (bad <= 20) printf "BAD %s: platform %s, minos %s\n", member, plat, $2
-      }
-      in_bv = 0
-    }
-    END { printf "SUMMARY %d %d %s\n", n, bad, newest }
+    $1 == "cmd" { cmd = $2; next }
+    cmd == "LC_BUILD_VERSION" && $1 == "platform" { plat = $2; next }
+    cmd == "LC_BUILD_VERSION" && $1 == "minos" { n++; check(plat, $2, ""); cmd = ""; next }
+    cmd ~ /^LC_VERSION_MIN_/ && $1 == "version" { vmn++; check(vmplat(cmd), $2, cmd); cmd = ""; next }
+    END { printf "SUMMARY %d %d %d %d %s\n", n, vmn, members, bad, newest }
   ')" || true
-  read -r _ n bad newest <<< "$(printf '%s\n' "$report" | grep '^SUMMARY ' || true)"
-  if [[ -z "${n:-}" || "$n" == 0 ]]; then
-    echo "assert: no LC_BUILD_VERSION objects found in $a (did the otool -l format change?)" >&2
+  read -r _ n vmn members bad newest <<< "$(printf '%s\n' "$report" | grep '^SUMMARY ' || true)"
+  if [[ -z "${n:-}" || "$((n + vmn))" == 0 ]]; then
+    echo "assert: no LC_BUILD_VERSION / LC_VERSION_MIN_* objects found in $a (did the otool -l format change?)" >&2
     return 1
   fi
   if [[ "$bad" != 0 ]]; then
-    echo "assert: $bad of $n objects in librclros.a are not built for $pname <= $limit (the $slice slice):" >&2
+    echo "assert: $bad of $((n + vmn)) objects in librclros.a are not built for $pname <= $limit (the $slice slice):" >&2
     printf '%s\n' "$report" | grep '^BAD ' | sed 's/^BAD /  /' >&2
     [[ "$bad" -le 20 ]] || echo "  ... and $((bad - 20)) more" >&2
     return 1
   fi
-  echo "assert: $slice: $n objects, newest minos $newest (limit $limit, platform $pname)"
+  echo "assert: $slice: $members members: $n LC_BUILD_VERSION, $vmn LC_VERSION_MIN_* (checked), $((members - n - vmn)) without either (unchecked); newest minos $newest (limit $limit, platform $pname)"
 }
 
 # Facts every slice must satisfy (spike change list, "post-merge assertions").

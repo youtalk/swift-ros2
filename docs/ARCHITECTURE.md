@@ -98,8 +98,9 @@ platform:
   in `release-xcframework.yml`) resolved from the pinned release URL +
   checksum. `SWIFT_ROS2_RCL_LOCAL=1` resolves it
   from a local `build/ros2*/` instead (CI and ROS 2 cross-build iteration).
-  The slices are arm64-only, so Intel Macs and x86_64 simulator or Mac Catalyst
-  builds need `SWIFT_ROS2_DISABLE_RCL=1`.
+  The slices are arm64-only: x86_64 builds (Intel Macs, x86_64 simulators,
+  universal Mac Catalyst / macOS archives) need `SWIFT_ROS2_DISABLE_RCL=1` or an
+  arm64-only build.
   The rmw is **baked per build variant**, selected by `SWIFT_ROS2_RCL_RMW`:
   `cyclonedds` (default) → `CRos2.xcframework`, `zenoh` →
   `CRos2Zenoh.xcframework` (no visionOS slice). The zenoh variant bundles

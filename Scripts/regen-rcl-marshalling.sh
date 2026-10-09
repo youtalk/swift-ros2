@@ -3,6 +3,11 @@
 # the M7 service typesupport registry, the M8 action typesupport registry,
 # and the registry-only message entries.
 # Run from the repo root. The same invocation backs the ci-rcl drift guard.
+#
+# The inputs stay on the Jazzy vendor IDL although the Apple RCL stack is
+# Lyrical: for every marshalled and registry type the Lyrical IDL is identical
+# (regenerating from the release-lyrical-20260807 sources gives a
+# byte-identical tree), and the generated files carry no distro label.
 set -euo pipefail
 TYPES="Imu,Joy,BatteryState,CompressedImage,PointCloud2,MagneticField,FluidPressure,Illuminance,NavSatFix,Range,Temperature,Image,CameraInfo"
 # M7 (spec section 20.3) service set: the six rcl_interfaces parameter

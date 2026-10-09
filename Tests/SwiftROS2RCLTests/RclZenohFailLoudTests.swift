@@ -102,8 +102,9 @@
             getenv("AMENT_PREFIX_PATH").map { String(cString: $0) }
         }
 
-        /// Create a directory carrying the rmw_zenoh_cpp resource-index marker
-        /// (a "valid user prefix" as far as ament_index resolution goes).
+        /// Create a directory carrying the rmw_zenoh_cpp and rosidl_buffer_backend
+        /// resource-index markers (a "valid user prefix" as far as ament_index
+        /// resolution goes).
         private func makeValidUserPrefix() throws -> URL {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("swift-ros2-test-prefix-\(UUID().uuidString)")
@@ -112,7 +113,75 @@
             try FileManager.default.createDirectory(
                 at: markerDir, withIntermediateDirectories: true)
             try Data().write(to: markerDir.appendingPathComponent("rmw_zenoh_cpp"))
+            try Data().write(to: markerDir.appendingPathComponent("rosidl_buffer_backend"))
             return root
+        }
+
+        /// Create a prefix whose resource index registers `packages`.
+        private func makePrefix(registering packages: [String], pluginIndex: Bool = false) throws -> URL {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("swift-ros2-test-prefix-\(UUID().uuidString)")
+            let index = root.appendingPathComponent("share/ament_index/resource_index", isDirectory: true)
+            let markerDir = index.appendingPathComponent("packages", isDirectory: true)
+            try FileManager.default.createDirectory(at: markerDir, withIntermediateDirectories: true)
+            for package in packages {
+                try Data().write(to: markerDir.appendingPathComponent(package))
+            }
+            if pluginIndex {
+                let pluginDir = index.appendingPathComponent(
+                    "rosidl_buffer_backend__pluginlib__plugin", isDirectory: true)
+                try FileManager.default.createDirectory(at: pluginDir, withIntermediateDirectories: true)
+                try Data().write(to: pluginDir.appendingPathComponent("some_backend"))
+            }
+            return root
+        }
+
+        func testSynthesizedPrefixRegistersBufferBackend() throws {
+            unsetenv("AMENT_PREFIX_PATH")
+            let client = RclClient()
+            try client.applyAmentPrefixEnv()
+            let prefix = try XCTUnwrap(currentAmentPrefixPath)
+            XCTAssertTrue(RclClient.amentPrefixPath(prefix, registers: "rosidl_buffer_backend"))
+            XCTAssertTrue(RclClient.amentPrefixPath(prefix, registers: "rmw_zenoh_cpp"))
+            client.restoreZenohSessionEnv()
+            XCTAssertNil(currentAmentPrefixPath)
+        }
+
+        func testUserRmwZenohPrefixGetsBufferBackendMarkerAppended() throws {
+            let user = try makePrefix(registering: ["rmw_zenoh_cpp"])
+            setenv("AMENT_PREFIX_PATH", user.path, 1)
+            let client = RclClient()
+            try client.applyAmentPrefixEnv()
+            let parts = try XCTUnwrap(currentAmentPrefixPath).split(separator: ":").map(String.init)
+            XCTAssertEqual(parts.first, user.path, "the user's rmw_zenoh config must stay first")
+            let synthesized = try XCTUnwrap(parts.last)
+            XCTAssertNotEqual(synthesized, user.path)
+            XCTAssertTrue(RclClient.amentPrefixPath(synthesized, registers: "rosidl_buffer_backend"))
+            XCTAssertFalse(
+                RclClient.amentPrefixPath(synthesized, registers: "rmw_zenoh_cpp"),
+                "the synthesized prefix must not shadow the user's rmw_zenoh config")
+            client.restoreZenohSessionEnv()
+            XCTAssertEqual(currentAmentPrefixPath, user.path)
+            unsetenv("AMENT_PREFIX_PATH")
+        }
+
+        func testPluginDeclaringPrefixIsDropped() throws {
+            let host = try makePrefix(
+                registering: ["rmw_zenoh_cpp", "rosidl_buffer_backend"], pluginIndex: true)
+            let user = try makePrefix(registering: ["some_pkg"])
+            let inherited = "\(host.path):\(user.path)"
+            XCTAssertEqual(
+                RclClient.partitionInheritedAmentPrefixPath(inherited).dropped, [host.path])
+            setenv("AMENT_PREFIX_PATH", inherited, 1)
+            let client = RclClient()
+            try client.applyAmentPrefixEnv()
+            let parts = try XCTUnwrap(currentAmentPrefixPath).split(separator: ":").map(String.init)
+            XCTAssertFalse(parts.contains(host.path), "plugin-declaring prefix must not reach pluginlib")
+            XCTAssertTrue(parts.contains(user.path))
+            XCTAssertTrue(RclClient.amentPrefixPath(parts.joined(separator: ":"), registers: "rmw_zenoh_cpp"))
+            client.restoreZenohSessionEnv()
+            XCTAssertEqual(currentAmentPrefixPath, inherited)
+            unsetenv("AMENT_PREFIX_PATH")
         }
 
         func testApplySynthesizesPrefixWhenUnset() throws {
@@ -191,7 +260,8 @@
         func testCreateContextWithoutAmentEnvDoesNotThrowAmentError() {
             // The live-proven failure mode: with no AMENT_PREFIX_PATH, rmw_init
             // used to fail with "Environment variable AMENT_PREFIX_PATH is not
-            // set or empty" (rmw_init.cpp:114). With the synthesis in place,
+            // set or empty" (ament_index_cpp's get_search_paths, reached from
+            // rmw_zenoh_cpp's get_z_config). With the synthesis in place,
             // context creation must get past that error — it either succeeds
             // (router reachable at the locator) or fails for a non-AMENT reason
             // (e.g. no router). Either way the env slots are restored.

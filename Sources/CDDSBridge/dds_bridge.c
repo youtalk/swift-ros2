@@ -18,6 +18,7 @@
 // Only compile CycloneDDS implementation when available
 #ifdef DDS_AVAILABLE
 #include <dds/dds.h>
+#include <dds/version.h>
 #include <dds/ddsc/dds_opcodes.h>
 #include "raw_cdr_sertype.h"
 #endif
@@ -57,8 +58,9 @@ void dds_bridge_clear_error(void) {
 
 const char* dds_bridge_get_version(void) {
 #ifdef DDS_AVAILABLE
-    // CycloneDDS version is defined at build time
-    return "0.10.5";  // Matches deps/cyclonedds tag
+    // The version of the CycloneDDS this bridge was compiled and linked against:
+    // the wire CCycloneDDS fork, or, under route (B), the one inside CRos2.
+    return DDS_VERSION;
 #else
     return "unavailable";
 #endif
@@ -219,9 +221,9 @@ char* dds_bridge_build_domain_config_xml(int32_t domain_id, const bridge_discove
         // NOTE: do not emit <EnableTopicDiscoveryEndpoints> here. It does not
         // disable multicast SPDP (it toggles DCPSTopic discovery, which ROS 2
         // graph discovery does not use), and CycloneDDS builds compiled without
-        // topic-discovery support — e.g. the one bundled in CRos2 on iOS,
-        // reached by the RCL path via CYCLONEDDS_URI — reject it as an unknown
-        // element and fail rmw_create_node (issue #149). Leaving multicast SPDP
+        // topic-discovery support — e.g. the bundled wire CCycloneDDS fork
+        // (built with -DENABLE_TOPIC_DISCOVERY=OFF) — reject it as an unknown
+        // element and fail the domain creation (issue #149). Leaving multicast SPDP
         // enabled next to the explicit <Peers> is harmless: it is simply
         // ignored on networks without multicast (typical Wi-Fi).
 

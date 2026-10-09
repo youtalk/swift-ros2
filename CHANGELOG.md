@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Apple RCL runs ROS 2 Lyrical.** `CRos2` / `CRos2Zenoh` are built from `release-lyrical-20260807`: rcl 10.4.4, `rmw_cyclonedds_cpp` 4.1.4 with CycloneDDS 11.0.1, and `rmw_zenoh_cpp` 0.10.7 with zenoh-c 1.10.1. They interoperate with Jazzy and Lyrical hosts (README "Interop").
+- **Binary targets renamed:** `CRos2Jazzy` → `CRos2`, `CRos2JazzyZenoh` → `CRos2Zenoh`, release assets included. Nothing imports these modules, so the public API is unchanged.
+- **`.dds` in the default Apple graph runs on the CycloneDDS inside `CRos2`** (11.0.1, type and topic discovery on, the iOS Wi-Fi padding carried as a patch). Wire-only graphs (`SWIFT_ROS2_DISABLE_RCL=1`) and the zenoh variant keep `CCycloneDDS` 0.10.5.
+- **One CycloneDDS per RCL-enabled cyclonedds graph on Apple.** Lyrical's CycloneDDS aborts at node creation when a binary carries two builds, so the `CRos2` one is the only copy linked.
+- **The zenoh variant registers an empty `rosidl_buffer_backend` marker** in the ament prefix the RCL client synthesizes, so rmw_zenoh_cpp 0.10 finds no buffer-backend plugins and logs no ClassLoader ERROR at init. Inherited `AMENT_PREFIX_PATH` entries that declare buffer-backend plugins are dropped for the process (one stderr warning), so host plugins are never dlopen'd; other entries are kept.
+
 ## [2.1.0] - 2026-10-08
 
 ### Added

@@ -10,7 +10,7 @@
       "cmake-args": ["-DRCL_LOGGING_IMPLEMENTATION=rcl_logging_noop"]
     },
     "cyclonedds": {
-      "cmake-args": ["-DENABLE_SHM=OFF", "-DENABLE_SECURITY=OFF", "-DENABLE_SSL=OFF", "-DENABLE_LTO=OFF"]
+      "cmake-args": ["-DENABLE_SHM=OFF", "-DENABLE_ICEORYX=OFF", "-DENABLE_ICEORYX2=OFF", "-DENABLE_SECURITY=OFF", "-DENABLE_SSL=OFF", "-DENABLE_LTO=OFF"]
     }
   }
 }

@@ -963,26 +963,57 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     #endif
 
     #if SWIFT_ROS2_RCL_RMW_ZENOH
-        /// True when the colon-separated ament prefix path registers
-        /// rmw_zenoh_cpp in its resource index — i.e. ament_index (and therefore
-        /// rmw_init) can resolve DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5 through
-        /// one of its prefixes. `package` so tests can assert the rule.
-        package static func amentPrefixPathContainsRmwZenoh(_ path: String) -> Bool {
+        /// True when one of the colon-separated ament prefixes registers
+        /// `package` in its resource index. `package` so tests can assert it.
+        package static func amentPrefixPath(_ path: String, registers package: String) -> Bool {
             path.split(separator: ":").contains { prefix in
                 FileManager.default.fileExists(
-                    atPath: "\(prefix)/share/ament_index/resource_index/packages/rmw_zenoh_cpp")
+                    atPath: "\(prefix)/share/ament_index/resource_index/packages/\(package)")
             }
         }
 
-        /// rmw_zenoh_cpp hard-requires AMENT_PREFIX_PATH at rmw_init
-        /// (rmw_init.cpp:114 at the pinned fe3553c7) to resolve its default
-        /// session config via ament_index — and a consumer app cannot be
-        /// expected to export it. When the process env is unset/empty or lacks
-        /// the rmw_zenoh_cpp resource, synthesize a minimal ament prefix in a
-        /// temp directory (resource-index marker + the two default config
-        /// json5 files) and export it, prepending any existing value so
-        /// user-registered resources stay resolvable. A user-provided prefix
-        /// that already carries the resource is left untouched. Same
+        /// True when ament_index (and therefore rmw_init) can resolve
+        /// DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5 through one of the prefixes.
+        package static func amentPrefixPathContainsRmwZenoh(_ path: String) -> Bool {
+            amentPrefixPath(path, registers: "rmw_zenoh_cpp")
+        }
+
+        /// Splits an inherited AMENT_PREFIX_PATH into the prefixes this process
+        /// may use and the ones that declare rosidl_buffer_backend plugins.
+        /// rmw_zenoh_cpp >= 0.10 builds a pluginlib ClassLoader for that
+        /// package at every init and dlopens each declared plugin — host
+        /// .dylibs from a sourced ROS install, which fail or load foreign code
+        /// into this statically linked stack. `package` for tests.
+        package static func partitionInheritedAmentPrefixPath(_ path: String)
+            -> (kept: [String], dropped: [String])
+        {
+            var kept: [String] = []
+            var dropped: [String] = []
+            for prefix in path.split(separator: ":").map(String.init) where !prefix.isEmpty {
+                let pluginIndex =
+                    "\(prefix)/share/ament_index/resource_index/rosidl_buffer_backend__pluginlib__plugin"
+                if FileManager.default.fileExists(atPath: pluginIndex) {
+                    dropped.append(prefix)
+                } else {
+                    kept.append(prefix)
+                }
+            }
+            return (kept, dropped)
+        }
+
+        /// rmw_zenoh_cpp hard-requires AMENT_PREFIX_PATH at rmw_init to resolve
+        /// its default session config via ament_index (at the pinned
+        /// rmw_zenoh_cpp 0.10.7: `get_z_config` calls ament_index_cpp's
+        /// `get_package_share_path`, which throws when the variable is unset or
+        /// empty), and since 0.10 it also looks up the `rosidl_buffer_backend`
+        /// package (an ERROR on every init when it is missing). A consumer app
+        /// cannot be expected to export either, so this synthesizes a minimal
+        /// prefix in a temp directory and exports it: always the
+        /// `rosidl_buffer_backend` marker (declares no plugins, so nothing is
+        /// dlopened), plus the `rmw_zenoh_cpp` marker and the two default json5
+        /// configs when no inherited prefix registers rmw_zenoh_cpp. A complete
+        /// inherited path is left untouched; prefixes that declare
+        /// buffer-backend plugins are dropped for this process. Same
         /// single-apply-per-context contract as `applyZenohSessionEnv`; pair
         /// with `restoreZenohSessionEnv()` on teardown or a failed
         /// createContext. `package` so SwiftROS2RCLTests can exercise the
@@ -990,9 +1021,18 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
         package func applyAmentPrefixEnv() throws {
             Self.zenohEnvLock.lock()
             defer { Self.zenohEnvLock.unlock() }
-            let existing = getenv("AMENT_PREFIX_PATH").map { String(cString: $0) }
-            if let existing, !existing.isEmpty, Self.amentPrefixPathContainsRmwZenoh(existing) {
-                return  // valid user-provided prefix — leave it untouched
+            let existing = getenv("AMENT_PREFIX_PATH").map { String(cString: $0) } ?? ""
+            let (kept, dropped) = Self.partitionInheritedAmentPrefixPath(existing)
+            let keptPath = kept.joined(separator: ":")
+            let needsRmwZenoh = !Self.amentPrefixPathContainsRmwZenoh(keptPath)
+            let needsBufferBackend = !Self.amentPrefixPath(keptPath, registers: "rosidl_buffer_backend")
+            if dropped.isEmpty && !needsRmwZenoh && !needsBufferBackend {
+                return  // complete user-provided prefix — leave it untouched
+            }
+            if !dropped.isEmpty {
+                fputs(
+                    "swift-ros2: dropping AMENT_PREFIX_PATH entries that declare rosidl_buffer_backend plugins (not loadable into this process): \(dropped.joined(separator: ", "))\n",
+                    stderr)
             }
             let fm = FileManager.default
             let root = fm.temporaryDirectory
@@ -1003,15 +1043,18 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
                 "share/rmw_zenoh_cpp/config", isDirectory: true)
             do {
                 try fm.createDirectory(at: markerDir, withIntermediateDirectories: true)
-                try fm.createDirectory(at: configDir, withIntermediateDirectories: true)
-                // Empty marker file — its presence is what ament_index resolves.
-                try Data().write(to: markerDir.appendingPathComponent("rmw_zenoh_cpp"))
-                try RmwZenohDefaultConfig.sessionConfigJSON5.write(
-                    to: configDir.appendingPathComponent("DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5"),
-                    atomically: true, encoding: .utf8)
-                try RmwZenohDefaultConfig.routerConfigJSON5.write(
-                    to: configDir.appendingPathComponent("DEFAULT_RMW_ZENOH_ROUTER_CONFIG.json5"),
-                    atomically: true, encoding: .utf8)
+                // Empty marker files — their presence is what ament_index resolves.
+                try Data().write(to: markerDir.appendingPathComponent("rosidl_buffer_backend"))
+                if needsRmwZenoh {
+                    try fm.createDirectory(at: configDir, withIntermediateDirectories: true)
+                    try Data().write(to: markerDir.appendingPathComponent("rmw_zenoh_cpp"))
+                    try RmwZenohDefaultConfig.sessionConfigJSON5.write(
+                        to: configDir.appendingPathComponent("DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5"),
+                        atomically: true, encoding: .utf8)
+                    try RmwZenohDefaultConfig.routerConfigJSON5.write(
+                        to: configDir.appendingPathComponent("DEFAULT_RMW_ZENOH_ROUTER_CONFIG.json5"),
+                        atomically: true, encoding: .utf8)
+                }
             } catch {
                 try? fm.removeItem(at: root)
                 throw TransportError.connectionFailed(
@@ -1019,11 +1062,10 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
             }
             amentPrefixDirURL = root
             saveEnvSlotLocked(&priorAmentPrefixPath, "AMENT_PREFIX_PATH")
-            if let existing, !existing.isEmpty {
-                setenv("AMENT_PREFIX_PATH", "\(root.path):\(existing)", 1)
-            } else {
-                setenv("AMENT_PREFIX_PATH", root.path, 1)
-            }
+            // A synthesized rmw_zenoh config goes first; a marker-only prefix
+            // goes last, so a user's own rmw_zenoh config keeps priority.
+            let entries = needsRmwZenoh ? [root.path] + kept : kept + [root.path]
+            setenv("AMENT_PREFIX_PATH", entries.joined(separator: ":"), 1)
         }
     #endif
 

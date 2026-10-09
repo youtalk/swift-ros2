@@ -10,9 +10,11 @@
 // AudioData subscription on the SAME domain. Subscribe-of-non-bundled is
 // intentionally deferred on RCL (Conduit is publish-only), so the wire
 // backend is the receiver. Both the route-(b) raw writer and the `.dds`
-// subscriber are standalone-CCycloneDDS participants on domain 0; they
-// interoperate in-process while the rcl CycloneDDS coexists — exactly the
-// runtime co-existence this gate proves.
+// subscriber are CDDSBridge participants on domain 0 (linked against the
+// standalone CCycloneDDS, or, in a route-(B) graph, against the CycloneDDS
+// inside the RCL xcframework — the same one rmw_cyclonedds_cpp runs on); they
+// interoperate in-process with the rcl participants — exactly the runtime
+// co-existence this gate proves.
 //
 // On success prints "crcl_nonbundled_loopback OK" + flush, then exits 0
 // (before context teardown, which can block on headless runners — ci-rcl
@@ -63,11 +65,11 @@ final class ReceiveBox: @unchecked Sendable {
 }
 
 // --- Publisher context first: `.rcl` backend ------------------------------
-// rcl's CycloneDDS must create the process domain object first. The standalone
-// CCycloneDDS participants below (the wire `.dds` subscriber and the route-(b)
-// raw session) then JOIN that domain via an implicit participant — their own
+// rcl's CycloneDDS must create the process domain object first. The CDDSBridge
+// participants below (the wire `.dds` subscriber and the route-(b) raw session)
+// then JOIN that domain via an implicit participant — their own
 // dds_create_domain on the already-owned id fails gracefully and they fall
-// through to the shared domain. The reverse order makes the standalone bridge
+// through to the shared domain. The reverse order makes the wire bridge
 // win the domain and rcl's rmw_create_node fails "Precondition Not Met".
 let rclCtx: ROS2Context
 do {

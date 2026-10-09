@@ -9,7 +9,9 @@ module CRos2 {
   // sibling dds/ tree with module CRos2, routing CDDSBridge's
   // `#include <dds/...>` into this module (incomplete struct ddsi_sertype) on
   // the enableRcl Mac Catalyst umbrella build. A plain header keeps dds/
-  // textual so it resolves against CCycloneDDS.
+  // textual (not part of this module). In the cyclonedds variant the
+  // xcframework ships dds/ and CDDSBridge compiles against it (route B);
+  // elsewhere CCycloneDDS provides it.
   header "CRos2.h"
   export *
 }

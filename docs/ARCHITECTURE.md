@@ -46,8 +46,8 @@ services, actions, parameters — is shared.
      │    │                     EntityManager, GIDManager, RclTransportSession
      │    └── SwiftROS2Wire   — Zenoh / DDS wire codecs, ROS2Distro (no deps)
      ├── SwiftROS2Zenoh ── CZenohBridge ── CZenohPico    (zenoh-pico FFI, internal)
-     ├── SwiftROS2DDS   ── CDDSBridge   ── CCycloneDDS   (CycloneDDS FFI, internal)
-     └── SwiftROS2RCL   ── CRclBridge   ── CRos2    (rcl/rmw FFI; Apple default, Linux opt-in)
+     ├── SwiftROS2DDS   ── CDDSBridge   ── CCycloneDDS   (CycloneDDS FFI, internal; see the note below)
+     └── SwiftROS2RCL   ── CRclBridge   ── CRos2         (rcl/rmw FFI; Apple default, Linux opt-in)
 
 Tooling targets outside the runtime graph:
 
@@ -62,6 +62,12 @@ Tooling targets outside the runtime graph:
 around the vendor APIs. `CZenohPico`, `CCycloneDDS`, and `CRos2` are
 link-only C targets — never `import`ed from Swift (a CI lint enforces this);
 Swift reaches them through the bridge modules.
+
+`CDDSBridge` links one CycloneDDS per graph. In the RCL-enabled cyclonedds
+graph on Apple (the local `SWIFT_ROS2_RCL_LOCAL=1` xcframework until the 2.2.0
+pin) it links the CycloneDDS inside `CRos2` instead of `CCycloneDDS`, so the
+binary carries a single CycloneDDS; wire-only graphs
+(`SWIFT_ROS2_DISABLE_RCL=1`) and the zenoh variant link `CCycloneDDS`.
 
 ## Platform arms
 

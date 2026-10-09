@@ -138,6 +138,15 @@ let ros2XCFrameworkName: String = {
 }()
 let ros2CTargetName = isLinuxBuild ? "CRos2" : ros2XCFrameworkName
 
+// Route (B) (Lyrical RCL): an RCL-enabled cyclonedds graph on Apple links the
+// CycloneDDS that the RCL xcframework already carries in librclros.a, so the
+// wire DDS bridge and rmw_cyclonedds_cpp share one build. Linking the wire
+// CCycloneDDS next to it puts two CycloneDDS builds into one binary, which
+// aborts at node creation. Until the 2.2.0 pin only the locally built
+// xcframework exports the dds/ headers CDDSBridge compiles against.
+let ddsFromRclXCFramework =
+    enableRcl && targetOS == "apple" && rclRmwVariant == "cyclonedds" && useLocalRclXCFramework
+
 // zenoh-pico (the wire path) and zenoh-c (bundled inside CRos2Zenoh)
 // both export the standard zenoh C API, so they cannot link into one binary.
 // Selecting the zenoh rmw variant therefore carves the zenoh-pico wire family
@@ -543,9 +552,11 @@ if !dropZenohWire {
 // DDS family — CCycloneDDS, CDDSBridge, SwiftROS2DDS, and the DDS tests.
 // Only included on platforms where CycloneDDS is consumable (see
 // `canBuildDDS` above): Apple via binary xcframework, Linux via
-// pkg-config, Windows via vcpkg + `CYCLONEDDS_DIR`. Android does not
-// ship DDS. Where this is absent, the SwiftROS2 umbrella below drops
-// its SwiftROS2DDS dependency and `.dds` fails loudly at runtime.
+// pkg-config, Windows via vcpkg + `CYCLONEDDS_DIR`. RCL-enabled cyclonedds
+// graphs that use the local xcframework (`ddsFromRclXCFramework`) take
+// CycloneDDS from `CRos2` instead and declare no `CCycloneDDS` (route B).
+// Android does not ship DDS. Where this is absent, the SwiftROS2 umbrella
+// below drops its SwiftROS2DDS dependency and `.dds` fails loudly at runtime.
 if canBuildDDS {
     let cCycloneDDS: Target = {
         if isLinuxBuild {
@@ -603,12 +614,16 @@ if canBuildDDS {
         ddsBridgeLinkerSettings.append(.linkedLibrary("ddsc"))
     }
 
-    targets.append(contentsOf: [
-        cCycloneDDS,
+    if !ddsFromRclXCFramework {
+        targets.append(cCycloneDDS)
+    }
+    let ddsBridgeDependency: Target.Dependency =
+        ddsFromRclXCFramework ? .byName(name: ros2XCFrameworkName) : "CCycloneDDS"
 
+    targets.append(contentsOf: [
         .target(
             name: "CDDSBridge",
-            dependencies: ["CCycloneDDS"],
+            dependencies: [ddsBridgeDependency],
             path: "Sources/CDDSBridge",
             sources: ["dds_bridge.c", "raw_cdr_sertype.c", "raw_cdr_regression_bridge.c"],
             publicHeadersPath: "include",

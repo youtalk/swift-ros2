@@ -3,6 +3,9 @@
 // Usage:
 //   swift run action-server zenoh [tcp/<host>:7447] [domain_id]
 //   swift run action-server dds   [domain_id]
+//   swift run action-server rcl   [domain_id]
+//   swift run action-server dds-unicast <peer> [domain_id]
+//   swift run action-server rcl-unicast <peer> [domain_id]
 
 import Foundation
 import SwiftROS2

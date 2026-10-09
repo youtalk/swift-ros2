@@ -4,6 +4,9 @@
 // Usage:
 //   swift run srv-server zenoh [tcp/<host>:7447] [domain_id]
 //   swift run srv-server dds   [domain_id]
+//   swift run srv-server rcl   [domain_id]
+//   swift run srv-server dds-unicast <peer> [domain_id]
+//   swift run srv-server rcl-unicast <peer> [domain_id]
 
 import Foundation
 import SwiftROS2

@@ -4,6 +4,9 @@
 // Usage:
 //   swift run talker zenoh [tcp/<host>:7447] [domain_id]
 //   swift run talker dds   [domain_id]
+//   swift run talker rcl   [domain_id]
+//   swift run talker dds-unicast <peer> [domain_id]
+//   swift run talker rcl-unicast <peer> [domain_id]
 
 import Foundation
 import SwiftROS2

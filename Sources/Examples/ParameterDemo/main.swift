@@ -5,6 +5,9 @@
 // Usage:
 //   swift run parameter-demo zenoh [tcp/<host>:7447] [domain_id]
 //   swift run parameter-demo dds   [domain_id]
+//   swift run parameter-demo rcl   [domain_id]
+//   swift run parameter-demo dds-unicast <peer> [domain_id]
+//   swift run parameter-demo rcl-unicast <peer> [domain_id]
 
 import Foundation
 import SwiftROS2

@@ -4,6 +4,9 @@
 // Usage:
 //   swift run listener zenoh [tcp/<host>:7447] [domain_id]
 //   swift run listener dds   [domain_id]
+//   swift run listener rcl   [domain_id]
+//   swift run listener dds-unicast <peer> [domain_id]
+//   swift run listener rcl-unicast <peer> [domain_id]
 
 import Foundation
 import SwiftROS2

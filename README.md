@@ -90,10 +90,31 @@ Code that built the 1.x wire clients only to hand them to `ROS2Context` drops th
 
 ### Interop (Apple RCL on Lyrical)
 
-Verified Mac ↔ Ubuntu host, `ROS_DOMAIN_ID=123`, on the 2.2.0 release-candidate xcframeworks. Host DDS was pinned to its live NIC through `CYCLONEDDS_URI`; the Jazzy column is one Jazzy sync (packages listed in the PR).
+Verified Mac ↔ Ubuntu host, `ROS_DOMAIN_ID=123`, on the 2.2.0 release-candidate xcframeworks (`CRos2` / `CRos2Zenoh` from the release dry run, `SWIFT_ROS2_RCL_LOCAL=1`), driving the `Sources/Examples` binaries against `ros2` CLI tools and `rclpy` servers on the host. The zenoh columns use the zenoh RCL variant (`SWIFT_ROS2_RCL_RMW=zenoh`); both cdds columns use the default graph, where `.rcl` is the native RCL backend and `.dds` is the wire transport on the CycloneDDS inside `CRos2` (11.0.1).
 
-| Check | zenoh × Jazzy | zenoh × Lyrical | cdds `.rcl` × Jazzy | cdds `.rcl` × Lyrical | wire `.dds` × Jazzy | wire `.dds` × Lyrical |
+| Check | zenoh × Jazzy | zenoh × Lyrical (apt 0.10.6 / zenohd 1.10.1) | cdds `.rcl` × Jazzy | cdds `.rcl` × Lyrical | wire `.dds` × Jazzy | wire `.dds` × Lyrical |
 |---|---|---|---|---|---|---|
+| pub (Mac → host) | PASS | PASS / PASS | PASS | PASS | PASS | PASS |
+| sub (host → Mac) | PASS | PASS / PASS | PASS | PASS | PASS | PASS |
+| service, Mac server | PASS | PASS / PASS | PASS | PASS | PASS | PASS |
+| service, Mac client | PASS | PASS / PASS | PASS | PASS | FAIL ¹ | FAIL ¹ |
+| action, Mac server | PASS | PASS / PASS | PASS | PASS | PASS | PASS |
+| action, Mac client | PASS | PASS / PASS | PASS | PASS | FAIL ¹ | FAIL ¹ |
+| parameters (`ros2 param list` / `set` / `get`) | PASS | PASS / PASS | PASS | PASS | FAIL ¹ | FAIL ¹ |
+| graph (`ros2 node list`, `topic info -v` RIHS01 hash) | PASS | PASS / PASS | PASS | PASS | FAIL ¹ | FAIL ¹ |
+| unicast pub / sub (`rcl-unicast` / `dds-unicast`) | n/a | n/a | PASS / PASS | PASS / PASS | PASS / PASS | PASS / PASS |
+| burst soak, 500 Hz IMU, 60 s, `received` / `published` | PASS (99.99 %) | PASS (99.87 %) / PASS (98.36, 99.98, 99.88 %) ² | PASS (99.99 %) | PASS (99.99 %) | PASS (99.99 %) | PASS (99.99 %) |
+
+¹ Pre-existing wire-transport limitation, not specific to Lyrical: the cells fail identically on the released 2.1.0 (wire-only, CycloneDDS 0.10.5) against both the Jazzy and the Lyrical host. The wire path publishes no `ros_discovery_info`, so host graph and parameter tools cannot see its nodes (`ros2 node list` is empty, `ros2 param` says `Node not found`, `topic info -v` reports an unknown node name), and the Mac-side wire service and action clients get no reply from an `rmw_cyclonedds_cpp` server (`Service call failed: timeout`, `ActionError.acceptanceTimedOut`); the cause of the missing reply is not root-caused. Use `.rcl` where the node graph, parameters or Mac-side service and action clients matter.
+
+² Two of three runs reached 99 % against zenohd 1.10.1; the first run lost about one second of echoes mid-run (`recv_per_s=451` in one window), the reruns delivered 29995 and 29963 of 30000. Pass bar: `received` at least 99 % of `published`.
+
+Qualifiers:
+
+- **Host NIC pin and Mac as peer.** The host's CycloneDDS was pinned to its live Wi-Fi NIC through `CYCLONEDDS_URI` (without the pin it picks a down interface). The test LAN, two Wi-Fi clients, did not forward `239.255.0.1` multicast between the Mac and the host, so every DDS cell ran with the Mac added as an explicit host-side peer (`<Peer address="<mac-ip>:38150"/>`, `SPDPInterval` 1 s) while the Mac used its default arms (`rcl`, `dds`); pure-multicast discovery failed on this LAN, so Mac-side multicast SPDP was not exercised. The unicast cells (`rcl-unicast`, `dds-unicast`) additionally ran with host multicast disabled and exercise the generated discovery XML on CycloneDDS 11.0.1.
+- **Jazzy host.** One native Jazzy sync (June 2026 packages): `rcl` 9.2.11, `rmw_cyclonedds_cpp` 2.2.3 with CycloneDDS 0.10.5, `rmw_zenoh_cpp` 0.2.9 with its own `rmw_zenohd` as the router. Older Jazzy syncs are not covered. The Jazzy soak relay is an `rclpy` pass-through (`topic_tools` is not installed there).
+- **Lyrical host.** The `ros:lyrical` apt packages: `rcl` 10.4.5, `rmw_cyclonedds_cpp` 4.1.5 with CycloneDDS 11.0.1, `rmw_zenoh_cpp` 0.10.6 with zenoh-c 1.8.0. apt still ships 0.10.6, not the 0.10.7 / Zenoh 1.10.1 that the Mac side pins, so the zenoh × Lyrical column ran twice: against the apt `rmw_zenohd` 0.10.6 (the Mac logs `Unknown token` ERROR lines there, a zenoh version-skew effect) and against a standalone `zenohd` 1.10.1 (`--listen tcp/0.0.0.0:7447 --no-multicast-scouting`, no such lines). zenoh × Jazzy used the host's `rmw_zenohd` 0.2.9. The Lyrical soak relay is `ros2 run topic_tools relay`.
+- **Not covered.** Route (b), the raw-CDR path for types outside the marshal registry, is not run against a host (every example publishes a registry type); it stays covered by the in-process `crcl-nonbundled*` loopbacks, now on one CycloneDDS.
 
 ## API stability
 

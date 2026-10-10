@@ -482,8 +482,17 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
     if (z_bytes_from_buf(&bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
         return -1;
     }
-    z_publisher_put_options_t options;
-    z_publisher_put_options_default(&options);
+    // Plain publishers deliver with z_put on the publisher's declared key
+    // expression, not with z_publisher_put. z_publisher_put consults the
+    // publisher's write filter, which starts closed and only opens once the
+    // router's interest reply arrives: it would silently drop the first
+    // messages after creation (and everything while no subscriber is known)
+    // while the caller sees success. z_put has no such filter, which keeps the
+    // delivery semantics of zenoh_put; the declared publisher serves only
+    // zenoh_publisher_matching_status. (An advanced publisher has to put
+    // through itself, because its cache fills before the filter.)
+    z_put_options_t options;
+    z_put_options_default(&options);
     z_owned_bytes_t attachment;
     if (attachment_data && attachment_len > 0) {
         if (z_bytes_from_buf(&attachment, (uint8_t*)attachment_data, attachment_len, NULL, NULL) < 0) {
@@ -492,7 +501,9 @@ zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
         }
         options.attachment = z_move(attachment);
     }
-    return (zenoh_result_t)z_publisher_put(z_loan(publisher->publisher), z_move(bytes), &options);
+    return (zenoh_result_t)z_put(z_loan(session->session),
+                                 z_publisher_keyexpr(z_loan(publisher->publisher)),
+                                 z_move(bytes), &options);
 }
 
 zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, bool* out_matching) {

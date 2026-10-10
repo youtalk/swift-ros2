@@ -129,9 +129,11 @@ zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
                                        const char* keyexpr_str,
                                        zenoh_publisher_t** out_publisher);
 
-/// Publish through a declared publisher. Same payload and attachment contract
-/// and return codes as zenoh_put (ZENOH_ERROR_SESSION_CLOSED when the session
-/// is closed).
+/// Publish on a declared publisher's key expression. Same payload and attachment
+/// contract, delivery semantics and return codes as zenoh_put
+/// (ZENOH_ERROR_SESSION_CLOSED when the session is closed). The publisher's
+/// write filter is bypassed, so a message is sent even before the router has
+/// reported any matching subscriber.
 zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
                                    zenoh_publisher_t* publisher,
                                    const uint8_t* payload,

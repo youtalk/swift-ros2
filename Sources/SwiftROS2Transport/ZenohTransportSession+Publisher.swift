@@ -37,12 +37,12 @@ extension ZenohTransportSession {
             typeHash: effectiveTypeHash ?? wireMode.typeHashPlaceholder
         )
 
-        // Declare key expression
-        let declaredKey: any ZenohKeyExprHandle
+        // Declare a publisher: it publishes and reports matching subscribers
+        let zenohPublisher: any ZenohPublisherHandle
         do {
-            declaredKey = try client.declareKeyExpr(keyExpr)
+            zenohPublisher = try client.declarePublisher(keyExpr)
         } catch let error as ZenohError {
-            throw TransportError.publisherCreationFailed(error.localizedDescription ?? "Key declaration failed")
+            throw TransportError.publisherCreationFailed(error.localizedDescription ?? "Publisher declaration failed")
         }
 
         // Create liveliness token for ROS 2 discovery
@@ -75,8 +75,7 @@ extension ZenohTransportSession {
         let gid = gidManager.getOrCreateGid()
 
         let publisher = ZenohTransportPublisher(
-            client: client,
-            declaredKey: declaredKey,
+            publisher: zenohPublisher,
             livelinessToken: livelinessToken,
             codec: codec,
             gid: gid,
@@ -106,8 +105,7 @@ extension ZenohTransportSession {
 
 /// TransportPublisher using Zenoh
 final class ZenohTransportPublisher: TransportPublisher, @unchecked Sendable {
-    private let client: any ZenohClientProtocol
-    private var declaredKey: (any ZenohKeyExprHandle)?
+    private var publisher: (any ZenohPublisherHandle)?
     private var livelinessToken: (any ZenohLivelinessTokenHandle)?
     private let codec: ZenohWireCodec
     private let gid: [UInt8]
@@ -118,19 +116,24 @@ final class ZenohTransportPublisher: TransportPublisher, @unchecked Sendable {
     var isActive: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return !closed && declaredKey != nil
+        return !closed && publisher != nil
+    }
+
+    var matchedSubscriptions: Bool? {
+        lock.lock()
+        let p = closed ? nil : publisher
+        lock.unlock()
+        return p?.matchingStatus()
     }
 
     init(
-        client: any ZenohClientProtocol,
-        declaredKey: any ZenohKeyExprHandle,
+        publisher: any ZenohPublisherHandle,
         livelinessToken: (any ZenohLivelinessTokenHandle)?,
         codec: ZenohWireCodec,
         gid: [UInt8],
         topic: String
     ) {
-        self.client = client
-        self.declaredKey = declaredKey
+        self.publisher = publisher
         self.livelinessToken = livelinessToken
         self.codec = codec
         self.gid = gid
@@ -139,7 +142,7 @@ final class ZenohTransportPublisher: TransportPublisher, @unchecked Sendable {
 
     func publish(data: Data, timestamp: UInt64, sequenceNumber: Int64) throws {
         lock.lock()
-        guard !closed, let key = declaredKey else {
+        guard !closed, let p = publisher else {
             lock.unlock()
             throw TransportError.publisherClosed
         }
@@ -152,7 +155,7 @@ final class ZenohTransportPublisher: TransportPublisher, @unchecked Sendable {
         )
 
         do {
-            try client.put(keyExpr: key, payload: data, attachment: attachment)
+            try p.put(payload: data, attachment: attachment)
         } catch let error as ZenohError {
             if case .sessionDisconnected = error {
                 throw TransportError.sessionUnhealthy(error.localizedDescription ?? "Disconnected")
@@ -169,10 +172,12 @@ final class ZenohTransportPublisher: TransportPublisher, @unchecked Sendable {
         }
         closed = true
         let token = livelinessToken
+        let p = publisher
         livelinessToken = nil
-        declaredKey = nil
+        publisher = nil
         lock.unlock()
 
+        try? p?.close()
         try? token?.close()
     }
 }

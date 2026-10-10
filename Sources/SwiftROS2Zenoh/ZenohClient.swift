@@ -51,6 +51,74 @@ class DeclaredKeyExpr {
     }
 }
 
+// MARK: - Declared Publisher
+
+/// A declared zenoh-pico publisher. Unlike a bare key expression it reports
+/// whether any subscriber matches it.
+final class ZenohDeclaredPublisher: ZenohPublisherHandle, @unchecked Sendable {
+    private var handle: OpaquePointer?
+    private weak var session: ZenohClient?
+    private let lock = NSLock()
+
+    fileprivate init(handle: OpaquePointer, session: ZenohClient) {
+        self.handle = handle
+        self.session = session
+    }
+
+    func put(payload: Data, attachment: Data?) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let h = handle else {
+            throw ZenohError.putFailed("Publisher closed")
+        }
+        guard let client = session, let sess = client.sessionHandle else {
+            throw ZenohError.putFailed("Session not open")
+        }
+        let result = payload.withUnsafeBytes { payloadPtr -> Int8 in
+            let payloadBase = payloadPtr.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            guard let attachment else {
+                return zenoh_publisher_put(sess, h, payloadBase, payload.count, nil, 0)
+            }
+            return attachment.withUnsafeBytes { attachmentPtr in
+                zenoh_publisher_put(
+                    sess, h, payloadBase, payload.count,
+                    attachmentPtr.baseAddress?.assumingMemoryBound(to: UInt8.self), attachment.count)
+            }
+        }
+        if result == -2 {
+            // ZENOH_ERROR_SESSION_CLOSED: router connection lost
+            client.markSessionLost()
+            throw ZenohError.sessionDisconnected("Router connection lost")
+        } else if result < 0 {
+            throw ZenohError.putFailed("Error code: \(result)")
+        }
+    }
+
+    func matchingStatus() -> Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let h = handle else { return nil }
+        var matching = false
+        return zenoh_publisher_matching_status(h, &matching) == 0 ? matching : nil
+    }
+
+    func close() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard handle != nil else { return }
+        var h = handle
+        handle = nil
+        let result = zenoh_undeclare_publisher(&h)
+        if result < 0 {
+            throw ZenohError.internalError("Publisher undeclare failed: \(result)")
+        }
+    }
+
+    deinit {
+        try? close()
+    }
+}
+
 // MARK: - Subscriber
 
 /// Represents an active subscription
@@ -159,6 +227,7 @@ package class ZenohClient: ZenohClientProtocol {
 
     private var session: OpaquePointer?
     private var declaredKeyExprs: [DeclaredKeyExpr] = []
+    private var declaredPublishers: [ZenohDeclaredPublisher] = []
     private var subscribers: [ZenohSubscriber] = []
     private var livelinessTokens: [LivelinessToken] = []
     private var queryables: [ZenohQueryable] = []
@@ -222,7 +291,9 @@ package class ZenohClient: ZenohClientProtocol {
         let subscribersToClose: [ZenohSubscriber]
         let queryablesToClose: [ZenohQueryable]
         let keyExprsToRelease: [DeclaredKeyExpr]
+        let publishersToClose: [ZenohDeclaredPublisher]
         resourceLock.lock()
+        publishersToClose = declaredPublishers
         tokensToClose = livelinessTokens
         subscribersToClose = subscribers
         queryablesToClose = queryables
@@ -231,7 +302,13 @@ package class ZenohClient: ZenohClientProtocol {
         subscribers.removeAll()
         queryables.removeAll()
         declaredKeyExprs.removeAll()
+        declaredPublishers.removeAll()
         resourceLock.unlock()
+
+        // Undeclare publishers before the tokens and the session
+        for publisher in publishersToClose {
+            try? publisher.close()
+        }
 
         // Clean up liveliness tokens
         for token in tokensToClose {
@@ -316,6 +393,28 @@ package class ZenohClient: ZenohClientProtocol {
         declaredKeyExprs.append(declared)
         resourceLock.unlock()
         return declared
+    }
+
+    /// Drops the session after zenoh-pico reported it closed (router lost).
+    fileprivate func markSessionLost() {
+        session = nil
+    }
+
+    /// Declares a publisher on a key expression
+    package func declarePublisher(_ keyExpr: String) throws -> any ZenohPublisherHandle {
+        guard let sess = session else {
+            throw ZenohError.keyExprDeclarationFailed("Session not open")
+        }
+        var publisherPtr: OpaquePointer?
+        let result = keyExpr.withCString { zenoh_declare_publisher(sess, $0, &publisherPtr) }
+        guard result >= 0, let handle = publisherPtr else {
+            throw ZenohError.keyExprDeclarationFailed("Publisher declaration failed, error code: \(result)")
+        }
+        let publisher = ZenohDeclaredPublisher(handle: handle, session: self)
+        resourceLock.lock()
+        declaredPublishers.append(publisher)
+        resourceLock.unlock()
+        return publisher
     }
 
     // MARK: - Publishing

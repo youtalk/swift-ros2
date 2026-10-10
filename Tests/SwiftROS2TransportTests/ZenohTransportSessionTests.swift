@@ -94,7 +94,7 @@ final class ZenohTransportSessionTests: XCTestCase {
 
     // MARK: - createPublisher
 
-    func testCreatePublisherDeclaresKeyExprAndLiveliness() async throws {
+    func testCreatePublisherDeclaresPublisherAndLiveliness() async throws {
         let (session, client) = try await openSession(wireMode: .jazzy)
         let pub = try session.createPublisher(
             topic: "/ios/imu",
@@ -103,10 +103,50 @@ final class ZenohTransportSessionTests: XCTestCase {
             qos: .sensorData
         )
         XCTAssertTrue(pub.isActive)
-        XCTAssertEqual(client.keyExprDeclarations.count, 1)
-        XCTAssertEqual(client.keyExprDeclarations.first, "0/ios/imu/sensor_msgs::msg::dds_::Imu_/RIHS01_abc")
+        XCTAssertEqual(client.publisherDeclarations.count, 1)
+        XCTAssertEqual(client.publisherDeclarations.first, "0/ios/imu/sensor_msgs::msg::dds_::Imu_/RIHS01_abc")
         XCTAssertEqual(client.livelinessDeclarations.count, 1)
         XCTAssertTrue(client.livelinessDeclarations.first?.hasPrefix("@ros2_lv/0/") == true)
+    }
+
+    func testCreatePublisherDeclaresAZenohPublisherOnTheKeyExpr() async throws {
+        let (session, client) = try await openSession()
+        _ = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
+        XCTAssertEqual(client.publisherDeclarations.count, 1)
+        XCTAssertTrue(client.publisherDeclarations[0].contains("conduit/imu"))
+    }
+
+    func testPublishGoesThroughTheDeclaredPublisher() async throws {
+        let (session, client) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
+        try pub.publish(data: Data([0, 1, 0, 0, 42]), timestamp: 1, sequenceNumber: 0)
+        XCTAssertEqual(client.puts.count, 1)
+        XCTAssertEqual(client.puts[0].key, client.publisherDeclarations[0])
+    }
+
+    func testMatchedSubscriptionsFollowsTheZenohMatchingStatus() async throws {
+        let (session, client) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
+        let handle = try XCTUnwrap(client.publisherHandles.first)
+        handle.matching = false
+        XCTAssertEqual(pub.matchedSubscriptions, false)
+        handle.matching = true
+        XCTAssertEqual(pub.matchedSubscriptions, true)
+        handle.matching = nil
+        XCTAssertNil(pub.matchedSubscriptions)
+    }
+
+    func testClosedPublisherReportsUnknownAndClosesTheHandle() async throws {
+        let (session, client) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
+        let handle = try XCTUnwrap(client.publisherHandles.first)
+        try pub.close()
+        XCTAssertNil(pub.matchedSubscriptions)
+        XCTAssertEqual(handle.closeCount, 1)
     }
 
     func testCreatePublisherWithoutOpenThrowsNotConnected() {

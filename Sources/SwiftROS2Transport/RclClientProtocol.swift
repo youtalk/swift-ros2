@@ -139,6 +139,9 @@ package protocol RclClientProtocol: Sendable {
     /// Publish pre-serialized CDR bytes (XCDR1 incl. the 4-byte encapsulation header).
     func publishSerialized(_ publisher: any RclPublisherHandle, data: Data) throws
 
+    /// Number of subscriptions matched to `publisher`, or `nil` when unknown.
+    func publisherMatchedCount(_ publisher: any RclPublisherHandle) -> Int?
+
     /// Create a subscription whose receive thread invokes `handler` once per
     /// taken message with the raw CDR bytes (XCDR1 incl. the 4-byte
     /// encapsulation header) and the rmw source timestamp in nanoseconds
@@ -276,6 +279,9 @@ package protocol RclClientProtocol: Sendable {
 }
 
 extension RclClientProtocol {
+    /// Default: unknown.
+    package func publisherMatchedCount(_ publisher: any RclPublisherHandle) -> Int? { nil }
+
     /// Back-compat: DDS path (no Zenoh router locator).
     func createContext(
         domainId: Int32, unicastPeerAddresses: [String], networkInterface: String?

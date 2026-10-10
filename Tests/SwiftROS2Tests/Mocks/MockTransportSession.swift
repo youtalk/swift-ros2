@@ -350,6 +350,23 @@ final class MockTransportPublisher: TransportPublisher, @unchecked Sendable {
         return !closed
     }
 
+    private var _matched: Bool?
+    /// What `matchedSubscriptions` reports; `nil` means "cannot tell".
+    var matched: Bool? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _matched
+        }
+        set {
+            lock.lock()
+            _matched = newValue
+            lock.unlock()
+        }
+    }
+
+    var matchedSubscriptions: Bool? { matched }
+
     init(topic: String, typeName: String, typeHash: String?, qos: TransportQoS) {
         self.topic = topic
         self.typeName = typeName

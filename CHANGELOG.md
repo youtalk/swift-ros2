@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Matched subscriptions on publishers.** `ROS2Publisher.hasMatchedSubscriptions` reports whether at least one subscription matches, and `onMatchedSubscriptionsChanged(_:)` calls a handler with the current state and then with every change (sampled every 50 ms). Wire Zenoh now declares a zenoh-pico publisher per topic and reads its matching status; delivery still uses `z_put` on the declared key expression, so the first message after a publisher is created is not dropped. Wire DDS reads the writer's publication-matched count; RCL reads `rcl_publisher_get_subscription_count` (or the raw writer's count). A transport that cannot tell reports `true`.
+
 ### Changed
 
 - **The README documents that the RCL xcframeworks are arm64-only.** They have shipped arm64-only slices since they were introduced in 1.3.0 (opt-in); RCL is on by default since 1.4.0, which is when x86_64 builds started to break by default. The README now gives the workarounds: arm64-only builds that keep RCL (`ARCHS=arm64`, `EXCLUDED_ARCHS[sdk=macosx*]=x86_64`, `ONLY_ACTIVE_ARCH=YES`), and `SWIFT_ROS2_DISABLE_RCL=1` for builds that must include x86_64.

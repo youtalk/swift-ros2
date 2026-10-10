@@ -187,4 +187,18 @@ final class DDSTransportSessionTests: XCTestCase {
         XCTAssertEqual(client.destroyedWriters, 1)
         XCTAssertEqual(client.destroyedReaders, 1)
     }
+
+    func testMatchedSubscriptionsFollowsTheWriterMatchedCount() async throws {
+        let (session, client) = try await openSession()
+        let pub = try session.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: "RIHS01_abc", qos: .sensorData)
+        let ddsTopic = try XCTUnwrap(client.writers.last?.topic)
+        XCTAssertNil(pub.matchedSubscriptions)
+        client.setMatchedCount(topic: ddsTopic, 0)
+        XCTAssertEqual(pub.matchedSubscriptions, false)
+        client.setMatchedCount(topic: ddsTopic, 2)
+        XCTAssertEqual(pub.matchedSubscriptions, true)
+        try pub.close()
+        XCTAssertNil(pub.matchedSubscriptions)
+    }
 }

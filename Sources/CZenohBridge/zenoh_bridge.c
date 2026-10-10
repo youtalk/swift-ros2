@@ -71,6 +71,10 @@ struct zenoh_liveliness_token_t {
     z_owned_liveliness_token_t token;
 };
 
+struct zenoh_publisher_t {
+    z_owned_publisher_t publisher;
+};
+
 // Forward declarations for the linked-list cross-references between
 // zenoh_query_t and zenoh_queryable_t.
 struct zenoh_queryable_t;
@@ -436,6 +440,97 @@ zenoh_result_t zenoh_put_str(zenoh_session_t* session,
                        z_move(bytes), &options);
 
     return (zenoh_result_t)result;
+}
+
+zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
+                                       const char* keyexpr_str,
+                                       zenoh_publisher_t** out_publisher) {
+    if (!session || !keyexpr_str || !out_publisher) {
+        return -1;
+    }
+    z_view_keyexpr_t view_ke;
+    if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        return -1;
+    }
+    zenoh_publisher_t* pub = (zenoh_publisher_t*)malloc(sizeof(zenoh_publisher_t));
+    if (!pub) {
+        return -1;
+    }
+    z_publisher_options_t options;
+    z_publisher_options_default(&options);
+    if (z_declare_publisher(z_loan(session->session), &pub->publisher, z_loan(view_ke), &options) < 0) {
+        free(pub);
+        return -1;
+    }
+    *out_publisher = pub;
+    return 0;
+}
+
+zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
+                                   zenoh_publisher_t* publisher,
+                                   const uint8_t* payload,
+                                   size_t payload_len,
+                                   const uint8_t* attachment_data,
+                                   size_t attachment_len) {
+    if (!session || !publisher || !payload) {
+        return -1;
+    }
+    if (z_session_is_closed(z_loan(session->session))) {
+        return ZENOH_ERROR_SESSION_CLOSED;
+    }
+    z_owned_bytes_t bytes;
+    if (z_bytes_from_buf(&bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
+        return -1;
+    }
+    // Plain publishers deliver with z_put on the publisher's declared key
+    // expression, not with z_publisher_put. z_publisher_put consults the
+    // publisher's write filter, which starts closed and only opens once the
+    // router's interest reply arrives: it would silently drop the first
+    // messages after creation (and everything while no subscriber is known)
+    // while the caller sees success. z_put has no such filter, which keeps the
+    // delivery semantics of zenoh_put; the declared publisher serves only
+    // zenoh_publisher_matching_status. (An advanced publisher has to put
+    // through itself, because its cache fills before the filter.)
+    z_put_options_t options;
+    z_put_options_default(&options);
+    z_owned_bytes_t attachment;
+    if (attachment_data && attachment_len > 0) {
+        if (z_bytes_from_buf(&attachment, (uint8_t*)attachment_data, attachment_len, NULL, NULL) < 0) {
+            z_drop(z_move(bytes));
+            return -1;
+        }
+        options.attachment = z_move(attachment);
+    }
+    return (zenoh_result_t)z_put(z_loan(session->session),
+                                 z_publisher_keyexpr(z_loan(publisher->publisher)),
+                                 z_move(bytes), &options);
+}
+
+zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, bool* out_matching) {
+    if (!publisher || !out_matching) {
+        return -1;
+    }
+#if Z_FEATURE_MATCHING == 1
+    z_matching_status_t status;
+    if (z_publisher_get_matching_status(z_loan(publisher->publisher), &status) < 0) {
+        return -1;
+    }
+    *out_matching = status.matching;
+    return 0;
+#else
+    return ZENOH_MATCHING_UNKNOWN;
+#endif
+}
+
+zenoh_result_t zenoh_undeclare_publisher(zenoh_publisher_t** publisher) {
+    if (!publisher || !*publisher) {
+        return -1;
+    }
+    zenoh_publisher_t* pub = *publisher;
+    z_result_t rc = z_undeclare_publisher(z_move(pub->publisher));
+    free(pub);
+    *publisher = NULL;
+    return (zenoh_result_t)rc;
 }
 
 // ============================================================================

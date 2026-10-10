@@ -17,10 +17,14 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     private let isLegacySchema: Bool
     private var sequenceNumber: Int64 = 0
     private let lock = NSLock()
+    private let matchedMonitor: MatchedSubscriptionsMonitor
 
     init(transportPublisher: any TransportPublisher, isLegacySchema: Bool = false) {
         self.transportPublisher = transportPublisher
         self.isLegacySchema = isLegacySchema
+        self.matchedMonitor = MatchedSubscriptionsMonitor { [transportPublisher] in
+            transportPublisher.matchedSubscriptions ?? true
+        }
     }
 
     /// Publish a message
@@ -95,7 +99,31 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
         transportPublisher.isActive
     }
 
+    /// Whether at least one subscription currently matches this publisher.
+    ///
+    /// Fail-open: a transport that cannot tell reports `true`, so callers that
+    /// skip work without subscribers keep publishing.
+    public var hasMatchedSubscriptions: Bool {
+        transportPublisher.matchedSubscriptions ?? true
+    }
+
+    /// Calls `handler` once with ``hasMatchedSubscriptions`` before returning,
+    /// then on every change until the publisher is closed.
+    ///
+    /// The state is sampled every 50 ms. `handler` always runs on one private
+    /// serial queue, the initial call included, and that call completes before
+    /// this method returns. Registering a new handler replaces the previous one.
+    ///
+    /// No call happens once the publisher is closed: closing it (through
+    /// `ROS2Node.destroy()` or `ROS2Context.shutdown()`) waits for a call that
+    /// is already running. `handler` must therefore not block on a lock held by
+    /// the code that closes the publisher.
+    public func onMatchedSubscriptionsChanged(_ handler: @escaping @Sendable (Bool) -> Void) {
+        matchedMonitor.start(handler)
+    }
+
     func closePublisher() throws {
+        matchedMonitor.stop()
         try transportPublisher.close()
     }
 }

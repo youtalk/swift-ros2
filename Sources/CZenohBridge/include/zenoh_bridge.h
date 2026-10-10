@@ -24,6 +24,7 @@ typedef struct zenoh_session_t zenoh_session_t;
 typedef struct zenoh_keyexpr_t zenoh_keyexpr_t;
 typedef struct zenoh_subscriber_t zenoh_subscriber_t;
 typedef struct zenoh_liveliness_token_t zenoh_liveliness_token_t;
+typedef struct zenoh_publisher_t zenoh_publisher_t;
 
 // ============================================================================
 // Error handling
@@ -34,6 +35,9 @@ typedef int8_t zenoh_result_t;
 
 // Error codes
 #define ZENOH_ERROR_SESSION_CLOSED -2
+
+/// Returned by zenoh_publisher_matching_status when this build has no matching support.
+#define ZENOH_MATCHING_UNKNOWN -3
 
 // ============================================================================
 // Session management
@@ -117,6 +121,33 @@ zenoh_result_t zenoh_put_str(zenoh_session_t* session,
                              size_t payload_len,
                              const uint8_t* attachment_data,
                              size_t attachment_len);
+
+/// Declare a publisher on a key expression. Unlike zenoh_put on a bare key
+/// expression, a declared publisher can report matching subscribers.
+/// @return 0 on success, negative on error.
+zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
+                                       const char* keyexpr_str,
+                                       zenoh_publisher_t** out_publisher);
+
+/// Publish on a declared publisher's key expression. Same payload and attachment
+/// contract, delivery semantics and return codes as zenoh_put
+/// (ZENOH_ERROR_SESSION_CLOSED when the session is closed). The publisher's
+/// write filter is bypassed, so a message is sent even before the router has
+/// reported any matching subscriber.
+zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
+                                   zenoh_publisher_t* publisher,
+                                   const uint8_t* payload,
+                                   size_t payload_len,
+                                   const uint8_t* attachment_data,
+                                   size_t attachment_len);
+
+/// Writes whether at least one subscriber matches the publisher.
+/// @return 0 on success, ZENOH_MATCHING_UNKNOWN without matching support,
+///         -1 on bad arguments or failure.
+zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, bool* out_matching);
+
+/// Undeclare and free the publisher; sets *publisher to NULL.
+zenoh_result_t zenoh_undeclare_publisher(zenoh_publisher_t** publisher);
 
 // ============================================================================
 // Subscription (callback-based)

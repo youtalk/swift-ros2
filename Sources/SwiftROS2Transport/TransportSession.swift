@@ -157,6 +157,10 @@ package protocol TransportPublisher: Sendable {
     var supportsTypedPublish: Bool { get }
     /// Publish a typed-publishable message via `rcl_publish`. Default throws.
     func publishTyped(_ publishable: any RclTypedPublishable) throws
+
+    /// Whether at least one subscription currently matches this publisher:
+    /// `true` or `false` when the transport can tell, `nil` when it cannot.
+    var matchedSubscriptions: Bool? { get }
 }
 
 // MARK: - Transport Subscriber Protocol

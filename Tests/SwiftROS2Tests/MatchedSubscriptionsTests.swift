@@ -76,6 +76,99 @@ final class MatchedSubscriptionsTests: XCTestCase {
         XCTAssertEqual(seen.values, [false, true])
     }
 
+    func testStopDrainsAnInFlightPollAndNoHandlerCallFollows() {
+        let reader = GatedReader()
+        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { reader.read() }
+        let seen = ValuesBox()
+        monitor.start { seen.append($0) }
+        XCTAssertEqual(seen.values, [false])
+
+        // A poll blocks inside `read`, holding the monitor's queue, and would report a change.
+        DispatchQueue.global().async { monitor.poll() }
+        XCTAssertEqual(reader.entered.wait(timeout: .now() + 5), .success, "the poll never reached read()")
+
+        let stopReturned = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            monitor.stop()
+            stopReturned.signal()
+        }
+        XCTAssertEqual(
+            stopReturned.wait(timeout: .now() + 0.1), .timedOut,
+            "stop() must wait for the poll that is in flight")
+
+        reader.release.signal()
+        XCTAssertEqual(stopReturned.wait(timeout: .now() + 5), .success, "stop() never returned")
+        Thread.sleep(forTimeInterval: 0.2)
+        XCTAssertEqual(seen.values, [false], "a poll that was in flight when stop() ran must not report")
+    }
+
+    func testStopWaitsForAHandlerCallThatIsAlreadyRunning() {
+        let state = ValuesBox()
+        state.append(false)
+        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { state.values.last ?? true }
+        let inHandler = DispatchSemaphore(value: 0)
+        let releaseHandler = DispatchSemaphore(value: 0)
+        let finished = ValuesBox()
+        monitor.start { value in
+            guard value else { return }
+            inHandler.signal()
+            releaseHandler.wait()
+            finished.append(value)
+        }
+
+        state.append(true)
+        DispatchQueue.global().async { monitor.poll() }
+        XCTAssertEqual(inHandler.wait(timeout: .now() + 5), .success, "the handler was never called")
+
+        let stopReturned = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            monitor.stop()
+            stopReturned.signal()
+        }
+        XCTAssertEqual(
+            stopReturned.wait(timeout: .now() + 0.1), .timedOut,
+            "stop() must wait for the handler call that is running")
+
+        releaseHandler.signal()
+        XCTAssertEqual(stopReturned.wait(timeout: .now() + 5), .success, "stop() never returned")
+        XCTAssertEqual(finished.values, [true], "the running handler call must finish before stop() returns")
+    }
+
+    func testStartAfterStopNeverCallsTheHandler() {
+        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { true }
+        monitor.stop()
+        let seen = ValuesBox()
+        monitor.start { seen.append($0) }
+        monitor.poll()
+        XCTAssertEqual(seen.values, [])
+    }
+
+    func testHandlerMayReRegisterFromItsOwnCallback() {
+        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { true }
+        let second = ValuesBox()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            monitor.start { _ in monitor.start { second.append($0) } }
+            done.signal()
+        }
+        XCTAssertEqual(done.wait(timeout: .now() + 5), .success, "re-registering from the handler deadlocked")
+        XCTAssertEqual(second.values, [true])
+        monitor.stop()
+    }
+
+    func testHandlerMayStopTheMonitorFromItsOwnCallback() {
+        let monitor = MatchedSubscriptionsMonitor(interval: .seconds(3600)) { true }
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            monitor.start { _ in monitor.stop() }
+            done.signal()
+        }
+        XCTAssertEqual(done.wait(timeout: .now() + 5), .success, "stopping from the handler deadlocked")
+        let seen = ValuesBox()
+        monitor.start { seen.append($0) }
+        XCTAssertEqual(seen.values, [])
+    }
+
     private func waitUntil(timeout: TimeInterval = 2, _ condition: @escaping () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
@@ -101,5 +194,25 @@ private final class ValuesBox: @unchecked Sendable {
         lock.lock()
         _values.append(v)
         lock.unlock()
+    }
+}
+
+/// A `read` source whose first call returns `false` at once and whose later calls
+/// block until released, then return `true`.
+private final class GatedReader: @unchecked Sendable {
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var calls = 0
+
+    func read() -> Bool {
+        lock.lock()
+        calls += 1
+        let isFirst = calls == 1
+        lock.unlock()
+        if isFirst { return false }
+        entered.signal()
+        release.wait()
+        return true
     }
 }

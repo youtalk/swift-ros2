@@ -110,8 +110,14 @@ public final class ROS2Publisher<M: CDREncodable & ROS2MessageType>: @unchecked 
     /// Calls `handler` once with ``hasMatchedSubscriptions`` before returning,
     /// then on every change until the publisher is closed.
     ///
-    /// The state is sampled every 50 ms on a private queue, and `handler` runs
-    /// on that queue. Registering a new handler replaces the previous one.
+    /// The state is sampled every 50 ms. `handler` always runs on one private
+    /// serial queue, the initial call included, and that call completes before
+    /// this method returns. Registering a new handler replaces the previous one.
+    ///
+    /// No call happens once the publisher is closed: closing it (through
+    /// `ROS2Node.destroy()` or `ROS2Context.shutdown()`) waits for a call that
+    /// is already running. `handler` must therefore not block on a lock held by
+    /// the code that closes the publisher.
     public func onMatchedSubscriptionsChanged(_ handler: @escaping @Sendable (Bool) -> Void) {
         matchedMonitor.start(handler)
     }

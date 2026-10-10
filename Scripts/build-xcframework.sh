@@ -92,7 +92,8 @@ build_slice() {
                 -DZ_FEATURE_INTEREST=1 \
                 -DZ_FEATURE_MATCHING=1 \
                 -DZ_FEATURE_UNSTABLE_API=1 \
-                -DZ_FEATURE_ADVANCED_PUBLICATION=1)
+                -DZ_FEATURE_ADVANCED_PUBLICATION=1 \
+                -DZ_FEATURE_AUTO_RECONNECT=0)
             (cd "$build_dir" && cmake --build . --config Release -- -j"$(sysctl -n hw.ncpu)")
             (cd "$build_dir" && cmake --install .)
             ;;

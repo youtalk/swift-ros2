@@ -186,7 +186,7 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
     os_log_info(log, "[zenoh_bridge] Starting read and lease tasks...");
     zp_start_read_task(z_loan_mut(session->session), NULL);
     zp_start_lease_task(z_loan_mut(session->session), NULL);
-#if Z_FEATURE_PERIODIC_TASKS == 1
+#if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
     // The advanced publisher's heartbeat runs on the periodic scheduler.
     zp_start_periodic_scheduler_task(z_loan_mut(session->session), NULL);
 #endif
@@ -206,6 +206,12 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
     // Stop background tasks
     zp_stop_read_task(z_loan_mut(s->session));
     zp_stop_lease_task(z_loan_mut(s->session));
+#if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
+    // Stop and join the scheduler here: z_close skips every task stop once the
+    // transport is gone (lease expired), and then frees the scheduler's mutex
+    // and condvar while its thread is still running.
+    zp_stop_periodic_scheduler_task(z_loan_mut(s->session));
+#endif
 
     // Close the session
     z_close_options_t options;

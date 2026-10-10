@@ -22,6 +22,7 @@
 // by rcl_bridge.h above.)
 #include "crcl_internal.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -153,6 +154,19 @@ void crcl_publisher_destroy(crcl_publisher_t *p) {
     if (!p) return;
     (void)rcl_publisher_fini(&p->pub, p->node);
     free(p);
+}
+
+int crcl_publisher_subscription_count(crcl_publisher_t *p) {
+    if (!p) {
+        snprintf(g_err, sizeof(g_err), "crcl_publisher_subscription_count: NULL publisher");
+        return -1;
+    }
+    size_t count = 0;
+    if (rcl_publisher_get_subscription_count(&p->pub, &count) != RCL_RET_OK) {
+        capture_error();
+        return -1;
+    }
+    return count > (size_t)INT_MAX ? INT_MAX : (int)count;
 }
 
 int crcl_publish_serialized(crcl_publisher_t *p, const uint8_t *data, size_t len) {

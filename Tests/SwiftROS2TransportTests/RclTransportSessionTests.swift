@@ -394,4 +394,20 @@ final class RclTransportSessionTests: XCTestCase {
             client.publisherHandles.isEmpty,
             "no publisher should be created for an unknown node — silent misroute regression")
     }
+
+    func testMatchedSubscriptionsFollowsTheRclCount() async throws {
+        let client = MockRclClient()
+        let s = try await openSession(client)
+        try s.registerNode(name: "imu_node", namespace: "/ios")
+        let pub = try s.createPublisher(
+            topic: "/conduit/imu", typeName: "sensor_msgs/msg/Imu", typeHash: nil, qos: .sensorData)
+        let topic = try XCTUnwrap(client.publishersCreated.last?.topic)
+        XCTAssertNil(pub.matchedSubscriptions)
+        client.setPublisherMatchedCount(topic: topic, 0)
+        XCTAssertEqual(pub.matchedSubscriptions, false)
+        client.setPublisherMatchedCount(topic: topic, 1)
+        XCTAssertEqual(pub.matchedSubscriptions, true)
+        try pub.close()
+        XCTAssertNil(pub.matchedSubscriptions)
+    }
 }

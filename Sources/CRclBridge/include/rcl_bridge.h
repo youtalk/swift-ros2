@@ -57,6 +57,9 @@ crcl_publisher_t *crcl_publisher_create(
     crcl_node_t *node, const char *ros_type_name, const char *topic, crcl_qos_t qos);
 void crcl_publisher_destroy(crcl_publisher_t *pub);
 
+/// Number of subscriptions matched to the publisher, or -1 on error.
+int crcl_publisher_subscription_count(crcl_publisher_t *pub);
+
 /// Publish pre-serialized CDR bytes. Returns 0 on success, non-zero rcl_ret_t otherwise.
 int crcl_publish_serialized(crcl_publisher_t *pub, const uint8_t *data, size_t len);
 

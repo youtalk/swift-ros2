@@ -83,6 +83,14 @@ final class RclRawPublisherBox: RclPublisherHandle, @unchecked Sendable {
             return dds_bridge_write_raw_cdr(writer, base, data.count, 0)
         }
     }
+    /// Matched subscriptions of the raw writer, or nil when closed or unknown.
+    func matchedCount() -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { return nil }
+        let n = dds_bridge_writer_matched_count(writer)
+        return n >= 0 ? Int(n) : nil
+    }
 }
 
 /// Retained by `RclSubscriptionBox.contextBox` while the subscription is
@@ -1512,6 +1520,17 @@ public final class RclClient: RclClientProtocol, @unchecked Sendable {
     package func serverAvailable(_ client: any RclClientHandle) -> Bool {
         guard let box = client as? RclServiceClientBox else { return false }
         return box.withPtr { crcl_client_server_available($0) == 1 } ?? false
+    }
+
+    package func publisherMatchedCount(_ publisher: any RclPublisherHandle) -> Int? {
+        if let box = publisher as? RclPublisherBox {
+            guard let n = box.withPtr({ crcl_publisher_subscription_count($0) }), n >= 0 else { return nil }
+            return Int(n)
+        }
+        if let raw = publisher as? RclRawPublisherBox {
+            return raw.matchedCount()
+        }
+        return nil
     }
 
     package func destroyServiceClient(_ client: any RclClientHandle) {

@@ -465,6 +465,18 @@ final class MockRclClient: RclClientProtocol, @unchecked Sendable {
         sync { publishedPayloads.append(data) }
     }
 
+    private var matchedCountsByTopic: [String: Int] = [:]
+
+    /// Sets what `publisherMatchedCount(_:)` returns for publishers on `topic`; `nil` means unknown.
+    func setPublisherMatchedCount(topic: String, _ count: Int?) {
+        sync { matchedCountsByTopic[topic] = count }
+    }
+
+    func publisherMatchedCount(_ publisher: any RclPublisherHandle) -> Int? {
+        guard let p = publisher as? MockRclPublisher else { return nil }
+        return sync { matchedCountsByTopic[p.topic] }
+    }
+
     func createSubscription(
         node: any RclNodeHandle,
         typeName: String,

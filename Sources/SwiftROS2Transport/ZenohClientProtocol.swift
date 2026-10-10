@@ -27,6 +27,16 @@ package protocol ZenohQueryableHandle: AnyObject {
     func close() throws
 }
 
+/// Handle to a declared Zenoh publisher
+package protocol ZenohPublisherHandle: AnyObject {
+    /// Publish through this publisher.
+    func put(payload: Data, attachment: Data?) throws
+    /// `true` when a subscriber matches, `false` when none does, `nil` when the
+    /// build cannot tell or the publisher is closed.
+    func matchingStatus() -> Bool?
+    func close() throws
+}
+
 /// A live in-flight Zenoh query held by the C bridge until reply.
 ///
 /// Consumed by the first call to `reply(payload:attachment:)` or
@@ -129,6 +139,9 @@ package protocol ZenohClientProtocol: AnyObject {
 
     /// Declare a key expression for efficient reuse
     func declareKeyExpr(_ keyExpr: String) throws -> any ZenohKeyExprHandle
+
+    /// Declare a publisher on a key expression
+    func declarePublisher(_ keyExpr: String) throws -> any ZenohPublisherHandle
 
     /// Publish data to a declared key expression
     func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws

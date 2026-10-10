@@ -72,6 +72,16 @@ final class RclTransportPublisher: TransportPublisher, @unchecked Sendable {
         try client.publishSerialized(h, data: data)
     }
 
+    /// Whether the RCL publisher has at least one matched subscription; `nil`
+    /// once closed or when the backend cannot tell (fail-open).
+    public var matchedSubscriptions: Bool? {
+        lock.lock()
+        let h = closed ? nil : handle
+        lock.unlock()
+        guard let h else { return nil }
+        return client.publisherMatchedCount(h).map { $0 > 0 }
+    }
+
     public var supportsTypedPublish: Bool { true }
 
     public func publishTyped(_ publishable: any RclTypedPublishable) throws {

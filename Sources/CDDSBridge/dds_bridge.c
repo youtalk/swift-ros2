@@ -648,6 +648,24 @@ bool dds_bridge_writer_is_active(const bridge_dds_writer_t* writer) {
     return writer->is_active;
 }
 
+int32_t dds_bridge_writer_matched_count(const bridge_dds_writer_t* writer) {
+    if (!writer) {
+        return -1;
+    }
+#ifdef DDS_AVAILABLE
+    if (writer->writer <= 0) {
+        return -1;
+    }
+    dds_publication_matched_status_t status;
+    if (dds_get_publication_matched_status(writer->writer, &status) != DDS_RETCODE_OK) {
+        return -1;
+    }
+    return (int32_t)status.current_count;
+#else
+    return -1;
+#endif
+}
+
 // =============================================================================
 // MARK: - Publishing Implementation
 // =============================================================================

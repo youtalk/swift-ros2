@@ -88,7 +88,12 @@ build_slice() {
                 -DCMAKE_CXX_FLAGS="$extra_cxx_flags" \
                 -DZENOH_DEBUG=0 \
                 -DZ_FEATURE_LINK_TCP=1 \
-                -DZ_FEATURE_LIVELINESS=1)
+                -DZ_FEATURE_LIVELINESS=1 \
+                -DZ_FEATURE_INTEREST=1 \
+                -DZ_FEATURE_MATCHING=1 \
+                -DZ_FEATURE_UNSTABLE_API=1 \
+                -DZ_FEATURE_ADVANCED_PUBLICATION=1 \
+                -DZ_FEATURE_AUTO_RECONNECT=0)
             (cd "$build_dir" && cmake --build . --config Release -- -j"$(sysctl -n hw.ncpu)")
             (cd "$build_dir" && cmake --install .)
             ;;

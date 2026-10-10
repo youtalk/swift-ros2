@@ -39,3 +39,11 @@ factory instead, which applies the formula for you:
 let peers = [DDSPeer.peer(address: "192.168.1.10", domainId: 5)]
 let ctx = try await ROS2Context(transport: .ddsUnicast(peers: peers, domainId: 5))
 ```
+
+## Matched subscriptions
+
+``ROS2Publisher/hasMatchedSubscriptions`` and
+``ROS2Publisher/onMatchedSubscriptionsChanged(_:)`` report whether a
+subscription matches the publisher. On DDS the state is the writer's
+publication-matched count, sampled every 50 ms. See "Matched subscriptions" in
+<doc:GettingStartedZenoh> for the rules that apply to every transport.

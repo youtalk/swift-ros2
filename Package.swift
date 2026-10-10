@@ -244,14 +244,20 @@ let zenohPicoNonUnixBackends = [
     "src/system/arduino",
     "src/system/emscripten",
     "src/system/espidf",
-    "src/system/freertos_plus_tcp",
+    "src/system/flipper",
+    "src/system/freertos",
     "src/system/mbed",
     "src/system/rpi_pico",
-    "src/system/void",
+    "src/system/threadx",
     "src/system/windows",
     "src/system/zephyr",
-    "src/system/flipper",
 ]
+
+// Local-development override: SWIFT_ROS2_ZENOH_LOCAL=1 resolves CZenohPico from
+// build/zenoh-pico/ (the `Scripts/build-xcframework.sh zenoh-pico build/zenoh-pico`
+// output) instead of the released URL+checksum artifact, so a zenoh-pico change
+// can be tested on Apple before it is released.
+let useLocalZenohXCFramework = Context.environment["SWIFT_ROS2_ZENOH_LOCAL"] == "1"
 
 let cZenohPico: Target = {
     if isLinuxBuild || isAndroidBuild {
@@ -282,13 +288,13 @@ let cZenohPico: Target = {
                 "src/system/arduino",
                 "src/system/emscripten",
                 "src/system/espidf",
-                "src/system/freertos_plus_tcp",
+                "src/system/flipper",
+                "src/system/freertos",
                 "src/system/mbed",
                 "src/system/rpi_pico",
+                "src/system/threadx",
                 "src/system/unix",
-                "src/system/void",
                 "src/system/zephyr",
-                "src/system/flipper",
             ],
             sources: ["src"],
             publicHeadersPath: "include",
@@ -298,6 +304,11 @@ let cZenohPico: Target = {
                 .define("Z_FEATURE_LIVELINESS", to: "1"),
                 .define("ZENOH_WINDOWS", to: "1"),
             ]
+        )
+    } else if useLocalZenohXCFramework {
+        return .binaryTarget(
+            name: "CZenohPico",
+            path: "build/zenoh-pico/CZenohPico.xcframework"
         )
     } else {
         // Apple: binary xcframework.

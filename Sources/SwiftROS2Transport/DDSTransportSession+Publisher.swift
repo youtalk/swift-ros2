@@ -88,6 +88,14 @@ final class DDSTransportPublisherImpl: TransportPublisher, @unchecked Sendable {
         return writer?.isActive ?? false
     }
 
+    package var matchedSubscriptions: Bool? {
+        lock.lock()
+        let w = closed ? nil : writer
+        lock.unlock()
+        guard let w else { return nil }
+        return client.publicationMatchedCount(writer: w).map { $0 > 0 }
+    }
+
     init(client: any DDSClientProtocol, writer: any DDSWriterHandle, topic: String) {
         self.client = client
         self.writer = writer

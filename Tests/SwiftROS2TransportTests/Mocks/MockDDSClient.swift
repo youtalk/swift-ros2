@@ -272,6 +272,23 @@ final class MockDDSClient: DDSClientProtocol, @unchecked Sendable {
         guard let mock = writer as? MockDDSWriterHandle else { return false }
         return matchedTopics.contains(mock.topic)
     }
+
+    private var matchedCounts: [String: Int] = [:]
+
+    /// Sets what `publicationMatchedCount(writer:)` returns for writers on `topic`;
+    /// `nil` means unknown.
+    func setMatchedCount(topic: String, _ count: Int?) {
+        lock.lock()
+        defer { lock.unlock() }
+        matchedCounts[topic] = count
+    }
+
+    func publicationMatchedCount(writer: any DDSWriterHandle) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let mock = writer as? MockDDSWriterHandle else { return nil }
+        return matchedCounts[mock.topic]
+    }
 }
 
 final class MockDDSWriterHandle: DDSWriterHandle, @unchecked Sendable {

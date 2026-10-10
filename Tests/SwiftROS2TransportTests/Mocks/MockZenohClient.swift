@@ -14,6 +14,7 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     var sessionIdValue = "mock-session-id"
     var openShouldThrow: ZenohError?
     var declareKeyExprShouldThrow: ZenohError?
+    var declarePublisherShouldThrow: ZenohError?
     var putShouldThrow: ZenohError?
     var subscribeShouldThrow: ZenohError?
     var livelinessShouldThrow: ZenohError?
@@ -25,6 +26,8 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
     private(set) var openedLocators: [String] = []
     private(set) var closedCount = 0
     private(set) var keyExprDeclarations: [String] = []
+    private(set) var publisherDeclarations: [String] = []
+    private(set) var publisherHandles: [MockPublisherHandle] = []
     private(set) var puts: [(key: String, payload: Data, attachment: Data?)] = []
     private(set) var subscriptions: [(key: String, handler: (ZenohSample) -> Void)] = []
     private(set) var livelinessDeclarations: [String] = []
@@ -91,6 +94,25 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
         if let e = declareKeyExprShouldThrow { throw e }
         keyExprDeclarations.append(keyExpr)
         return MockKeyExprHandle(keyExpr: keyExpr)
+    }
+
+    func declarePublisher(_ keyExpr: String) throws -> any ZenohPublisherHandle {
+        lock.lock()
+        defer { lock.unlock() }
+        if let e = declarePublisherShouldThrow { throw e }
+        publisherDeclarations.append(keyExpr)
+        let handle = MockPublisherHandle(keyExpr: keyExpr, client: self)
+        publisherHandles.append(handle)
+        return handle
+    }
+
+    /// Records a put made through a `MockPublisherHandle`; shares `putShouldThrow`
+    /// and `puts` with `put(keyExpr:payload:attachment:)`.
+    func recordPublisherPut(key: String, payload: Data, attachment: Data?) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if let e = putShouldThrow { throw e }
+        puts.append((key: key, payload: payload, attachment: attachment))
     }
 
     func put(keyExpr: any ZenohKeyExprHandle, payload: Data, attachment: Data?) throws {
@@ -324,6 +346,45 @@ final class MockZenohClient: ZenohClientProtocol, @unchecked Sendable {
 final class MockKeyExprHandle: ZenohKeyExprHandle {
     let keyExpr: String
     init(keyExpr: String) { self.keyExpr = keyExpr }
+}
+
+final class MockPublisherHandle: ZenohPublisherHandle, @unchecked Sendable {
+    let keyExpr: String
+    private weak var client: MockZenohClient?
+    private let lock = NSLock()
+    private var _matching: Bool? = false
+    private(set) var closeCount = 0
+
+    init(keyExpr: String, client: MockZenohClient) {
+        self.keyExpr = keyExpr
+        self.client = client
+    }
+
+    var matching: Bool? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _matching
+        }
+        set {
+            lock.lock()
+            _matching = newValue
+            lock.unlock()
+        }
+    }
+
+    func put(payload: Data, attachment: Data?) throws {
+        guard let client else { throw ZenohError.putFailed("mock client released") }
+        try client.recordPublisherPut(key: keyExpr, payload: payload, attachment: attachment)
+    }
+
+    func matchingStatus() -> Bool? { matching }
+
+    func close() throws {
+        lock.lock()
+        closeCount += 1
+        lock.unlock()
+    }
 }
 
 final class MockSubscriberHandle: ZenohSubscriberHandle {

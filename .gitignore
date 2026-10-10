@@ -12,6 +12,9 @@ Vendor/*-x86_64/
 Vendor/include/
 Vendor/pkgconfig/
 
+# Local xcframework builds (e.g. `Scripts/build-xcframework.sh zenoh-pico build/zenoh-pico`)
+/build/
+
 # Native RCL backend out-of-band build outputs
 build/ros2/
 build/ros2zenoh/

@@ -71,6 +71,10 @@ struct zenoh_liveliness_token_t {
     z_owned_liveliness_token_t token;
 };
 
+struct zenoh_publisher_t {
+    z_owned_publisher_t publisher;
+};
+
 // Forward declarations for the linked-list cross-references between
 // zenoh_query_t and zenoh_queryable_t.
 struct zenoh_queryable_t;
@@ -164,14 +168,14 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
         return -1;
     }
 
-    // Open the session
-    z_open_options_t options;
-    options.__dummy = 0;
-
+    // Open the session with default options. NULL works on every zenoh-pico
+    // this bridge builds against: 1.1.0 ignores the options, and 1.7.1 fills
+    // in the defaults (whose z_open_options_t has no __dummy field in
+    // multi-thread builds and auto-starts the read and lease tasks).
     os_log_info(log, "[zenoh_bridge] Calling z_open...");
     os_log_info(log, "[zenoh_bridge] Using locator: %s", locator);
 
-    ret = z_open(&session->session, z_move(config), &options);
+    ret = z_open(&session->session, z_move(config), NULL);
     os_log_info(log, "[zenoh_bridge] z_open returned: %d", ret);
     if (ret < 0) {
         os_log_error(log, "[zenoh_bridge] ERROR: z_open failed with code %d", ret);
@@ -181,10 +185,15 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
         return -1;
     }
 
-    // Start read and lease tasks for background processing (required for pico)
+    // Start read and lease tasks for background processing (required for pico
+    // 1.1.0; on 1.7.1 z_open already started them and these calls are no-ops).
     os_log_info(log, "[zenoh_bridge] Starting read and lease tasks...");
     zp_start_read_task(z_loan_mut(session->session), NULL);
     zp_start_lease_task(z_loan_mut(session->session), NULL);
+#if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
+    // The advanced publisher's heartbeat runs on the periodic scheduler.
+    zp_start_periodic_scheduler_task(z_loan_mut(session->session), NULL);
+#endif
 
     os_log_info(log, "[zenoh_bridge] Session opened successfully");
     *out_session = session;
@@ -201,6 +210,12 @@ zenoh_result_t zenoh_close_session(zenoh_session_t** session) {
     // Stop background tasks
     zp_stop_read_task(z_loan_mut(s->session));
     zp_stop_lease_task(z_loan_mut(s->session));
+#if defined(Z_FEATURE_UNSTABLE_API) && Z_FEATURE_PERIODIC_TASKS == 1
+    // Stop and join the scheduler here: z_close skips every task stop once the
+    // transport is gone (lease expired), and then frees the scheduler's mutex
+    // and condvar while its thread is still running.
+    zp_stop_periodic_scheduler_task(z_loan_mut(s->session));
+#endif
 
     // Close the session
     z_close_options_t options;
@@ -425,6 +440,97 @@ zenoh_result_t zenoh_put_str(zenoh_session_t* session,
                        z_move(bytes), &options);
 
     return (zenoh_result_t)result;
+}
+
+zenoh_result_t zenoh_declare_publisher(zenoh_session_t* session,
+                                       const char* keyexpr_str,
+                                       zenoh_publisher_t** out_publisher) {
+    if (!session || !keyexpr_str || !out_publisher) {
+        return -1;
+    }
+    z_view_keyexpr_t view_ke;
+    if (z_view_keyexpr_from_str(&view_ke, keyexpr_str) < 0) {
+        return -1;
+    }
+    zenoh_publisher_t* pub = (zenoh_publisher_t*)malloc(sizeof(zenoh_publisher_t));
+    if (!pub) {
+        return -1;
+    }
+    z_publisher_options_t options;
+    z_publisher_options_default(&options);
+    if (z_declare_publisher(z_loan(session->session), &pub->publisher, z_loan(view_ke), &options) < 0) {
+        free(pub);
+        return -1;
+    }
+    *out_publisher = pub;
+    return 0;
+}
+
+zenoh_result_t zenoh_publisher_put(zenoh_session_t* session,
+                                   zenoh_publisher_t* publisher,
+                                   const uint8_t* payload,
+                                   size_t payload_len,
+                                   const uint8_t* attachment_data,
+                                   size_t attachment_len) {
+    if (!session || !publisher || !payload) {
+        return -1;
+    }
+    if (z_session_is_closed(z_loan(session->session))) {
+        return ZENOH_ERROR_SESSION_CLOSED;
+    }
+    z_owned_bytes_t bytes;
+    if (z_bytes_from_buf(&bytes, (uint8_t*)payload, payload_len, NULL, NULL) < 0) {
+        return -1;
+    }
+    // Plain publishers deliver with z_put on the publisher's declared key
+    // expression, not with z_publisher_put. z_publisher_put consults the
+    // publisher's write filter, which starts closed and only opens once the
+    // router's interest reply arrives: it would silently drop the first
+    // messages after creation (and everything while no subscriber is known)
+    // while the caller sees success. z_put has no such filter, which keeps the
+    // delivery semantics of zenoh_put; the declared publisher serves only
+    // zenoh_publisher_matching_status. (An advanced publisher has to put
+    // through itself, because its cache fills before the filter.)
+    z_put_options_t options;
+    z_put_options_default(&options);
+    z_owned_bytes_t attachment;
+    if (attachment_data && attachment_len > 0) {
+        if (z_bytes_from_buf(&attachment, (uint8_t*)attachment_data, attachment_len, NULL, NULL) < 0) {
+            z_drop(z_move(bytes));
+            return -1;
+        }
+        options.attachment = z_move(attachment);
+    }
+    return (zenoh_result_t)z_put(z_loan(session->session),
+                                 z_publisher_keyexpr(z_loan(publisher->publisher)),
+                                 z_move(bytes), &options);
+}
+
+zenoh_result_t zenoh_publisher_matching_status(zenoh_publisher_t* publisher, bool* out_matching) {
+    if (!publisher || !out_matching) {
+        return -1;
+    }
+#if Z_FEATURE_MATCHING == 1
+    z_matching_status_t status;
+    if (z_publisher_get_matching_status(z_loan(publisher->publisher), &status) < 0) {
+        return -1;
+    }
+    *out_matching = status.matching;
+    return 0;
+#else
+    return ZENOH_MATCHING_UNKNOWN;
+#endif
+}
+
+zenoh_result_t zenoh_undeclare_publisher(zenoh_publisher_t** publisher) {
+    if (!publisher || !*publisher) {
+        return -1;
+    }
+    zenoh_publisher_t* pub = *publisher;
+    z_result_t rc = z_undeclare_publisher(z_move(pub->publisher));
+    free(pub);
+    *publisher = NULL;
+    return (zenoh_result_t)rc;
 }
 
 // ============================================================================

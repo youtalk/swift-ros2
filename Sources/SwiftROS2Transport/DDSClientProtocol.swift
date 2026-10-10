@@ -144,6 +144,9 @@ package protocol DDSClientProtocol: AnyObject {
     /// Destroy a writer
     func destroyWriter(_ writer: any DDSWriterHandle)
 
+    /// Number of subscriptions currently matched to `writer`, or `nil` when unknown.
+    func publicationMatchedCount(writer: any DDSWriterHandle) -> Int?
+
     /// Create a raw CDR reader for a topic with a per-sample callback.
     ///
     /// - Parameters:
@@ -182,4 +185,7 @@ extension DDSClientProtocol {
     /// conformers (e.g. CycloneDDS-backed bridges) should override this with
     /// `dds_get_publication_matched_status`.
     package func isPublicationMatched(writer: any DDSWriterHandle) -> Bool { true }
+
+    /// Default: unknown. CycloneDDS-backed conformers report the real count.
+    package func publicationMatchedCount(writer: any DDSWriterHandle) -> Int? { nil }
 }

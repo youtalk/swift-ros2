@@ -192,6 +192,12 @@ void dds_bridge_destroy_writer(bridge_dds_writer_t* writer);
 /// @return true if writer is active, false otherwise
 bool dds_bridge_writer_is_active(const bridge_dds_writer_t* writer);
 
+/// Number of subscriptions currently matched to the writer
+///
+/// @param writer Writer to query
+/// @return current matched count, or -1 on error
+int32_t dds_bridge_writer_matched_count(const bridge_dds_writer_t* writer);
+
 // =============================================================================
 // MARK: - Publishing
 // =============================================================================

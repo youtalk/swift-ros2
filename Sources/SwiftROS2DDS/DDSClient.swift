@@ -298,6 +298,14 @@ package final class DDSClient: DDSClientProtocol {
         box.close()
     }
 
+    package func publicationMatchedCount(writer: any DDSWriterHandle) -> Int? {
+        guard let box = writer as? DDSWriterHandleBox,
+            let count = box.withWriter({ dds_bridge_writer_matched_count($0) }),
+            count >= 0
+        else { return nil }
+        return Int(count)
+    }
+
     package func createRawReader(
         topicName: String,
         typeName: String,

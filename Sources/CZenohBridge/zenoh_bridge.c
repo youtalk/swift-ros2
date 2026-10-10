@@ -164,14 +164,14 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
         return -1;
     }
 
-    // Open the session
-    z_open_options_t options;
-    options.__dummy = 0;
-
+    // Open the session with default options. NULL works on every zenoh-pico
+    // this bridge builds against: 1.1.0 ignores the options, and 1.7.1 fills
+    // in the defaults (whose z_open_options_t has no __dummy field in
+    // multi-thread builds and auto-starts the read and lease tasks).
     os_log_info(log, "[zenoh_bridge] Calling z_open...");
     os_log_info(log, "[zenoh_bridge] Using locator: %s", locator);
 
-    ret = z_open(&session->session, z_move(config), &options);
+    ret = z_open(&session->session, z_move(config), NULL);
     os_log_info(log, "[zenoh_bridge] z_open returned: %d", ret);
     if (ret < 0) {
         os_log_error(log, "[zenoh_bridge] ERROR: z_open failed with code %d", ret);
@@ -181,10 +181,15 @@ zenoh_result_t zenoh_open_session(const char* locator, zenoh_session_t** out_ses
         return -1;
     }
 
-    // Start read and lease tasks for background processing (required for pico)
+    // Start read and lease tasks for background processing (required for pico
+    // 1.1.0; on 1.7.1 z_open already started them and these calls are no-ops).
     os_log_info(log, "[zenoh_bridge] Starting read and lease tasks...");
     zp_start_read_task(z_loan_mut(session->session), NULL);
     zp_start_lease_task(z_loan_mut(session->session), NULL);
+#if Z_FEATURE_PERIODIC_TASKS == 1
+    // The advanced publisher's heartbeat runs on the periodic scheduler.
+    zp_start_periodic_scheduler_task(z_loan_mut(session->session), NULL);
+#endif
 
     os_log_info(log, "[zenoh_bridge] Session opened successfully");
     *out_session = session;
